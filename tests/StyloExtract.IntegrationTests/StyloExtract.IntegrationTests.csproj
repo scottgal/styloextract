@@ -3,11 +3,27 @@
     <RootNamespace>StyloExtract.IntegrationTests</RootNamespace>
     <AssemblyName>StyloExtract.IntegrationTests</AssemblyName>
     <IsPackable>false</IsPackable>
+    <!-- Suppress NU1903 for transitive SQLitePCLRaw.lib.e_sqlite3 (GHSA-2m69-gcr7-jv3q)
+         via Microsoft.Data.Sqlite 10.0.0. Tracking upstream for patch. -->
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="FluentAssertions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\StyloExtract.Core\StyloExtract.Core.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Templates\StyloExtract.Templates.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Heuristics\StyloExtract.Heuristics.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Html\StyloExtract.Html.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Fingerprint\StyloExtract.Fingerprint.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Markdown\StyloExtract.Markdown.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="Fixtures\**\*.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 </Project>
