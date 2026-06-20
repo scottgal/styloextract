@@ -1,0 +1,35 @@
+using FluentAssertions;
+using StyloExtract.Abstractions;
+using StyloExtract.Core;
+using StyloExtract.Heuristics;
+using StyloExtract.Html;
+using StyloExtract.Markdown;
+using Xunit;
+
+namespace StyloExtract.Core.Tests;
+
+public class LayoutExtractorTests
+{
+    private static ILayoutExtractor Build() => new LayoutExtractor(
+        new AngleSharpHtmlDomParser(),
+        new DomCleaner(),
+        new BlockSegmenter(),
+        HeuristicBlockClassifier.LoadFromEmbeddedResources(),
+        new TypedMarkdownRenderer());
+
+    [Fact]
+    public async Task ExtractAsync_ProducesNovelEphemeralResultWithMarkdown()
+    {
+        var html = "<html><head><title>Test</title></head><body><main><article><p>" +
+                   new string('x', 300) + "</p></article></main></body></html>";
+
+        var result = await Build().ExtractAsync(html);
+
+        result.Match.Status.Should().Be(MatchStatus.NovelEphemeral);
+        result.Match.TemplateId.Should().BeNull();
+        result.Title.Should().Be("Test");
+        result.Markdown.Should().NotBeNullOrWhiteSpace();
+        result.Blocks.Should().NotBeEmpty();
+        result.Blocks.Should().Contain(b => b.Role == BlockRole.MainContent);
+    }
+}

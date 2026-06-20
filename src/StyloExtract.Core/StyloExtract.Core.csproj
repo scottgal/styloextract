@@ -4,4 +4,10 @@
     <AssemblyName>StyloExtract.Core</AssemblyName>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
+    <ProjectReference Include="..\StyloExtract.Html\StyloExtract.Html.csproj" />
+    <ProjectReference Include="..\StyloExtract.Heuristics\StyloExtract.Heuristics.csproj" />
+    <ProjectReference Include="..\StyloExtract.Markdown\StyloExtract.Markdown.csproj" />
+  </ItemGroup>
 </Project>
