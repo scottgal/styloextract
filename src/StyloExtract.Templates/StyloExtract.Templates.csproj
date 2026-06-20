@@ -3,6 +3,9 @@
     <RootNamespace>StyloExtract.Templates</RootNamespace>
     <AssemblyName>StyloExtract.Templates</AssemblyName>
     <IsPackable>true</IsPackable>
+    <!-- Suppress NU1903 for transitive SQLitePCLRaw.lib.e_sqlite3 (GHSA-2m69-gcr7-jv3q)
+         via Microsoft.Data.Sqlite 10.0.0. Tracking upstream for patch. -->
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
