@@ -12,5 +12,6 @@
     <PackageLicenseExpression>Unlicense</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/mostlylucid/stylobot-extract</PackageProjectUrl>
     <RepositoryUrl>https://github.com/mostlylucid/stylobot-extract</RepositoryUrl>
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
   </PropertyGroup>
 </Project>

@@ -4,4 +4,8 @@
     <AssemblyName>StyloExtract.Templates</AssemblyName>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
 </Project>
