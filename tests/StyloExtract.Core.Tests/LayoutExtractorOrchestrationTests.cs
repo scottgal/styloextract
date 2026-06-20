@@ -67,4 +67,27 @@ public class LayoutExtractorOrchestrationTests
         }
         finally { conn.Dispose(); }
     }
+
+    [Fact]
+    public async Task ExtractAsync_NoLearning_ProducesNovelEphemeral()
+    {
+        var (e, conn) = Build();
+        try
+        {
+            var html = "<html><body><main><article><p>" +
+                "This is a substantial article body with enough text that the heuristic classifier will recognise it as MainContent. " +
+                "The paragraph is padded out so the total text length comfortably exceeds two hundred characters and the link density " +
+                "stays well below ten percent throughout this paragraph of actual prose content. " +
+                new string('x', 300) +
+                "</p></article></main></body></html>";
+            var uri = new Uri("https://example.com/page");
+
+            var result = await e.ExtractAsync(html, uri, new ExtractionOptions { LearnNewTemplates = false });
+
+            result.Match.Status.Should().Be(MatchStatus.NovelEphemeral);
+            result.Match.TemplateId.Should().BeNull();
+            result.Markdown.Should().NotBeNullOrWhiteSpace();
+        }
+        finally { conn.Dispose(); }
+    }
 }
