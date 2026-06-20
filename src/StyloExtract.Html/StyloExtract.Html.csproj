@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>StyloExtract.Html</RootNamespace>
+    <AssemblyName>StyloExtract.Html</AssemblyName>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+</Project>

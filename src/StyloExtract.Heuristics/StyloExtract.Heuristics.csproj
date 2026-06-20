@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>StyloExtract.Heuristics</RootNamespace>
+    <AssemblyName>StyloExtract.Heuristics</AssemblyName>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+</Project>

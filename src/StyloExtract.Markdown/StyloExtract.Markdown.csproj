@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>StyloExtract.Markdown</RootNamespace>
+    <AssemblyName>StyloExtract.Markdown</AssemblyName>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+</Project>
