@@ -4,4 +4,8 @@
     <AssemblyName>StyloExtract.Html</AssemblyName>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
+    <PackageReference Include="AngleSharp" />
+  </ItemGroup>
 </Project>
