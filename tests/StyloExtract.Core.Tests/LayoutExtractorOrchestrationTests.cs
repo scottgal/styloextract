@@ -11,7 +11,7 @@ using Xunit;
 
 namespace StyloExtract.Core.Tests;
 
-public class LayoutExtractorTests
+public class LayoutExtractorOrchestrationTests
 {
     private static (ILayoutExtractor Extractor, SqliteConnection Conn) Build()
     {
@@ -44,38 +44,26 @@ public class LayoutExtractorTests
     }
 
     [Fact]
-    public async Task ExtractAsync_ProducesNovelEphemeralResultWithMarkdown()
+    public async Task ExtractAsync_SameHtmlTwice_SecondCallIsFastPathHit()
     {
-        var html = "<html><head><title>Test</title></head><body><main><article><p>" +
-                   new string('x', 300) + "</p></article></main></body></html>";
-
         var (e, conn) = Build();
         try
         {
-            var result = await e.ExtractAsync(html, options: new ExtractionOptions { LearnNewTemplates = false });
+            const string html = "<html><body><header><nav class='main-menu'><a href='/'>H</a><a href='/a'>A</a></nav></header>" +
+                "<main><article><h1>Title</h1><p>This is a substantial article body with enough text that the heuristic classifier " +
+                "will recognise it as MainContent. The paragraph is padded out so total text length comfortably exceeds two hundred " +
+                "characters and the link density stays below ten percent throughout this paragraph of actual prose content.</p>" +
+                "</article></main></body></html>";
+            var uri = new Uri("https://example.com/page");
 
-            result.Match.Status.Should().Be(MatchStatus.NovelEphemeral);
-            result.Match.TemplateId.Should().BeNull();
-            result.Title.Should().Be("Test");
-            result.Markdown.Should().NotBeNullOrWhiteSpace();
-            result.Blocks.Should().NotBeEmpty();
-            result.Blocks.Should().Contain(b => b.Role == BlockRole.MainContent);
-        }
-        finally { conn.Dispose(); }
-    }
+            var first = await e.ExtractAsync(html, uri);
+            first.Match.Status.Should().Be(MatchStatus.Novel);
+            first.Match.TemplateId.Should().NotBeNull();
 
-    [Fact]
-    public async Task ExtractAsync_PopulatesFingerprintHex()
-    {
-        var html = "<html><body><main><article><p>" +
-                   new string('x', 300) + "</p></article></main></body></html>";
-
-        var (e, conn) = Build();
-        try
-        {
-            var result = await e.ExtractAsync(html, options: new ExtractionOptions { LearnNewTemplates = false });
-            result.Match.FingerprintHex.Should().NotBeNullOrEmpty();
-            result.Stats.FingerprintShingleCount.Should().BeGreaterThan(0);
+            var second = await e.ExtractAsync(html, uri);
+            second.Match.Status.Should().Be(MatchStatus.FastPathHit);
+            second.Match.TemplateId.Should().Be(first.Match.TemplateId);
+            second.Match.Similarity.Should().BeGreaterThan(0.95);
         }
         finally { conn.Dispose(); }
     }

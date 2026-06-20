@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using StyloExtract.Abstractions;
+using StyloExtract.Templates;
 
 namespace StyloExtract.Core;
 
@@ -11,6 +12,12 @@ public sealed class LayoutExtractor : ILayoutExtractor
     private readonly IBlockSegmenter _segmenter;
     private readonly IBlockClassifier _classifier;
     private readonly IMarkdownRenderer _renderer;
+    private readonly ITemplateIndex _index;
+    private readonly HostHasher _hostHasher;
+    private readonly IExtractorInducer _inducer;
+    private readonly IExtractorApplicator _applicator;
+    private readonly double _fastPathThreshold;
+    private readonly double _slowPathThreshold;
 
     public LayoutExtractor(
         IHtmlDomParser parser,
@@ -18,17 +25,21 @@ public sealed class LayoutExtractor : ILayoutExtractor
         IStructuralFingerprinter fingerprinter,
         IBlockSegmenter segmenter,
         IBlockClassifier classifier,
-        IMarkdownRenderer renderer)
+        IMarkdownRenderer renderer,
+        ITemplateIndex index,
+        HostHasher hostHasher,
+        IExtractorInducer inducer,
+        IExtractorApplicator applicator,
+        double fastPathThreshold,
+        double slowPathThreshold)
     {
-        _parser = parser;
-        _cleaner = cleaner;
-        _fingerprinter = fingerprinter;
-        _segmenter = segmenter;
-        _classifier = classifier;
-        _renderer = renderer;
+        _parser = parser; _cleaner = cleaner; _fingerprinter = fingerprinter;
+        _segmenter = segmenter; _classifier = classifier; _renderer = renderer;
+        _index = index; _hostHasher = hostHasher; _inducer = inducer; _applicator = applicator;
+        _fastPathThreshold = fastPathThreshold; _slowPathThreshold = slowPathThreshold;
     }
 
-    public Task<ExtractionResult> ExtractAsync(
+    public async Task<ExtractionResult> ExtractAsync(
         string html,
         Uri? sourceUri = null,
         ExtractionOptions? options = null,
@@ -46,16 +57,72 @@ public sealed class LayoutExtractor : ILayoutExtractor
         var fp = _fingerprinter.Compute(doc);
         fpTimer.Stop();
 
-        var segmented = _segmenter.Segment(doc);
-        var blocks = _classifier.Classify(segmented);
+        var hostHash = _hostHasher.Hash(options.HostOverride ?? sourceUri?.Host ?? "");
+        var status = MatchStatus.NovelEphemeral;
+        Guid? templateId = null;
+        int templateVersion = 0;
+        double similarity = 0;
+        int observationCount = 0;
+        IReadOnlyList<ExtractedBlock> blocks;
+
+        var matchTimer = Stopwatch.StartNew();
+        var fastHit = await _index.ProbeFastPathAsync(hostHash, fp, _fastPathThreshold, cancellationToken);
+        if (fastHit is not null)
+        {
+            var ex = await _index.GetExtractorAsync(fastHit.Value, cancellationToken);
+            if (ex is not null)
+            {
+                blocks = _applicator.Apply(doc, ex);
+                templateId = fastHit;
+                templateVersion = ex.Version;
+                similarity = 1.0;
+                observationCount = await _index.GetObservationCountAsync(fastHit.Value, cancellationToken);
+                status = MatchStatus.FastPathHit;
+            }
+            else
+            {
+                blocks = _classifier.Classify(_segmenter.Segment(doc));
+            }
+        }
+        else
+        {
+            var slow = await _index.ProbeSlowPathAsync(hostHash, fp, _slowPathThreshold, cancellationToken);
+            if (slow is not null)
+            {
+                var ex = await _index.GetExtractorAsync(slow.Value.TemplateId, cancellationToken);
+                if (ex is not null)
+                {
+                    blocks = _applicator.Apply(doc, ex);
+                    templateId = slow.Value.TemplateId;
+                    templateVersion = ex.Version;
+                    similarity = slow.Value.Cosine;
+                    observationCount = await _index.GetObservationCountAsync(templateId.Value, cancellationToken);
+                    status = MatchStatus.SlowPathMatch;
+                }
+                else { blocks = _classifier.Classify(_segmenter.Segment(doc)); }
+            }
+            else
+            {
+                blocks = _classifier.Classify(_segmenter.Segment(doc));
+                if (options.LearnNewTemplates)
+                {
+                    var newId = Guid.NewGuid();
+                    var ex = _inducer.Induce(newId, blocks);
+                    templateId = await _index.RegisterAsync(hostHash, fp, ex, cancellationToken);
+                    templateVersion = 1;
+                    observationCount = 1;
+                    status = MatchStatus.Novel;
+                }
+            }
+        }
+        matchTimer.Stop();
 
         var renderTimer = Stopwatch.StartNew();
         var markdown = _renderer.Render(blocks, options.Profile);
         renderTimer.Stop();
-
         total.Stop();
 
-        return Task.FromResult(new ExtractionResult
+        return new ExtractionResult
         {
             SourceUri = sourceUri,
             Title = doc.Title,
@@ -63,13 +130,13 @@ public sealed class LayoutExtractor : ILayoutExtractor
             Blocks = blocks,
             Match = new LayoutMatch
             {
-                TemplateId = null,
-                TemplateVersion = 0,
+                TemplateId = templateId,
+                TemplateVersion = templateVersion,
                 FingerprintHex = fp.Hex,
-                Status = MatchStatus.NovelEphemeral,
-                Similarity = 0,
-                ObservationCount = 0,
-                LatencyMatch = TimeSpan.Zero,
+                Status = status,
+                Similarity = similarity,
+                ObservationCount = observationCount,
+                LatencyMatch = matchTimer.Elapsed,
                 LatencyTotal = total.Elapsed
             },
             Stats = new ExtractionStats
@@ -78,9 +145,9 @@ public sealed class LayoutExtractor : ILayoutExtractor
                 FingerprintShingleCount = fp.ShingleCount,
                 ParseTime = parseTimer.Elapsed,
                 FingerprintTime = fpTimer.Elapsed,
-                MatchTime = TimeSpan.Zero,
+                MatchTime = matchTimer.Elapsed,
                 RenderTime = renderTimer.Elapsed
             }
-        });
+        };
     }
 }
