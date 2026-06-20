@@ -4,4 +4,9 @@
     <AssemblyName>StyloExtract.Fingerprint</AssemblyName>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
+    <ProjectReference Include="..\StyloExtract.Heuristics\StyloExtract.Heuristics.csproj" />
+    <PackageReference Include="System.IO.Hashing" />
+  </ItemGroup>
 </Project>

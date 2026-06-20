@@ -10,4 +10,8 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="FluentAssertions" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\StyloExtract.Fingerprint\StyloExtract.Fingerprint.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Html\StyloExtract.Html.csproj" />
+  </ItemGroup>
 </Project>
