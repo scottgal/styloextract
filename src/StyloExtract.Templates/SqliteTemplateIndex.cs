@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using StyloExtract.Abstractions;
+using StyloExtract.Fingerprint;
 using StyloExtract.Templates.Serialization;
 
 namespace StyloExtract.Templates;
@@ -94,11 +95,72 @@ public sealed class SqliteTemplateIndex : ITemplateIndex
         return val is null ? 0 : Convert.ToInt32(val);
     }
 
-    public Task<Guid?> ProbeFastPathAsync(byte[] hostHash, StructuralFingerprint fingerprint, double threshold, CancellationToken cancellationToken)
-        => throw new NotImplementedException("Filled in T23");
+    public async Task<Guid?> ProbeFastPathAsync(byte[] hostHash, StructuralFingerprint fingerprint, double threshold, CancellationToken cancellationToken)
+    {
+        var candidates = new HashSet<byte[]>(ByteArrayComparer.Instance);
+        await using (var cmd = _conn.CreateCommand())
+        {
+            cmd.CommandText = """
+                SELECT DISTINCT b.template_id
+                FROM template_lsh_band_index b
+                INNER JOIN templates t ON t.template_id = b.template_id
+                WHERE t.host_hash = @host AND b.band_hash = @bh AND b.band_index = @bi
+                """;
+            cmd.Parameters.Add("@host", SqliteType.Blob).Value = hostHash;
+            cmd.Parameters.Add("@bh", SqliteType.Blob);
+            cmd.Parameters.Add("@bi", SqliteType.Integer);
+            for (int i = 0; i < fingerprint.LshBands.Length; i++)
+            {
+                cmd.Parameters["@bh"].Value = BitConverter.GetBytes(fingerprint.LshBands[i]);
+                cmd.Parameters["@bi"].Value = i;
+                await using var r = await cmd.ExecuteReaderAsync(cancellationToken);
+                while (await r.ReadAsync(cancellationToken))
+                {
+                    candidates.Add((byte[])r["template_id"]);
+                }
+            }
+        }
 
-    public Task<(Guid TemplateId, double Cosine)?> ProbeSlowPathAsync(byte[] hostHash, StructuralFingerprint fingerprint, double threshold, CancellationToken cancellationToken)
-        => throw new NotImplementedException("Filled in T23");
+        Guid? best = null;
+        double bestJaccard = 0;
+        foreach (var candidateBytes in candidates)
+        {
+            await using var cmd = _conn.CreateCommand();
+            cmd.CommandText = "SELECT signature_minhash FROM templates WHERE template_id = @id";
+            cmd.Parameters.AddWithValue("@id", candidateBytes);
+            var blob = (byte[]?)await cmd.ExecuteScalarAsync(cancellationToken);
+            if (blob is null) continue;
+            var candidateSig = BytesToUintArray(blob);
+            var j = JaccardEstimator.Estimate(candidateSig, fingerprint.StructuralMinHash);
+            if (j >= threshold && j > bestJaccard)
+            {
+                bestJaccard = j;
+                best = new Guid(candidateBytes);
+            }
+        }
+        return best;
+    }
+
+    public async Task<(Guid TemplateId, double Cosine)?> ProbeSlowPathAsync(byte[] hostHash, StructuralFingerprint fingerprint, double threshold, CancellationToken cancellationToken)
+    {
+        await using var cmd = _conn.CreateCommand();
+        cmd.CommandText = "SELECT template_id, pq_gram_vector, pq_gram_norm FROM templates WHERE host_hash = @host";
+        cmd.Parameters.AddWithValue("@host", hostHash);
+        (Guid TemplateId, double Cosine)? best = null;
+        await using var r = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await r.ReadAsync(cancellationToken))
+        {
+            var id = new Guid((byte[])r["template_id"]);
+            var candidateCounts = PqGramVectorCodec.Decode((byte[])r["pq_gram_vector"]);
+            var candidateNorm = r.GetDouble(r.GetOrdinal("pq_gram_norm"));
+            var cosine = CosineSimilarity(fingerprint.PqGramCounts, fingerprint.PqGramNorm, candidateCounts, candidateNorm);
+            if (cosine >= threshold && (best is null || cosine > best.Value.Cosine))
+            {
+                best = (id, cosine);
+            }
+        }
+        return best;
+    }
 
     public Task RecordObservationAsync(Guid templateId, StructuralFingerprint fingerprint, double similarity, CancellationToken cancellationToken)
         => throw new NotImplementedException("Filled in M4");
@@ -115,5 +177,28 @@ public sealed class SqliteTemplateIndex : ITemplateIndex
         var sig = new uint[bytes.Length / 4];
         Buffer.BlockCopy(bytes, 0, sig, 0, bytes.Length);
         return sig;
+    }
+
+    private static double CosineSimilarity(IReadOnlyDictionary<string, double> a, double na, IReadOnlyDictionary<string, double> b, double nb)
+    {
+        if (na == 0 || nb == 0) return 0;
+        double dot = 0;
+        foreach (var kv in a)
+        {
+            if (b.TryGetValue(kv.Key, out var v)) dot += kv.Value * v;
+        }
+        return dot / (na * nb);
+    }
+
+    private sealed class ByteArrayComparer : IEqualityComparer<byte[]>
+    {
+        public static readonly ByteArrayComparer Instance = new();
+        public bool Equals(byte[]? x, byte[]? y) => x is not null && y is not null && x.AsSpan().SequenceEqual(y);
+        public int GetHashCode(byte[] obj)
+        {
+            int h = 17;
+            foreach (var b in obj) h = h * 31 + b;
+            return h;
+        }
     }
 }
