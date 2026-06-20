@@ -7,6 +7,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
 {
     private readonly IHtmlDomParser _parser;
     private readonly IDomCleaner _cleaner;
+    private readonly IStructuralFingerprinter _fingerprinter;
     private readonly IBlockSegmenter _segmenter;
     private readonly IBlockClassifier _classifier;
     private readonly IMarkdownRenderer _renderer;
@@ -14,12 +15,14 @@ public sealed class LayoutExtractor : ILayoutExtractor
     public LayoutExtractor(
         IHtmlDomParser parser,
         IDomCleaner cleaner,
+        IStructuralFingerprinter fingerprinter,
         IBlockSegmenter segmenter,
         IBlockClassifier classifier,
         IMarkdownRenderer renderer)
     {
         _parser = parser;
         _cleaner = cleaner;
+        _fingerprinter = fingerprinter;
         _segmenter = segmenter;
         _classifier = classifier;
         _renderer = renderer;
@@ -39,6 +42,10 @@ public sealed class LayoutExtractor : ILayoutExtractor
         _cleaner.Clean(doc);
         parseTimer.Stop();
 
+        var fpTimer = Stopwatch.StartNew();
+        var fp = _fingerprinter.Compute(doc);
+        fpTimer.Stop();
+
         var segmented = _segmenter.Segment(doc);
         var blocks = _classifier.Classify(segmented);
 
@@ -48,7 +55,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
 
         total.Stop();
 
-        var result = new ExtractionResult
+        return Task.FromResult(new ExtractionResult
         {
             SourceUri = sourceUri,
             Title = doc.Title,
@@ -58,7 +65,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
             {
                 TemplateId = null,
                 TemplateVersion = 0,
-                FingerprintHex = "",
+                FingerprintHex = fp.Hex,
                 Status = MatchStatus.NovelEphemeral,
                 Similarity = 0,
                 ObservationCount = 0,
@@ -68,13 +75,12 @@ public sealed class LayoutExtractor : ILayoutExtractor
             Stats = new ExtractionStats
             {
                 BlockCount = blocks.Count,
-                FingerprintShingleCount = 0,
+                FingerprintShingleCount = fp.ShingleCount,
                 ParseTime = parseTimer.Elapsed,
-                FingerprintTime = TimeSpan.Zero,
+                FingerprintTime = fpTimer.Elapsed,
                 MatchTime = TimeSpan.Zero,
                 RenderTime = renderTimer.Elapsed
             }
-        };
-        return Task.FromResult(result);
+        });
     }
 }

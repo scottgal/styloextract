@@ -1,6 +1,7 @@
 using FluentAssertions;
 using StyloExtract.Abstractions;
 using StyloExtract.Core;
+using StyloExtract.Fingerprint;
 using StyloExtract.Heuristics;
 using StyloExtract.Html;
 using StyloExtract.Markdown;
@@ -10,12 +11,24 @@ namespace StyloExtract.Core.Tests;
 
 public class LayoutExtractorTests
 {
-    private static ILayoutExtractor Build() => new LayoutExtractor(
-        new AngleSharpHtmlDomParser(),
-        new DomCleaner(),
-        new BlockSegmenter(),
-        HeuristicBlockClassifier.LoadFromEmbeddedResources(),
-        new TypedMarkdownRenderer());
+    private static ILayoutExtractor Build()
+    {
+        var noise = ClassNoiseFilter.LoadFromEmbeddedResource();
+        var sketcher = new MinHashSketcher(128);
+        var fingerprinter = new StructuralFingerprinter(
+            new ShingleGenerator(noise),
+            sketcher,
+            new LshBander(16, 8),
+            new AnchorPathFingerprinter(noise, sketcher),
+            new PqGramExtractor());
+        return new LayoutExtractor(
+            new AngleSharpHtmlDomParser(),
+            new DomCleaner(),
+            fingerprinter,
+            new BlockSegmenter(),
+            HeuristicBlockClassifier.LoadFromEmbeddedResources(),
+            new TypedMarkdownRenderer());
+    }
 
     [Fact]
     public async Task ExtractAsync_ProducesNovelEphemeralResultWithMarkdown()
@@ -31,5 +44,15 @@ public class LayoutExtractorTests
         result.Markdown.Should().NotBeNullOrWhiteSpace();
         result.Blocks.Should().NotBeEmpty();
         result.Blocks.Should().Contain(b => b.Role == BlockRole.MainContent);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_PopulatesFingerprintHex()
+    {
+        var html = "<html><body><main><article><p>" +
+                   new string('x', 300) + "</p></article></main></body></html>";
+        var result = await Build().ExtractAsync(html);
+        result.Match.FingerprintHex.Should().NotBeNullOrEmpty();
+        result.Stats.FingerprintShingleCount.Should().BeGreaterThan(0);
     }
 }
