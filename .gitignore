@@ -1,0 +1,13 @@
+bin/
+obj/
+*.user
+.vs/
+.idea/
+.vscode/
+artifacts/
+TestResults/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+BenchmarkDotNet.Artifacts/
