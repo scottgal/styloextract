@@ -48,7 +48,7 @@ public class HeuristicBlockClassifierTests
     [Fact]
     public void Classify_CookieBanner_AsCookieBanner()
     {
-        const string html = "<html><body><div class='cookie-bar'>We use cookies <button>Accept all cookies</button></div></body></html>";
+        const string html = "<html><body><div class='cookie-bar'><p>We use cookies to improve your experience.</p><button>Accept all cookies</button><a href='/policy'>Learn more</a></div></body></html>";
         var (blocks, _) = Classify(html);
         blocks.Should().Contain(b => b.Role == BlockRole.CookieBanner);
     }
