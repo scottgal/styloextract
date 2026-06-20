@@ -1,0 +1,4 @@
+patterns:
+  - '©\s*\d{4}'
+  - 'copyright\s+\d{4}'
+  - '\(c\)\s*\d{4}'

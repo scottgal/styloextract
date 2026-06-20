@@ -11,7 +11,7 @@ public sealed class BlockSegmenter : IBlockSegmenter
     };
 
     private const int BlockyDivMinTextLength = 80;
-    private const int BlockyDivMinChildCount = 3;
+    private const int BlockyDivMinChildCount = 1;
 
     public IReadOnlyList<IElement> Segment(IDocument document)
     {
