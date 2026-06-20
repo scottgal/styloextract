@@ -4,4 +4,7 @@
     <AssemblyName>StyloExtract.Markdown</AssemblyName>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
+  </ItemGroup>
 </Project>
