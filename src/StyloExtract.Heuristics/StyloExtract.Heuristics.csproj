@@ -4,4 +4,11 @@
     <AssemblyName>StyloExtract.Heuristics</AssemblyName>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
+    <PackageReference Include="YamlDotNet" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Definitions\**\*.yaml" />
+  </ItemGroup>
 </Project>
