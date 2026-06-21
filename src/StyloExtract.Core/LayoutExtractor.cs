@@ -18,6 +18,8 @@ public sealed class LayoutExtractor : ILayoutExtractor
     private readonly IExtractorApplicator _applicator;
     private readonly double _fastPathThreshold;
     private readonly double _slowPathThreshold;
+    private readonly RefitOrchestrator _refit;
+    private readonly ITemplateVersionEventSink _eventSink;
 
     public LayoutExtractor(
         IHtmlDomParser parser,
@@ -31,12 +33,16 @@ public sealed class LayoutExtractor : ILayoutExtractor
         IExtractorInducer inducer,
         IExtractorApplicator applicator,
         double fastPathThreshold,
-        double slowPathThreshold)
+        double slowPathThreshold,
+        RefitOrchestrator refit,
+        ITemplateVersionEventSink eventSink)
     {
         _parser = parser; _cleaner = cleaner; _fingerprinter = fingerprinter;
         _segmenter = segmenter; _classifier = classifier; _renderer = renderer;
         _index = index; _hostHasher = hostHasher; _inducer = inducer; _applicator = applicator;
         _fastPathThreshold = fastPathThreshold; _slowPathThreshold = slowPathThreshold;
+        _refit = refit;
+        _eventSink = eventSink;
     }
 
     public async Task<ExtractionResult> ExtractAsync(
@@ -115,6 +121,42 @@ public sealed class LayoutExtractor : ILayoutExtractor
                 }
             }
         }
+
+        if (templateId is not null && status is MatchStatus.FastPathHit or MatchStatus.SlowPathMatch)
+        {
+            await _index.RecordObservationAsync(templateId.Value, fp, similarity, cancellationToken);
+            var freshBlocks = _classifier.Classify(_segmenter.Segment(doc));
+            var refit = await _refit.MaybeRefitAsync(templateId.Value, fp, freshBlocks, cancellationToken);
+            if (refit.Refitted)
+            {
+                status = MatchStatus.Refit;
+                templateVersion = refit.NewVersion;
+                var diff = TemplateVersionDiffer.Diff(refit.OldExtractor!, refit.NewExtractor!, fp, fp);
+                await _eventSink.OnVersionChangeAsync(new VersionChangeEvent
+                {
+                    TemplateId = templateId.Value,
+                    HostDisplayName = sourceUri?.Host ?? "",
+                    OldVersion = refit.OldVersion,
+                    NewVersion = refit.NewVersion,
+                    DetectedAt = DateTimeOffset.UtcNow,
+                    Diff = diff
+                }, cancellationToken);
+                blocks = freshBlocks;
+            }
+        }
+
+        if (status == MatchStatus.Novel && templateId is not null)
+        {
+            await _eventSink.OnNewTemplateAsync(new NewTemplateEvent
+            {
+                TemplateId = templateId.Value,
+                HostDisplayName = sourceUri?.Host ?? "",
+                DetectedAt = DateTimeOffset.UtcNow,
+                FingerprintHex = fp.Hex,
+                InitialBlockCount = blocks.Count
+            }, cancellationToken);
+        }
+
         matchTimer.Stop();
 
         var renderTimer = Stopwatch.StartNew();

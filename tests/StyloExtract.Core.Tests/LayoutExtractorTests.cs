@@ -39,7 +39,9 @@ public class LayoutExtractorTests
             new ExtractorInducer(),
             new ExtractorApplicator(),
             fastPathThreshold: 0.85,
-            slowPathThreshold: 0.75);
+            slowPathThreshold: 0.75,
+            new RefitOrchestrator(index, new ExtractorInducer(), 0.35, 5, 3),
+            new DefaultNoopVersionEventSink());
         return (extractor, conn);
     }
 

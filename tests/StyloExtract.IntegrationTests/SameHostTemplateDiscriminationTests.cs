@@ -29,7 +29,9 @@ public class SameHostTemplateDiscriminationTests
             new BlockSegmenter(), HeuristicBlockClassifier.LoadFromEmbeddedResources(),
             new TypedMarkdownRenderer(), index, new HostHasher(new byte[32]),
             new ExtractorInducer(), new ExtractorApplicator(),
-            fastPathThreshold: 0.85, slowPathThreshold: 0.75), conn);
+            fastPathThreshold: 0.85, slowPathThreshold: 0.75,
+            new RefitOrchestrator(index, new ExtractorInducer(), 0.35, 5, 3),
+            new DefaultNoopVersionEventSink()), conn);
     }
 
     [Fact]

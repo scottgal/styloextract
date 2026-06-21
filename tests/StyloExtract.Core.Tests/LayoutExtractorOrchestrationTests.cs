@@ -13,6 +13,31 @@ namespace StyloExtract.Core.Tests;
 
 public class LayoutExtractorOrchestrationTests
 {
+    private sealed class CapturingSink : ITemplateVersionEventSink
+    {
+        public List<NewTemplateEvent> NewEvents { get; } = new();
+        public List<VersionChangeEvent> VersionEvents { get; } = new();
+        public ValueTask OnNewTemplateAsync(NewTemplateEvent evt, CancellationToken ct) { NewEvents.Add(evt); return ValueTask.CompletedTask; }
+        public ValueTask OnVersionChangeAsync(VersionChangeEvent evt, CancellationToken ct) { VersionEvents.Add(evt); return ValueTask.CompletedTask; }
+    }
+
+    private static (SqliteTemplateIndex Index, StructuralFingerprinter Fingerprinter) BuildShared()
+    {
+        var noise = ClassNoiseFilter.LoadFromEmbeddedResource();
+        var sketcher = new MinHashSketcher(128);
+        var fingerprinter = new StructuralFingerprinter(
+            new ShingleGenerator(noise),
+            sketcher,
+            new LshBander(16, 8),
+            new AnchorPathFingerprinter(noise, sketcher),
+            new PqGramExtractor());
+        var conn = new SqliteConnection("Data Source=:memory:");
+        conn.Open();
+        SqliteSchema.EnsureCreated(conn);
+        var index = new SqliteTemplateIndex(conn);
+        return (index, fingerprinter);
+    }
+
     private static (ILayoutExtractor Extractor, SqliteConnection Conn) Build()
     {
         var conn = new SqliteConnection("Data Source=:memory:");
@@ -39,7 +64,41 @@ public class LayoutExtractorOrchestrationTests
             new ExtractorInducer(),
             new ExtractorApplicator(),
             fastPathThreshold: 0.85,
-            slowPathThreshold: 0.75);
+            slowPathThreshold: 0.75,
+            new RefitOrchestrator(index, new ExtractorInducer(), 0.35, 5, 3),
+            new DefaultNoopVersionEventSink());
+        return (extractor, conn);
+    }
+
+    private static (ILayoutExtractor Extractor, SqliteConnection Conn) BuildWithSink(ITemplateVersionEventSink sink)
+    {
+        var conn = new SqliteConnection("Data Source=:memory:");
+        conn.Open();
+        SqliteSchema.EnsureCreated(conn);
+        var index = new SqliteTemplateIndex(conn);
+        var noise = ClassNoiseFilter.LoadFromEmbeddedResource();
+        var sketcher = new MinHashSketcher(128);
+        var fingerprinter = new StructuralFingerprinter(
+            new ShingleGenerator(noise),
+            sketcher,
+            new LshBander(16, 8),
+            new AnchorPathFingerprinter(noise, sketcher),
+            new PqGramExtractor());
+        var extractor = new LayoutExtractor(
+            new AngleSharpHtmlDomParser(),
+            new DomCleaner(),
+            fingerprinter,
+            new BlockSegmenter(),
+            HeuristicBlockClassifier.LoadFromEmbeddedResources(),
+            new TypedMarkdownRenderer(),
+            index,
+            new HostHasher(new byte[32]),
+            new ExtractorInducer(),
+            new ExtractorApplicator(),
+            fastPathThreshold: 0.85,
+            slowPathThreshold: 0.75,
+            new RefitOrchestrator(index, new ExtractorInducer(), 0.35, 5, 3),
+            sink);
         return (extractor, conn);
     }
 
@@ -87,6 +146,20 @@ public class LayoutExtractorOrchestrationTests
             result.Match.Status.Should().Be(MatchStatus.NovelEphemeral);
             result.Match.TemplateId.Should().BeNull();
             result.Markdown.Should().NotBeNullOrWhiteSpace();
+        }
+        finally { conn.Dispose(); }
+    }
+
+    [Fact]
+    public async Task ExtractAsync_NovelTemplate_FiresOnNewTemplate()
+    {
+        var sink = new CapturingSink();
+        var (e, conn) = BuildWithSink(sink);
+        try
+        {
+            const string html = "<html><body><main><article><p>hello</p></article></main></body></html>";
+            await e.ExtractAsync(html, new Uri("https://example.com/x"));
+            sink.NewEvents.Should().ContainSingle();
         }
         finally { conn.Dispose(); }
     }
