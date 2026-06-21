@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -12,6 +13,7 @@ namespace StyloExtract.AspNetCore.Markdown;
 /// <summary>
 /// Per-action or per-controller result filter that converts an HTML response to Markdown
 /// when the client sends <c>Accept: text/markdown</c>. Works without the global middleware.
+/// Supports the query-string Accept override and optional IDistributedCache caching.
 /// </summary>
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class, AllowMultiple = false)]
 public sealed class NegotiateMarkdownAttribute : Attribute, IAsyncResultFilter
@@ -44,73 +46,147 @@ public sealed class NegotiateMarkdownAttribute : Attribute, IAsyncResultFilter
 
     public async Task OnResultExecutionAsync(ResultExecutingContext context, ResultExecutionDelegate next)
     {
-        var accept = context.HttpContext.Request.Headers.Accept.ToString();
+        var sp = context.HttpContext.RequestServices;
+        var opts = sp.GetRequiredService<IOptions<MarkdownNegotiationOptions>>().Value;
 
-        if (AcceptHeaderParser.GetQuality(accept, "text/markdown") <= 0.0)
+        // Resolve effective Accept (query override wins over real Accept header).
+        var effectiveAccept = MarkdownCacheHelper.GetEffectiveAccept(context.HttpContext, opts);
+
+        if (AcceptHeaderParser.GetQuality(effectiveAccept, "text/markdown") <= 0.0)
         {
             await next();
             return;
         }
 
-        var sp = context.HttpContext.RequestServices;
         var extractor = sp.GetRequiredService<ILayoutExtractor>();
-        var opts = sp.GetRequiredService<IOptions<MarkdownNegotiationOptions>>().Value;
+        var cache = sp.GetRequiredService<IDistributedCache>();
         var logger = sp.GetService<ILogger<NegotiateMarkdownAttribute>>();
 
-        var originalBody = context.HttpContext.Response.Body;
-        var buffer = new MemoryStream();
-        context.HttpContext.Response.Body = buffer;
+        var profile = _profile ?? opts.DefaultProfile;
 
-        try
+        // Try cache hit before executing the action result.
+        if (opts.Cache.Enabled)
         {
-            await next();
+            var cacheKey = MarkdownCacheHelper.ComputeCacheKey(context.HttpContext, opts, profile);
 
-            var contentType = context.HttpContext.Response.ContentType ?? string.Empty;
-            var bufferLen = buffer.Length;
-
-            if (contentType.StartsWith("text/html", StringComparison.OrdinalIgnoreCase)
-                && bufferLen > 0
-                && bufferLen <= opts.MaxBodyBytes)
+            if (await MarkdownCacheHelper.TryServeCachedAsync(
+                    context.HttpContext, cache, cacheKey, opts.Cache, opts.EmitVaryHeader, context.HttpContext.RequestAborted))
             {
-                buffer.Seek(0, SeekOrigin.Begin);
-                var encoding = DetectEncoding(contentType);
-                var html = await new StreamReader(buffer, encoding).ReadToEndAsync(context.HttpContext.RequestAborted);
-
-                var profile = _profile ?? opts.DefaultProfile;
-                var sourceUri = new Uri(context.HttpContext.Request.GetDisplayUrl());
-
-                try
-                {
-                    var result = await extractor.ExtractAsync(
-                        html,
-                        sourceUri,
-                        new ExtractionOptions { Profile = profile },
-                        context.HttpContext.RequestAborted);
-
-                    var markdownBytes = Encoding.UTF8.GetBytes(result.Markdown);
-
-                    context.HttpContext.Response.ContentType = "text/markdown; charset=utf-8";
-                    context.HttpContext.Response.ContentLength = markdownBytes.Length;
-
-                    if (opts.EmitVaryHeader)
-                        context.HttpContext.Response.Headers.Vary = "Accept";
-
-                    await originalBody.WriteAsync(markdownBytes, context.HttpContext.RequestAborted);
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogWarning(ex, "NegotiateMarkdown: extraction failed; returning original HTML.");
-                }
+                // Mark the result as cancelled so MVC does not execute the action result.
+                context.Cancel = true;
+                return;
             }
 
-            buffer.Seek(0, SeekOrigin.Begin);
-            await buffer.CopyToAsync(originalBody, context.HttpContext.RequestAborted);
+            // Cache miss: execute into a buffer.
+            var originalBody = context.HttpContext.Response.Body;
+            var buffer = new MemoryStream();
+            context.HttpContext.Response.Body = buffer;
+
+            try
+            {
+                await next();
+
+                var contentType = context.HttpContext.Response.ContentType ?? string.Empty;
+                var bufferLen = buffer.Length;
+
+                if (contentType.StartsWith("text/html", StringComparison.OrdinalIgnoreCase)
+                    && bufferLen > 0
+                    && bufferLen <= opts.MaxBodyBytes)
+                {
+                    buffer.Seek(0, SeekOrigin.Begin);
+                    var encoding = DetectEncoding(contentType);
+                    var html = await new StreamReader(buffer, encoding).ReadToEndAsync(context.HttpContext.RequestAborted);
+
+                    var sourceUri = new Uri(context.HttpContext.Request.GetDisplayUrl());
+
+                    try
+                    {
+                        var result = await extractor.ExtractAsync(
+                            html, sourceUri, new ExtractionOptions { Profile = profile }, context.HttpContext.RequestAborted);
+
+                        var markdownBytes = Encoding.UTF8.GetBytes(result.Markdown);
+
+                        context.HttpContext.Response.Body = originalBody;
+                        await MarkdownCacheHelper.WriteAndCacheAsync(
+                            context.HttpContext, cache, cacheKey, markdownBytes,
+                            opts.Cache, opts.EmitVaryHeader, context.HttpContext.RequestAborted);
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogWarning(ex, "NegotiateMarkdown: extraction failed; returning original HTML.");
+                    }
+                }
+
+                buffer.Seek(0, SeekOrigin.Begin);
+                context.HttpContext.Response.Body = originalBody;
+                await buffer.CopyToAsync(originalBody, context.HttpContext.RequestAborted);
+            }
+            finally
+            {
+                context.HttpContext.Response.Body = originalBody;
+                await buffer.DisposeAsync();
+            }
+
+            return;
         }
-        finally
+
+        // Non-cached path.
         {
-            context.HttpContext.Response.Body = originalBody;
-            await buffer.DisposeAsync();
+            var originalBody = context.HttpContext.Response.Body;
+            var buffer = new MemoryStream();
+            context.HttpContext.Response.Body = buffer;
+
+            try
+            {
+                await next();
+
+                var contentType = context.HttpContext.Response.ContentType ?? string.Empty;
+                var bufferLen = buffer.Length;
+
+                if (contentType.StartsWith("text/html", StringComparison.OrdinalIgnoreCase)
+                    && bufferLen > 0
+                    && bufferLen <= opts.MaxBodyBytes)
+                {
+                    buffer.Seek(0, SeekOrigin.Begin);
+                    var encoding = DetectEncoding(contentType);
+                    var html = await new StreamReader(buffer, encoding).ReadToEndAsync(context.HttpContext.RequestAborted);
+
+                    var sourceUri = new Uri(context.HttpContext.Request.GetDisplayUrl());
+
+                    try
+                    {
+                        var result = await extractor.ExtractAsync(
+                            html,
+                            sourceUri,
+                            new ExtractionOptions { Profile = profile },
+                            context.HttpContext.RequestAborted);
+
+                        var markdownBytes = Encoding.UTF8.GetBytes(result.Markdown);
+
+                        context.HttpContext.Response.ContentType = "text/markdown; charset=utf-8";
+                        context.HttpContext.Response.ContentLength = markdownBytes.Length;
+
+                        if (opts.EmitVaryHeader)
+                            context.HttpContext.Response.Headers.Vary = "Accept";
+
+                        await originalBody.WriteAsync(markdownBytes, context.HttpContext.RequestAborted);
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogWarning(ex, "NegotiateMarkdown: extraction failed; returning original HTML.");
+                    }
+                }
+
+                buffer.Seek(0, SeekOrigin.Begin);
+                await buffer.CopyToAsync(originalBody, context.HttpContext.RequestAborted);
+            }
+            finally
+            {
+                context.HttpContext.Response.Body = originalBody;
+                await buffer.DisposeAsync();
+            }
         }
     }
 
