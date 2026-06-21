@@ -18,6 +18,9 @@ internal static class BlockRoleRenderers
         _ => MarkdownEscaper.Escape(block.Text)
     };
 
-    private static string RenderForm(ExtractedBlock block) =>
-        "Form: " + (block.Text.Length > 80 ? block.Text[..80] + "…" : block.Text);
+    private static string RenderForm(ExtractedBlock block)
+    {
+        if (block.Text.Trim().Length == 0) return string.Empty;
+        return "Form: " + (block.Text.Length > 80 ? block.Text[..80] + "..." : block.Text);
+    }
 }
