@@ -15,5 +15,7 @@
     <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />
     <PackageVersion Include="FluentAssertions" Version="6.12.1" />
     <PackageVersion Include="Microsoft.Playwright" Version="1.60.0" />
+    <PackageVersion Include="Mostlylucid.Ephemeral" Version="2.6.4" />
+    <PackageVersion Include="Mostlylucid.Ephemeral.Sqlite.SingleWriter" Version="2.6.4" />
   </ItemGroup>
 </Project>

@@ -10,7 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\StyloExtract.Templates\StyloExtract.Templates.csproj" />
     <ProjectReference Include="..\..\src\StyloExtract.Heuristics\StyloExtract.Heuristics.csproj" />
-    <ProjectReference Include="..\..\..\mostlylucid.atoms\mostlylucid.ephemeral\src\mostlylucid.ephemeral\mostlylucid.ephemeral.csproj" />
+    <PackageReference Include="Mostlylucid.Ephemeral" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />

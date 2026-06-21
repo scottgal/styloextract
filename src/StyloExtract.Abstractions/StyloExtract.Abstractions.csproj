@@ -9,6 +9,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="AngleSharp" />
-    <ProjectReference Include="..\..\..\mostlylucid.atoms\mostlylucid.ephemeral\src\mostlylucid.ephemeral\mostlylucid.ephemeral.csproj" />
+    <PackageReference Include="Mostlylucid.Ephemeral" />
   </ItemGroup>
 </Project>
