@@ -4,7 +4,7 @@ using StyloExtract.Abstractions;
 
 namespace StyloExtract.Cli;
 
-public sealed class MonitorEventSink : ITemplateVersionEventSink
+public sealed class MonitorEventSink : ITemplateVersionEventSink, IDisposable
 {
     private readonly TextWriter _out;
     private readonly HttpClient? _webhook;
@@ -40,5 +40,10 @@ public sealed class MonitorEventSink : ITemplateVersionEventSink
             try { await _webhook.PostAsJsonAsync(_webhookUrl, envelope, ct); }
             catch (Exception ex) { await Console.Error.WriteLineAsync($"webhook failed: {ex.Message}"); }
         }
+    }
+
+    public void Dispose()
+    {
+        _webhook?.Dispose();
     }
 }

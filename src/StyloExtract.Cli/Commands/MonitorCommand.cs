@@ -38,7 +38,7 @@ public static class MonitorCommand
                 .ToList();
 
             var services = new ServiceCollection();
-            var sink = new MonitorEventSink(Console.Out, webhook, pretty);
+            using var sink = new MonitorEventSink(Console.Out, webhook, pretty);
             services.AddSingleton<ITemplateVersionEventSink>(sink);
             services.AddStyloExtract(o =>
             {
