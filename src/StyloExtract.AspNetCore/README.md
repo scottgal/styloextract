@@ -79,27 +79,40 @@ public interface IResponsePolicy
 
 ### Setup
 
+Recommended path (new in v1.2): use the fluent `AddStyloExtract(Action<ResponsePolicyBuilder>)` overload.
+
 ```csharp
-// 1. Register policies by name.
+// 1. Register the core stack and Markdown negotiation.
 builder.Services.AddStyloExtract(o => o.StorePath = "styloextract.db");
 builder.Services.AddStyloExtractMarkdownNegotiation(o => { ... });
 
+// 2. Register named policies via the fluent builder (recommended).
+builder.Services.AddStyloExtract(b =>
+{
+    b.AddPolicy("md",    p => p.NegotiateMarkdown());
+    b.AddPolicy("cache", p => p.CacheHints(o =>
+    {
+        o.MaxAge = TimeSpan.FromMinutes(5);
+        o.EmitETag = true;
+        o.HonorIfNoneMatch = true;
+    }));
+});
+
+// 3. Wire the middleware (after UseRouting, UseAuthentication, UseAuthorization).
+app.UseRouting();
+app.UseStyloExtract();
+```
+
+If you need access to the service provider to construct policies manually, use the factory overload instead:
+
+```csharp
 builder.Services.AddSingleton<ResponsePolicyOptions>(sp =>
 {
     var opts = new ResponsePolicyOptions();
     opts.AddPolicy("md", sp.GetRequiredService<MarkdownNegotiationPolicy>());
-    opts.AddPolicy("cache", new CacheHintPolicy(new CacheHintOptions
-    {
-        MaxAge = TimeSpan.FromMinutes(5),
-        EmitETag = true,
-        HonorIfNoneMatch = true,
-    }));
+    opts.AddPolicy("cache", new CacheHintPolicy(new CacheHintOptions { MaxAge = TimeSpan.FromMinutes(5) }));
     return opts;
 });
-
-// 2. Wire the middleware (after UseRouting, UseAuthentication, UseAuthorization).
-app.UseRouting();
-app.UseStyloExtract();
 ```
 
 ### Attaching policies to endpoints
@@ -122,10 +135,11 @@ Policies run in declaration order. Each policy's `OnProducedAsync` sees the body
 
 ### Backward compat (v1.1 paths still work)
 
-The framework is purely additive. All v1.1.0 public APIs remain unchanged:
+All v1.1 entry points (`UseStyloExtractMarkdownNegotiation`, `[NegotiateMarkdown]`, `WithMarkdownNegotiation`, `StyloExtractResults.HtmlOrMarkdown`) remain unchanged and continue to work bit-compatibly. The new `MarkdownNegotiationPolicy` provides equivalent functionality on the `IResponsePolicy` pipeline; new code should prefer it via `services.AddStyloExtract(b => b.AddPolicy("md", p => p.NegotiateMarkdown(...)))` and `endpoint.WithResponsePolicy("md")`.
 
-- `UseStyloExtractMarkdownNegotiation()` and `[NegotiateMarkdown]` and `WithMarkdownNegotiation()` are shims onto the same `MarkdownNegotiationPolicy` and continue to work.
-- `StyloExtractResults.HtmlOrMarkdown(...)` is unchanged.
+The framework is purely additive:
+
+- All v1.1.0 public API signatures are unchanged.
 - Existing `AddStyloExtract(Action<StyloExtractOptions>?)` signature is unchanged.
 
 ## Markdown content negotiation

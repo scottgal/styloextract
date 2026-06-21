@@ -27,21 +27,18 @@ builder.Services.AddStyloExtractMarkdownNegotiation(o =>
     o.Cache.EmitCacheControlHeader = false; // set to true to emit Cache-Control: public
 });
 
-// Register the named policy registry for the new UseStyloExtract() pipeline.
-// "md" resolves to MarkdownNegotiationPolicy; "cache" resolves to CacheHintPolicy.
+// Register named policies via the fluent builder (v1.2 recommended path).
 // AddStyloExtractMarkdownNegotiation() must be called first so MarkdownNegotiationPolicy is in DI.
-builder.Services.AddSingleton<ResponsePolicyOptions>(sp =>
+builder.Services.AddStyloExtract(b =>
 {
-    var opts = new ResponsePolicyOptions();
-    opts.AddPolicy("md", sp.GetRequiredService<MarkdownNegotiationPolicy>());
-    opts.AddPolicy("cache", new CacheHintPolicy(new CacheHintOptions
+    b.AddPolicy("md", p => p.NegotiateMarkdown());
+    b.AddPolicy("cache", p => p.CacheHints(o =>
     {
-        MaxAge = TimeSpan.FromMinutes(5),
-        Public = true,
-        EmitETag = true,
-        HonorIfNoneMatch = true,
+        o.MaxAge = TimeSpan.FromMinutes(5);
+        o.Public = true;
+        o.EmitETag = true;
+        o.HonorIfNoneMatch = true;
     }));
-    return opts;
 });
 
 builder.Services.AddControllers();
