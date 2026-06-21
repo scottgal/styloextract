@@ -70,7 +70,7 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
                 Confidence = confidence,
                 Text = element.TextContent.Trim(),
                 Markdown = "",
-                XPath = ComputeXPath(element),
+                XPath = XPathBuilder.ComputeXPath(element),
                 CssSelector = null,
                 TextLength = element.TextContent.Length,
                 LinkDensity = ComputeLinkDensity(element),
@@ -183,25 +183,6 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         var current = element.ParentElement;
         while (current is not null) { depth++; current = current.ParentElement; }
         return depth;
-    }
-
-    private static string ComputeXPath(IElement element)
-    {
-        var parts = new Stack<string>();
-        var current = (IElement?)element;
-        while (current is not null && current.ParentElement is not null)
-        {
-            var idx = 1;
-            var sibling = current.PreviousElementSibling;
-            while (sibling is not null)
-            {
-                if (sibling.TagName == current.TagName) idx++;
-                sibling = sibling.PreviousElementSibling;
-            }
-            parts.Push($"{current.TagName.ToLowerInvariant()}[{idx}]");
-            current = current.ParentElement;
-        }
-        return "/" + string.Join("/", parts);
     }
 
     private sealed class PhraseList { public List<string> Phrases { get; set; } = new(); }

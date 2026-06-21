@@ -1,10 +1,18 @@
 using AngleSharp.Dom;
+using Microsoft.Extensions.Logging;
 using StyloExtract.Abstractions;
 
 namespace StyloExtract.Heuristics;
 
 public sealed class ExtractorApplicator : IExtractorApplicator
 {
+    private readonly ILogger<ExtractorApplicator>? _logger;
+
+    public ExtractorApplicator(ILogger<ExtractorApplicator>? logger = null)
+    {
+        _logger = logger;
+    }
+
     public IReadOnlyList<ExtractedBlock> Apply(IDocument document, LearnedExtractor extractor)
     {
         var result = new List<ExtractedBlock>();
@@ -18,9 +26,10 @@ public sealed class ExtractorApplicator : IExtractorApplicator
                 {
                     matches = document.QuerySelectorAll(selector).ToArray();
                 }
-                catch
+                catch (Exception ex)
                 {
-                    continue; // bad selector — skip
+                    _logger?.LogWarning(ex, "ExtractorApplicator: bad CSS selector {Selector} on rule {RuleId}; skipping", selector, rule.RuleId);
+                    continue;
                 }
                 foreach (var element in matches)
                 {
@@ -30,8 +39,8 @@ public sealed class ExtractorApplicator : IExtractorApplicator
                         Role = rule.Role,
                         Confidence = rule.MeanConfidence,
                         Text = element.TextContent.Trim(),
-                        Markdown = "",
-                        XPath = "",
+                        Markdown = "", // downstream renderer fills this
+                        XPath = XPathBuilder.ComputeXPath(element),
                         CssSelector = selector,
                         TextLength = element.TextContent.Length,
                         LinkDensity = LinkDensityOf(element),

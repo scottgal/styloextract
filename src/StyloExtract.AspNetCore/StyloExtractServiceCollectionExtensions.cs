@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Mostlylucid.Ephemeral;
 using StyloExtract.Abstractions;
 using StyloExtract.Core;
@@ -26,7 +27,8 @@ public static class StyloExtractServiceCollectionExtensions
         services.AddSingleton<IBlockClassifier>(_ => HeuristicBlockClassifier.LoadFromEmbeddedResources());
         services.AddSingleton<IMarkdownRenderer, TypedMarkdownRenderer>();
         services.AddSingleton<IExtractorInducer, ExtractorInducer>();
-        services.AddSingleton<IExtractorApplicator, ExtractorApplicator>();
+        services.AddSingleton<IExtractorApplicator>(sp =>
+            new ExtractorApplicator(sp.GetService<ILogger<ExtractorApplicator>>()));
 
         services.AddSingleton<MinHashSketcher>(sp => new MinHashSketcher(options.Fingerprint.MinHashSize));
         services.AddSingleton<ShingleGenerator>(sp => new ShingleGenerator(sp.GetRequiredService<ClassNoiseFilter>(), options.Fingerprint.ShingleWidth));
