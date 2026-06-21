@@ -21,24 +21,6 @@ public class LayoutExtractorOrchestrationTests
         public ValueTask OnVersionChangeAsync(VersionChangeEvent evt, CancellationToken ct) { VersionEvents.Add(evt); return ValueTask.CompletedTask; }
     }
 
-    private static (SqliteTemplateIndex Index, StructuralFingerprinter Fingerprinter) BuildShared()
-    {
-        var noise = ClassNoiseFilter.LoadFromEmbeddedResource();
-        var sketcher = new MinHashSketcher(128);
-        var fingerprinter = new StructuralFingerprinter(
-            new ShingleGenerator(noise),
-            sketcher,
-            new LshBander(16, 8),
-            new AnchorPathFingerprinter(noise, sketcher),
-            new PqGramExtractor());
-        var cs = $"Data Source=file:testdb-{Guid.NewGuid():N}?mode=memory&cache=shared&uri=true";
-        var conn = new SqliteConnection(cs);
-        conn.Open();
-        SqliteSchema.EnsureCreated(conn);
-        var index = new SqliteTemplateIndex(cs);
-        return (index, fingerprinter);
-    }
-
     private static (ILayoutExtractor Extractor, SqliteConnection Conn) Build()
     {
         var cs = $"Data Source=file:testdb-{Guid.NewGuid():N}?mode=memory&cache=shared&uri=true";

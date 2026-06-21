@@ -9,6 +9,11 @@
     <NoWarn>$(NoWarn);NU1903</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Grant test project access to internal members (e.g. BumpVersionAsync, PromoteInMemoryConnectionString).
+         InternalsVisibleTo via csproj avoids a separate AssemblyInfo.cs file. -->
+    <InternalsVisibleTo Include="StyloExtract.Templates.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
     <ProjectReference Include="..\StyloExtract.Fingerprint\StyloExtract.Fingerprint.csproj" />
     <ProjectReference Include="..\..\..\mostlylucid.atoms\mostlylucid.ephemeral\src\mostlylucid.ephemeral.sqlite.singlewriter\mostlylucid.ephemeral.sqlite.singlewriter.csproj" />
