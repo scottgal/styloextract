@@ -12,6 +12,7 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
@@ -21,5 +22,6 @@
     <ProjectReference Include="..\..\src\StyloExtract.Html\StyloExtract.Html.csproj" />
     <ProjectReference Include="..\..\src\StyloExtract.Markdown\StyloExtract.Markdown.csproj" />
     <ProjectReference Include="..\..\src\StyloExtract.Templates\StyloExtract.Templates.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.AspNetCore\StyloExtract.AspNetCore.csproj" />
   </ItemGroup>
 </Project>

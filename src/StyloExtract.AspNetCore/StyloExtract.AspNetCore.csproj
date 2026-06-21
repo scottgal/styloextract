@@ -4,4 +4,14 @@
     <AssemblyName>StyloExtract.AspNetCore</AssemblyName>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <ProjectReference Include="..\StyloExtract.Core\StyloExtract.Core.csproj" />
+    <ProjectReference Include="..\StyloExtract.Templates\StyloExtract.Templates.csproj" />
+    <ProjectReference Include="..\StyloExtract.Heuristics\StyloExtract.Heuristics.csproj" />
+    <ProjectReference Include="..\StyloExtract.Html\StyloExtract.Html.csproj" />
+    <ProjectReference Include="..\StyloExtract.Fingerprint\StyloExtract.Fingerprint.csproj" />
+    <ProjectReference Include="..\StyloExtract.Markdown\StyloExtract.Markdown.csproj" />
+  </ItemGroup>
 </Project>
