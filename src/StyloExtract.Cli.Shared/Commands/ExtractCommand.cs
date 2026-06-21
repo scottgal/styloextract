@@ -15,6 +15,7 @@ public static class ExtractCommand
         var profileOpt = new Option<ExtractionProfile>("--profile") { DefaultValueFactory = _ => ExtractionProfile.RagFull };
         var storeOpt = new Option<string>("--store") { DefaultValueFactory = _ => "styloextract-templates.db" };
         var keyOpt = new Option<string?>("--host-hash-key") { DefaultValueFactory = _ => null };
+        var hostOpt = new Option<string?>("--host-override") { Description = "Synthetic host name for the template store when extracting a file (default: derived from the file path)." };
 
         var cmd = new Command("extract", "Extract a single page.");
         cmd.Add(source);
@@ -22,6 +23,7 @@ public static class ExtractCommand
         cmd.Add(profileOpt);
         cmd.Add(storeOpt);
         cmd.Add(keyOpt);
+        cmd.Add(hostOpt);
         cmd.SetAction(async (ParseResult pr) =>
         {
             var src = pr.GetValue(source)!;
@@ -29,6 +31,7 @@ public static class ExtractCommand
             var profile = pr.GetValue(profileOpt);
             var store = pr.GetValue(storeOpt)!;
             var key = pr.GetValue(keyOpt);
+            var hostOverride = pr.GetValue(hostOpt);
 
             var services = new ServiceCollection();
             services.AddStyloExtract(o =>
@@ -46,7 +49,15 @@ public static class ExtractCommand
                 return 1;
             }
 
-            var result = await extractor.ExtractAsync(html, uri, new ExtractionOptions { Profile = profile });
+            // For file inputs, sourceUri is null and the host hash defaults to "".
+            // All file-based extractions would then share one host bucket, producing
+            // cross-template false positives in slow-path cosine matching. Derive a
+            // synthetic host from the file path (or the --host-override flag if provided).
+            var resolvedHost = hostOverride
+                ?? (uri is null ? "file:" + Path.GetFileNameWithoutExtension(src) : null);
+
+            var result = await extractor.ExtractAsync(html, uri,
+                new ExtractionOptions { Profile = profile, HostOverride = resolvedHost });
 
             if (useJson)
             {

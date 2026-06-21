@@ -102,6 +102,40 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
             }
         }
 
+        // Step 3b: Relative quality gate for MainContent blocks.
+        // When a high-scoring MainContent/Article block is present, suppress
+        // low-scoring MainContent blocks that are likely navigation wrappers or
+        // boilerplate mistakenly classified as content (e.g. Wikipedia's sidebar
+        // menus, which have ~450 chars at ~0.45 link density and score ~86, while
+        // the actual article wrapper scores ~18000+).
+        // Only applies when there is at least one accepted content block scoring
+        // above the "high-content" threshold. Content-role blocks scoring below 1%
+        // of the best content score are demoted to Boilerplate so the renderer drops them.
+        var bestContentScore = candidates
+            .Where(c => c.Role is BlockRole.MainContent or BlockRole.Article)
+            .Select(c => c.Score)
+            .DefaultIfEmpty(0)
+            .Max();
+        const double ContentQualityRatio = 0.05; // 5% of the best content score
+        const double HighContentThreshold = 1000.0; // only activate gate when real content exists
+        if (bestContentScore >= HighContentThreshold)
+        {
+            var scoreMap = new Dictionary<IElement, double>(ReferenceEqualityComparer.Instance);
+            foreach (var (el, _, _, sc) in candidates) scoreMap[el] = sc;
+            for (int i = 0; i < accepted.Count; i++)
+            {
+                var (el, role, conf) = accepted[i];
+                if (role is BlockRole.MainContent or BlockRole.Article)
+                {
+                    var sc = scoreMap.TryGetValue(el, out var s) ? s : 0;
+                    if (sc < bestContentScore * ContentQualityRatio)
+                    {
+                        accepted[i] = (el, BlockRole.Boilerplate, conf);
+                    }
+                }
+            }
+        }
+
         // Step 4: Re-sort accepted set by DOM order so the renderer emits in reading order.
         // Use the original element list index as a stable DOM-order proxy.
         var indexMap = new Dictionary<IElement, int>(ReferenceEqualityComparer.Instance);
@@ -230,7 +264,16 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
 
         bool TextMatchesAny(Regex[] patterns) => patterns.Any(r => r.IsMatch(text));
 
-        if (tag is "nav" || IdOrClassMatches(element, _navHints))
+        // Semantic <nav> tags are always navigation regardless of link density.
+        // A TOC or sidebar <nav> with LD=0.59 is still navigation, not content.
+        // For class/id hint matches on non-nav tags, keep the LD > 0.7 guard to
+        // avoid false positives on content divs with nav-sounding class names.
+        if (tag is "nav")
+        {
+            var isPrimaryNav = HasAncestorTag(element, "header") || GetDepth(element) <= 3;
+            return (isPrimaryNav ? BlockRole.PrimaryNavigation : BlockRole.SecondaryNavigation, 0.85);
+        }
+        if (IdOrClassMatches(element, _navHints))
         {
             if (linkDensity > 0.7)
             {
