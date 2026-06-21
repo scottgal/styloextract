@@ -304,7 +304,19 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
             return (BlockRole.Advertisement, 0.8);
         }
 
-        return text.Length > 200 ? (BlockRole.MainContent, 0.5) : (BlockRole.Boilerplate, 0.3);
+        var finalRole = text.Length > 200 ? BlockRole.MainContent : BlockRole.Boilerplate;
+        var finalConfidence = text.Length > 200 ? 0.5 : 0.3;
+
+        // Hard cap: a block that is overwhelmingly links cannot be MainContent regardless of
+        // how much total text it has. Wikipedia's left sidebar is the canonical example.
+        // Demote MainContent/Article role to PrimaryNavigation if link density >= 0.6.
+        if (linkDensity >= 0.6 && (finalRole == BlockRole.MainContent || finalRole == BlockRole.Article))
+        {
+            var depth = GetDepth(element);
+            return (depth <= 3 ? BlockRole.PrimaryNavigation : BlockRole.SecondaryNavigation, 0.85);
+        }
+
+        return (finalRole, finalConfidence);
     }
 
     private static double ComputeLinkDensity(IElement element)
