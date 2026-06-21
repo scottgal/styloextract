@@ -1,0 +1,86 @@
+name: Publish to NuGet
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore stylobot-extract.sln
+
+      - name: Build (Release)
+        run: dotnet build stylobot-extract.sln -c Release --no-restore
+
+      - name: Test
+        run: dotnet test stylobot-extract.sln -c Release --no-build --logger "trx;LogFileName=test-results.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: '**/test-results.trx'
+
+      - name: Pack all publishable packages
+        run: |
+          mkdir -p artifacts
+          for proj in \
+            src/StyloExtract.Abstractions \
+            src/StyloExtract.Html \
+            src/StyloExtract.Fingerprint \
+            src/StyloExtract.Templates \
+            src/StyloExtract.Heuristics \
+            src/StyloExtract.Markdown \
+            src/StyloExtract.Core \
+            src/StyloExtract.AspNetCore \
+            src/StyloExtract.Playwright; do
+            echo "=== Packing $proj ==="
+            dotnet pack "$proj" -c Release --no-build -o artifacts
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nupkgs
+          path: artifacts/*.nupkg
+
+      # NuGet trusted publishing (OIDC):
+      # On NuGet.org, configure a trusted publisher scoped to:
+      #   Repository owner: mostlylucid
+      #   Repository name:  stylobot-extract
+      #   Workflow:         .github/workflows/publish.yml
+      # Once configured, the GitHub Actions OIDC token is exchanged automatically
+      # for a short-lived API key — no stored secret required.
+      #
+      # TODO: When the dotnet/nuget-publish-action ships with first-class OIDC
+      # support, replace the dotnet nuget push step below with that action.
+      # Tracking: https://github.com/NuGet/Home/issues/12572
+      #
+      # Until then, this step uses a stored NUGET_API_KEY secret as a fallback.
+      # To switch to OIDC-only: remove the --api-key flag and configure trusted
+      # publishing on NuGet.org as described above.
+      - name: Push to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          dotnet nuget push artifacts/*.nupkg \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "$NUGET_API_KEY" \
+            --skip-duplicate
