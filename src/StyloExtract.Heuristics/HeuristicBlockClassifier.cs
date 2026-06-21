@@ -143,7 +143,13 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
     {
         var textLength = element.TextContent.Trim().Length;
         var linkDensity = ComputeLinkDensity(element);
-        var baseScore = textLength * (1.0 - linkDensity);
+
+        // Squared link-density penalty: high-link-density blocks (navigation, listings, related
+        // links) should not outscore content blocks just because their wrapper has more total
+        // text. Sidebar 10000 chars at 0.75 link density gives 625; article body 2500 chars at
+        // 0.05 link density gives 2255. Without the square, sidebar wins (2500 vs 2375).
+        var linkPenalty = (1.0 - linkDensity);
+        var baseScore = textLength * linkPenalty * linkPenalty;
 
         // Role-based bonus: strongly prefer content-bearing roles so that when
         // overlapping elements compete (e.g. <main> vs its wrapper <div>),
