@@ -21,15 +21,22 @@ public sealed class TypedMarkdownRenderer : IMarkdownRenderer
         return sb.ToString().TrimEnd() + "\n";
     }
 
-    private static bool ShouldEmit(ExtractedBlock b, ExtractionProfile p) => p switch
+    private static bool ShouldEmit(ExtractedBlock b, ExtractionProfile p)
     {
-        ExtractionProfile.MainContentOnly => b.Role is BlockRole.MainContent or BlockRole.Article
-            or BlockRole.Heading or BlockRole.Summary or BlockRole.Table or BlockRole.CodeBlock,
-        ExtractionProfile.RagFull => b.Role is not (BlockRole.Footer or BlockRole.Header or BlockRole.Advertisement
-            or BlockRole.CookieBanner or BlockRole.Boilerplate or BlockRole.Unknown),
-        ExtractionProfile.AgentNavigation => b.Role is BlockRole.PrimaryNavigation or BlockRole.SecondaryNavigation
-            or BlockRole.Breadcrumb or BlockRole.Form,
-        ExtractionProfile.DebugFull => true,
-        _ => true
-    };
+        if (p == ExtractionProfile.DebugFull) return true;
+
+        // Quality gate: drop blocks with no meaningful content unless they carry links.
+        if (b.Text.Trim().Length < 40 && b.Links.Count == 0) return false;
+
+        return p switch
+        {
+            ExtractionProfile.MainContentOnly => b.Role is BlockRole.MainContent or BlockRole.Article
+                or BlockRole.Heading or BlockRole.Summary or BlockRole.Table or BlockRole.CodeBlock,
+            ExtractionProfile.RagFull => b.Role is not (BlockRole.Footer or BlockRole.Header or BlockRole.Advertisement
+                or BlockRole.CookieBanner or BlockRole.Boilerplate or BlockRole.Unknown),
+            ExtractionProfile.AgentNavigation => b.Role is BlockRole.PrimaryNavigation or BlockRole.SecondaryNavigation
+                or BlockRole.Breadcrumb or BlockRole.Form,
+            _ => true
+        };
+    }
 }
