@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging;
 
 namespace StyloExtract.AspNetCore.Policies;
@@ -44,17 +43,35 @@ public sealed class ResponsePolicyMiddleware
         foreach (var policy in policies)
             await policy.OnRequestAsync(policyContext);
 
-        // Phase 2: if short-circuited, run OnServeAsync and return without downstream.
-        if (policyContext.ShouldShortCircuit)
+        // Phase 2: OnServeAsync for all policies unconditionally.
+        // Each policy checks whether it has cached content to serve. If any policy sets
+        // State = ServeFromCache (or the legacy ShouldShortCircuit) the middleware serves
+        // whatever the policy wrote to the response (or RewrittenBody) and skips downstream.
+        foreach (var policy in policies)
+            await policy.OnServeAsync(policyContext);
+
+        if (policyContext.State != PolicyChainState.Continue)
         {
-            foreach (var policy in policies)
-                await policy.OnServeAsync(policyContext);
+            // A policy either served from cache or declared a terminal status.
+            // If it populated RewrittenBody, write that to the response stream.
+            if (policyContext.RewrittenBody.HasValue)
+            {
+                var servedBody = policyContext.RewrittenBody.Value;
+                if (policyContext.RewrittenContentType is not null)
+                    context.Response.ContentType = policyContext.RewrittenContentType;
+
+                // RFC 7232 §4.1: do not set Content-Length on a 304 response.
+                if (context.Response.StatusCode != 304)
+                    context.Response.ContentLength = servedBody.Length;
+
+                await context.Response.Body.WriteAsync(servedBody, context.RequestAborted);
+            }
             return;
         }
 
         // Phase 3 setup: buffer the downstream response.
         var originalBody = context.Response.Body;
-        var buffer = new MemoryStream();
+        using var buffer = new MemoryStream();
         context.Response.Body = buffer;
 
         try
@@ -77,6 +94,7 @@ public sealed class ResponsePolicyMiddleware
 
         // Phase 3: OnProducedAsync for each policy in order.
         // After each policy, if it set RewrittenBody, update BufferedBody for the next policy.
+        // If State becomes Terminate (e.g., 304 from CacheHintPolicy), stop the chain.
         foreach (var policy in policies)
         {
             await policy.OnProducedAsync(policyContext);
@@ -89,6 +107,11 @@ public sealed class ResponsePolicyMiddleware
                 policyContext.RewrittenBody = null;
                 policyContext.RewrittenContentType = null;
             }
+
+            // If a policy set State = Terminate (e.g. 304), stop here and write
+            // whatever body is now buffered (may be empty).
+            if (policyContext.State == PolicyChainState.Terminate)
+                break;
         }
 
         // Emit accumulated Vary headers.
@@ -106,7 +129,12 @@ public sealed class ResponsePolicyMiddleware
         if (policyContext.ProducedContentType is not null)
             context.Response.ContentType = policyContext.ProducedContentType;
 
-        context.Response.ContentLength = finalBody.Length;
+        // RFC 7232 §4.1: a 304 response must not carry Content-Length derived from an empty body.
+        // Either omit Content-Length entirely or echo the original 200 length — we omit it here
+        // since we do not track the original 200 response's length.
+        if (context.Response.StatusCode != 304)
+            context.Response.ContentLength = finalBody.Length;
+
         await originalBody.WriteAsync(finalBody, context.RequestAborted);
     }
 
@@ -163,7 +191,7 @@ public sealed class ResponsePolicyMiddleware
 
         if (!_options.Policies.TryGetValue(meta.PolicyName, out var resolved))
         {
-            _logger.LogWarning(
+            _logger.LogDebug(
                 "ResponsePolicyMiddleware: policy '{PolicyName}' is referenced by endpoint metadata but is not registered in ResponsePolicyOptions. Skipping.",
                 meta.PolicyName);
             return;

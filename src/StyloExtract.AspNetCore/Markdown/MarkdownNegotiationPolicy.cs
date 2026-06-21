@@ -77,7 +77,7 @@ public sealed class MarkdownNegotiationPolicy : IResponsePolicy
             context.HttpContext.RequestAborted);
 
         if (hit)
-            context.ShouldShortCircuit = true;
+            context.State = Policies.PolicyChainState.ServeFromCache;
     }
 
     /// <inheritdoc/>
@@ -86,7 +86,7 @@ public sealed class MarkdownNegotiationPolicy : IResponsePolicy
         if (context.Items[ActiveKey] is not true)
             return;
 
-        if (context.ShouldShortCircuit)
+        if (context.State != Policies.PolicyChainState.Continue)
             return;
 
         var contentType = context.ProducedContentType ?? string.Empty;
@@ -134,7 +134,7 @@ public sealed class MarkdownNegotiationPolicy : IResponsePolicy
                 // Store in cache (do not write the body here; the middleware handles that via RewrittenBody).
                 if (context.Items.TryGetValue(CacheKeyItem, out var ck) && ck is string cacheKey)
                 {
-                    var entryOptions = new Microsoft.Extensions.Caching.Distributed.DistributedCacheEntryOptions
+                    var entryOptions = new DistributedCacheEntryOptions
                     {
                         AbsoluteExpirationRelativeToNow = opts.Cache.AbsoluteExpiration,
                         SlidingExpiration = opts.Cache.SlidingExpiration,
@@ -143,9 +143,7 @@ public sealed class MarkdownNegotiationPolicy : IResponsePolicy
                 }
             }
 
-            if (opts.EmitVaryHeader)
-                context.HttpContext.Response.Headers.Vary = "Accept";
-
+            // Vary is written once by the middleware after all policies run; no per-policy write needed here.
             context.RewrittenBody = markdownBytes;
             context.RewrittenContentType = "text/markdown; charset=utf-8";
         }

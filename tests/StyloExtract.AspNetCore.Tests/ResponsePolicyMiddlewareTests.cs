@@ -36,10 +36,10 @@ public sealed class ResponsePolicyMiddlewareTests : IDisposable
         private readonly string _responseBody;
         public ShortCircuitPolicy(string responseBody) => _responseBody = responseBody;
 
-        public async ValueTask OnRequestAsync(ResponsePolicyContext ctx)
+        public ValueTask OnRequestAsync(ResponsePolicyContext ctx)
         {
-            ctx.ShouldShortCircuit = true;
-            await ValueTask.CompletedTask;
+            ctx.State = PolicyChainState.ServeFromCache;
+            return ValueTask.CompletedTask;
         }
 
         public async ValueTask OnServeAsync(ResponsePolicyContext ctx)

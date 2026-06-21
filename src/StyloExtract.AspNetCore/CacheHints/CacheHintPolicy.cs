@@ -76,19 +76,13 @@ public sealed class CacheHintPolicy : IResponsePolicy
             {
                 response.StatusCode = 304;
                 context.RewrittenBody = ReadOnlyMemory<byte>.Empty;
+                // RFC 7232 §4.1: the 304 status is final; stop the OnProducedAsync chain.
+                context.State = Policies.PolicyChainState.Terminate;
                 return ValueTask.CompletedTask;
             }
         }
 
-        // Emit Vary: combine the shared VaryBy list (accumulated by all policies, including this one's options.Vary via OnRequestAsync).
-        if (context.VaryBy.Count > 0)
-        {
-            var deduped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var v in context.VaryBy)
-                deduped.Add(v);
-            response.Headers.Vary = string.Join(", ", deduped);
-        }
-
+        // Vary is written once by the middleware after all policies run; no per-policy write needed here.
         return ValueTask.CompletedTask;
     }
 
