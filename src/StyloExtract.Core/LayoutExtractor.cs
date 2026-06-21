@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Mostlylucid.Ephemeral;
 using StyloExtract.Abstractions;
 using StyloExtract.Templates;
@@ -22,6 +23,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
     private readonly RefitOrchestrator _refit;
     private readonly ITemplateVersionEventSink _eventSink;
     private readonly TypedSignalSink<StyloExtractSignal>? _signals;
+    private readonly ILogger<LayoutExtractor>? _logger;
 
     public LayoutExtractor(
         IHtmlDomParser parser,
@@ -38,7 +40,8 @@ public sealed class LayoutExtractor : ILayoutExtractor
         double slowPathThreshold,
         RefitOrchestrator refit,
         ITemplateVersionEventSink eventSink,
-        TypedSignalSink<StyloExtractSignal>? signals = null)
+        TypedSignalSink<StyloExtractSignal>? signals = null,
+        ILogger<LayoutExtractor>? logger = null)
     {
         _parser = parser; _cleaner = cleaner; _fingerprinter = fingerprinter;
         _segmenter = segmenter; _classifier = classifier; _renderer = renderer;
@@ -47,6 +50,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
         _refit = refit;
         _eventSink = eventSink;
         _signals = signals;
+        _logger = logger;
     }
 
     public async Task<ExtractionResult> ExtractAsync(
@@ -88,6 +92,8 @@ public sealed class LayoutExtractor : ILayoutExtractor
                 templateId = fastHit;
                 templateVersion = ex.Version;
                 similarity = 1.0;
+                // Read observation count before the RecordObservationAsync write that follows;
+                // the post-match block increments it by 1 so the returned count is current.
                 observationCount = await _index.GetObservationCountAsync(fastHit.Value, cancellationToken);
                 status = MatchStatus.FastPathHit;
                 _signals?.Raise(StyloExtractSignals.MatchFastPathHit,
@@ -96,8 +102,25 @@ public sealed class LayoutExtractor : ILayoutExtractor
             }
             else
             {
+                // Fast-path hit returned a template ID but the extractor blob is missing (corrupt DB).
+                // Self-heal: re-classify, induce a fresh extractor, and register it (M15).
+                _logger?.LogWarning("Fast-path hit templateId {TemplateId} has no extractor blob — self-healing by inducing fresh extractor.", fastHit.Value);
                 blocks = _classifier.Classify(_segmenter.Segment(doc));
-                _signals?.Raise(StyloExtractSignals.MatchFastPathMiss, default);
+                if (options.LearnNewTemplates)
+                {
+                    var freshEx = _inducer.Induce(fastHit.Value, blocks);
+                    templateId = await _index.RegisterAsync(hostHash, fp, freshEx, cancellationToken);
+                    templateVersion = 1;
+                    observationCount = 1;
+                    status = MatchStatus.Novel;
+                    _signals?.Raise(StyloExtractSignals.TemplateNovel,
+                        new StyloExtractSignal(TemplateId: templateId, FingerprintHex: fp.Hex, HostDisplayName: sourceUri?.Host),
+                        key: templateId.Value.ToString("N"));
+                }
+                else
+                {
+                    _signals?.Raise(StyloExtractSignals.MatchFastPathMiss, default);
+                }
             }
         }
         else
@@ -120,6 +143,8 @@ public sealed class LayoutExtractor : ILayoutExtractor
                 }
                 else
                 {
+                    // Slow-path match hit a template ID but extractor is missing. Log and treat as novel.
+                    _logger?.LogWarning("Slow-path match templateId {TemplateId} has no extractor blob — treating as novel.", slow.Value.TemplateId);
                     blocks = _classifier.Classify(_segmenter.Segment(doc));
                     _signals?.Raise(StyloExtractSignals.MatchSlowPathMiss, default);
                 }
@@ -146,7 +171,20 @@ public sealed class LayoutExtractor : ILayoutExtractor
         if (templateId is not null && status is MatchStatus.FastPathHit or MatchStatus.SlowPathMatch)
         {
             await _index.RecordObservationAsync(templateId.Value, fp, similarity, cancellationToken);
-            var freshBlocks = _classifier.Classify(_segmenter.Segment(doc));
+            // Increment the locally-captured count by 1 so the returned ExtractionResult
+            // reflects the post-write value without an extra round-trip (M10).
+            observationCount++;
+
+            // Gate heuristic re-classification on accumulated drift score to avoid
+            // re-classifying every hit when no refit is imminent (M9).
+            // The gate predicate is cheap (one cached extractor read) and skips the
+            // O(N) heuristic segmentation + classification for stable templates.
+            var gateExtractor = await _index.GetExtractorAsync(templateId.Value, cancellationToken);
+            var driftGateThreshold = _refit.DriftRefitThreshold * 0.7;
+            var accumulatedDrift = gateExtractor?.Centroid.OverallDriftScore ?? 0.0;
+            var freshBlocks = accumulatedDrift >= driftGateThreshold
+                ? _classifier.Classify(_segmenter.Segment(doc))
+                : blocks; // reuse existing classified blocks from the applicator path
             var refit = await _refit.MaybeRefitAsync(templateId.Value, fp, freshBlocks, cancellationToken);
             if (refit.Refitted)
             {

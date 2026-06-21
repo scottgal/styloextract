@@ -76,7 +76,8 @@ public static class StyloExtractServiceCollectionExtensions
             options.Match.SlowPathCosineThreshold,
             sp.GetRequiredService<RefitOrchestrator>(),
             sp.GetRequiredService<ITemplateVersionEventSink>(),
-            sp.GetRequiredService<TypedSignalSink<StyloExtractSignal>>()));
+            sp.GetRequiredService<TypedSignalSink<StyloExtractSignal>>(),
+            sp.GetService<ILogger<LayoutExtractor>>()));
 
         return services;
     }
