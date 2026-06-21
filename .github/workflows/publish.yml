@@ -69,16 +69,18 @@ jobs:
       # The GitHub Actions OIDC token is exchanged for a short-lived NuGet
       # token at push time. No stored secret involved.
       - name: NuGet login via OIDC
-        uses: NuGet/login@v1
+        uses: NuGet/login@ebc737b6fc418a6ca0073cf116ec8dc156d8b81e  # v1
         id: nuget_login
         with:
-          user: scottgal
+          user: mostlylucid
 
       - name: Push to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ steps.nuget_login.outputs.NUGET_API_KEY }}
         run: |
           dotnet nuget push artifacts/*.nupkg \
             --source https://api.nuget.org/v3/index.json \
-            --api-key "${{ steps.nuget_login.outputs.NUGET_API_KEY }}" \
+            --api-key "$NUGET_API_KEY" \
             --skip-duplicate
 
   build-binaries:
