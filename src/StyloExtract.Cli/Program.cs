@@ -1,8 +1,14 @@
 using System.CommandLine;
+using SQLitePCL;
 using StyloExtract.Cli.Commands;
 using SharedExport = StyloExtract.Cli.Shared.Commands.ExportCommand;
 using SharedImport = StyloExtract.Cli.Shared.Commands.ImportCommand;
 using SharedMonitor = StyloExtract.Cli.Shared.Commands.MonitorCommand;
+
+// Bind the bundled native SQLite provider before any Microsoft.Data.Sqlite call. Required
+// for self-contained / single-file publish (especially on macOS) where the default dynamic
+// provider lookup fails. Matches the stylobot Console binary's pattern.
+Batteries.Init();
 
 var root = new RootCommand("StyloExtract CLI (Playwright edition)");
 root.Add(ExtractCommandPlaywrightExtensions.Build());

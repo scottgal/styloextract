@@ -9,5 +9,8 @@
     <PackageReference Include="System.CommandLine" />
     <ProjectReference Include="..\StyloExtract.Cli.Shared\StyloExtract.Cli.Shared.csproj" />
     <ProjectReference Include="..\StyloExtract.Playwright\StyloExtract.Playwright.csproj" />
+    <!-- Native SQLite bundled for all RIDs; required for single-file/self-contained publish
+         where dynamic provider resolution otherwise looks for a system libsqlite3. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
   </ItemGroup>
 </Project>

@@ -11,5 +11,9 @@
   <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Cli.Shared\StyloExtract.Cli.Shared.csproj" />
     <ProjectReference Include="..\StyloExtract.AspNetCore\StyloExtract.AspNetCore.csproj" />
+    <!-- Native SQLite for all RIDs; required under PublishAot=true on macOS arm64/x64 where
+         the runtime dynamic loader cannot resolve a default provider. Stylobot uses the same
+         bundle for its AOT Console binary. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
   </ItemGroup>
 </Project>
