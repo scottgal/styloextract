@@ -7,6 +7,7 @@ internal static class BlockRoleRenderers
     public static string Render(ExtractedBlock block) => block.Role switch
     {
         BlockRole.MainContent or BlockRole.Article => MarkdownEscaper.Escape(block.Text),
+        BlockRole.RepeatedItem => MarkdownEscaper.Escape(block.Text),
         BlockRole.Heading => "# " + MarkdownEscaper.Escape(block.Text),
         BlockRole.PrimaryNavigation or BlockRole.SecondaryNavigation =>
             block.Links.Any() ? string.Join("\n", block.Links.Select(l => $"- [{l.Text}]({l.Href})")) : MarkdownEscaper.Escape(block.Text),

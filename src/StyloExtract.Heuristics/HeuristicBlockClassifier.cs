@@ -101,6 +101,98 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
             candidates.Add((element, role, confidence, score));
         }
 
+        // Step 1b: Repeated-item detection.
+        // Find containers whose direct children form a homogeneous repeated-block
+        // pattern (forum posts, listing cards, collection entries). When found:
+        // - Each child item is injected as a RepeatedItem candidate with high confidence.
+        // - The container element and other candidates that would overlap with these
+        //   items are not added again (existing candidates remain; the greedy selector
+        //   will prefer the RepeatedItem children over the container because the container
+        //   will overlap with them and the children were injected with boosted scores).
+        //
+        // Step 1b entry: detection is not gated by main-element presence. The false-positive
+        // guards inside RepeatedItemDetector (SkipAncestorTags, SkipContainerTags,
+        // SkipChildTags, link-density filter, wrapping-ratio check) are sufficient to prevent
+        // misfires on documentation and article pages without needing a global gate.
+        if (elements.Count > 0)
+        {
+            var documentRoot = elements[0].Owner?.Body ?? elements[0].ParentElement;
+            if (documentRoot is not null)
+            {
+                var allGroups = RepeatedItemDetector.Detect(documentRoot);
+
+                var repeatedGroups = allGroups;
+
+                if (repeatedGroups.Count > 0)
+                {
+                    // Demote the containers: mark as Boilerplate so the non-overlapping
+                    // step deprioritises them in favour of the RepeatedItem children.
+                    // EXCEPTION: if the container has substantial extra text beyond the
+                    // items' combined text (ratio < 0.85), the container holds "wrapper"
+                    // content (intro paragraphs, summary sections) that we must not lose.
+                    // In that case, keep the container at its natural score and DO NOT
+                    // inject RepeatedItem children for this group — the existing classifier
+                    // picks the container correctly.
+                    const double ContainerWrappingRatioThreshold = 0.85;
+                    var groupsToInject = new List<RepeatedItemGroup>(repeatedGroups.Count);
+                    foreach (var g in repeatedGroups)
+                    {
+                        var containerTextLen = g.Container.TextContent.Trim().Length;
+                        var itemsTextLen = g.Items.Sum(item => item.TextContent.Trim().Length);
+                        var ratio = containerTextLen > 0 ? (double)itemsTextLen / containerTextLen : 0;
+
+                        if (ratio >= ContainerWrappingRatioThreshold)
+                        {
+                            // Container is mostly just a wrapper for the items. Safe to replace.
+                            groupsToInject.Add(g);
+                        }
+                        // else: container has significant extra content; leave it as-is.
+                    }
+
+                    // Demote containers only for groups that passed the ratio check.
+                    var containersToSuppress = new HashSet<IElement>(
+                        groupsToInject.Select(g => g.Container),
+                        ReferenceEqualityComparer.Instance);
+                    for (int i = 0; i < candidates.Count; i++)
+                    {
+                        if (containersToSuppress.Contains(candidates[i].Element))
+                        {
+                            candidates[i] = (candidates[i].Element, BlockRole.Boilerplate, 0.1, -9999.0);
+                        }
+                    }
+                    // Rebuild the groups list to only include groups we're actually injecting.
+                    repeatedGroups = groupsToInject;
+
+                    // Inject RepeatedItem candidates for each item in each group.
+                    // Give them a very high score so they win the greedy selection.
+                    foreach (var group in repeatedGroups)
+                    {
+                        foreach (var item in group.Items)
+                        {
+                            // Only inject if not already present in the candidate list.
+                            bool alreadyPresent = candidates.Any(c => ReferenceEquals(c.Element, item));
+                            if (!alreadyPresent)
+                            {
+                                candidates.Add((item, BlockRole.RepeatedItem, 0.9, 50000.0));
+                            }
+                            else
+                            {
+                                // Override the existing candidate entry to RepeatedItem.
+                                for (int i = 0; i < candidates.Count; i++)
+                                {
+                                    if (ReferenceEquals(candidates[i].Element, item))
+                                    {
+                                        candidates[i] = (item, BlockRole.RepeatedItem, 0.9, 50000.0);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Step 2: Sort by score descending for greedy selection.
         candidates.Sort((a, b) => b.Score.CompareTo(a.Score));
 
@@ -202,19 +294,58 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         foreach (var (el, role, _) in accepted)
         {
             if (role is BlockRole.MainContent or BlockRole.Article
-                or BlockRole.Heading or BlockRole.Summary or BlockRole.Breadcrumb)
+                or BlockRole.Heading or BlockRole.Summary or BlockRole.Breadcrumb
+                or BlockRole.RepeatedItem)
             {
                 IntraBlockCleaner.Clean(el);
             }
         }
 
         // Step 4: Re-sort accepted set by DOM order so the renderer emits in reading order.
-        // Use the original element list index as a stable DOM-order proxy.
+        // Use the original element list index as a stable DOM-order proxy for segmented elements.
+        // For injected RepeatedItem elements (not in the original list), compute a positional
+        // key by walking from the document root to assign a pre-order traversal index. This
+        // ensures post-injection items appear in their natural reading position.
         var indexMap = new Dictionary<IElement, int>(ReferenceEqualityComparer.Instance);
         for (int i = 0; i < elements.Count; i++)
         {
             indexMap[elements[i]] = i;
         }
+
+        // Pre-order traversal to assign document order for elements not in the original list.
+        // Scale by a large offset so these indices interleave correctly with original ones.
+        if (accepted.Any(a => !indexMap.ContainsKey(a.Element)))
+        {
+            var bodyRoot = elements.Count > 0 ? elements[0].Owner?.Body : null;
+            if (bodyRoot is not null)
+            {
+                int preOrderIndex = 0;
+                var preOrderMap = new Dictionary<IElement, int>(ReferenceEqualityComparer.Instance);
+                var stack = new Stack<IElement>();
+                stack.Push(bodyRoot);
+                while (stack.Count > 0)
+                {
+                    var cur = stack.Pop();
+                    preOrderMap[cur] = preOrderIndex++;
+                    foreach (var child in cur.Children.Reverse())
+                        stack.Push(child);
+                }
+
+                // Remap: find position within pre-order space and map to a fractional index
+                // relative to the known segments. We scale each pre-order position to sit
+                // within the [0, elements.Count * 1000] range using the document size.
+                int docSize = Math.Max(preOrderIndex, 1);
+                int scale = Math.Max(elements.Count, 1) * 1000;
+                foreach (var (el, _, _) in accepted)
+                {
+                    if (!indexMap.ContainsKey(el) && preOrderMap.TryGetValue(el, out var po))
+                    {
+                        indexMap[el] = (int)((long)po * scale / docSize);
+                    }
+                }
+            }
+        }
+
         accepted.Sort((a, b) =>
         {
             var ai = indexMap.TryGetValue(a.Element, out var ia) ? ia : int.MaxValue;

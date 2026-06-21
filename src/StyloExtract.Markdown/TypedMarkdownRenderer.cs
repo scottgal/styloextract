@@ -31,13 +31,15 @@ public sealed class TypedMarkdownRenderer : IMarkdownRenderer
         return p switch
         {
             ExtractionProfile.MainContentOnly => b.Role is BlockRole.MainContent or BlockRole.Article
-                or BlockRole.Heading or BlockRole.Summary or BlockRole.Table or BlockRole.CodeBlock,
+                or BlockRole.Heading or BlockRole.Summary or BlockRole.Table or BlockRole.CodeBlock
+                or BlockRole.RepeatedItem,
             // RagFull is for LLM ingestion. Site navigation (primary/secondary nav) is noise,
             // not signal; drop it. Breadcrumb and RelatedLinks stay because they carry
             // article-context useful for retrieval.
             ExtractionProfile.RagFull => b.Role is not (BlockRole.Footer or BlockRole.Header
                 or BlockRole.Advertisement or BlockRole.CookieBanner or BlockRole.Boilerplate
                 or BlockRole.Unknown or BlockRole.PrimaryNavigation or BlockRole.SecondaryNavigation),
+            // AgentNavigation: RepeatedItem is content, not navigation - exclude it.
             ExtractionProfile.AgentNavigation => b.Role is BlockRole.PrimaryNavigation or BlockRole.SecondaryNavigation
                 or BlockRole.Breadcrumb or BlockRole.Form,
             _ => true
