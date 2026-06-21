@@ -191,6 +191,23 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         }
         accepted = acceptedAfterRoleCap;
 
+        // Step 3d: Intra-block cleaning pass (v1.3).
+        // For each accepted block in a content-bearing role, walk descendants and remove
+        // nav/toc/toolbar/breadcrumb elements that are nested inside the selected subtree.
+        // This handles the case where <main> (or <article>) is the highest-quality block
+        // but still contains an internal TOC, action bar, or breadcrumb as a descendant.
+        // The IDocument is mutated in place; the pipeline owns the document for its lifetime.
+        // After removal, step 5 reads element.TextContent directly so the cleaned values
+        // are picked up automatically without a separate re-derive step.
+        foreach (var (el, role, _) in accepted)
+        {
+            if (role is BlockRole.MainContent or BlockRole.Article
+                or BlockRole.Heading or BlockRole.Summary or BlockRole.Breadcrumb)
+            {
+                IntraBlockCleaner.Clean(el);
+            }
+        }
+
         // Step 4: Re-sort accepted set by DOM order so the renderer emits in reading order.
         // Use the original element list index as a stable DOM-order proxy.
         var indexMap = new Dictionary<IElement, int>(ReferenceEqualityComparer.Instance);
