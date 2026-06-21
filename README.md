@@ -183,7 +183,7 @@ For the full CLI reference including exit codes and edge cases, see [`docs/cli.m
 | `Mostlylucid.StyloExtract.Heuristics` | YAML-driven block classifier and extractor inducer/applicator |
 | `Mostlylucid.StyloExtract.Markdown` | Profile-aware Markdown renderer |
 | `Mostlylucid.StyloExtract.Core` | Orchestration: `ILayoutExtractor.ExtractAsync` |
-| `Mostlylucid.StyloExtract.AspNetCore` | `AddStyloExtract()` DI extensions |
+| `Mostlylucid.StyloExtract.AspNetCore` | `AddStyloExtract()` DI extensions; opt-in Markdown content negotiation middleware, MVC attribute, and Minimal API extension (v1.1.0+) |
 | `Mostlylucid.StyloExtract.Playwright` | **Optional, non-AOT.** Rendered-DOM fetcher for SPA pages |
 
 Most consumers need only `Mostlylucid.StyloExtract.AspNetCore`, which pulls in Core, Html, Fingerprint, Templates, Heuristics, and Markdown transitively. Add `Mostlylucid.StyloExtract.Playwright` explicitly only when you need JS-rendered HTML fetching.
