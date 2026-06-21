@@ -14,7 +14,7 @@ StyloExtract is not an HTML-to-Markdown converter. Generic tools like Trafilatur
 
 StyloExtract treats page structure as a fingerprint. The first time it sees a layout it induces an extractor (a set of CSS selectors and block roles) directly from the DOM. Every subsequent page that matches the same layout fingerprint reuses that extractor rather than re-running heuristics from scratch. The extractor is a learned centroid that drifts and refits as the site evolves. When the centroid drift crosses a threshold, the refit is recorded as a version event, giving you site-template-version monitoring as a side effect of extraction.
 
-Production extraction tools do not do same-template clustering. StyloExtract fills that gap. It is built for RAG pipelines, content monitoring, and any scenario where you hit the same site repeatedly and want consistent, low-latency extraction with observable version history.
+Most generic extraction tools do not expose reusable same-template clustering as the primary abstraction. Trafilatura, Mercury, Readability, and DOM Distiller all operate single-page. StyloExtract fills that gap. It is built for RAG pipelines, content monitoring, and any scenario where you hit the same site repeatedly and want consistent, low-latency extraction with observable version history.
 
 ---
 
