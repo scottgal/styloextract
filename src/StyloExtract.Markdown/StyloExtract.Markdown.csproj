@@ -6,6 +6,8 @@
     <IsPackable>true</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Profile-aware deterministic Markdown renderer for StyloExtract block maps. Four profiles (MainContentOnly, RagFull, AgentNavigation, DebugFull) control which roles emit. The model never generates Markdown; only deterministic rules do.</Description>
+    <PackageTags>styloextract;markdown;renderer;rag;deterministic</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />

@@ -6,6 +6,8 @@
     <IsPackable>true</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Block classifier and extractor inducer for StyloExtract novel-template path. Recogniser data (footer phrases, cookie banner phrases, nav class hints, ad hints) lives in embedded JSON resources; combinator code lives in C#. Source-gen JSON deserialisation keeps it AOT-compatible.</Description>
+    <PackageTags>styloextract;heuristics;html;block;classifier;rag;aot</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />

@@ -6,6 +6,8 @@
     <IsPackable>true</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Layout-fingerprint matching with template-keyed extractor reuse. The ILayoutExtractor.ExtractAsync entry point: parse, clean, fingerprint, fast-path LSH match, slow-path pq-gram cosine, novel template induction, refit-as-version-event. Sub-millisecond match step; AOT-compatible.</Description>
+    <PackageTags>styloextract;html;extraction;rag;layout-fingerprint;markdown;aot</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />

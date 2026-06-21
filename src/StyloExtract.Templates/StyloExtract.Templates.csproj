@@ -9,6 +9,8 @@
          via Microsoft.Data.Sqlite 10.0.0. Tracking upstream for patch. -->
     <NoWarn>$(NoWarn);NU1903</NoWarn>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>SQLite-backed template index for StyloExtract. Single-writer coordination via mostlylucid.ephemeral; learned-extractor centroids that drift and refit with EWMA accumulation; refit-as-version-event for site-template-version monitoring. JSON export and import for portable template bundles.</Description>
+    <PackageTags>styloextract;sqlite;template;centroid;ephemeral;singlewriter;rag;site-version</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <!-- Grant test project access to internal members (e.g. BumpVersionAsync, PromoteInMemoryConnectionString).

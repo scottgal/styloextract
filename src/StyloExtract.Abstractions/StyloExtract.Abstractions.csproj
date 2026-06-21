@@ -6,6 +6,8 @@
     <IsPackable>true</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Interfaces, records, and the StyloFlow signal catalog that define the StyloExtract contract. Zero runtime dependencies beyond AngleSharp and the ephemeral signal sink. Reference this package when writing a custom block classifier, signal consumer, or template index implementation.</Description>
+    <PackageTags>styloextract;html;extraction;rag;layout-fingerprint;abstractions;interfaces;styloflow</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="AngleSharp" />

@@ -6,6 +6,8 @@
     <IsPackable>true</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Structural fingerprinting primitives for StyloExtract. MinHash, LSH banding, anchor-path signatures, and pq-gram extraction for fast (sub-millisecond) layout match plus slow-path cosine fallback. Pure xxHash3; no GPU; AOT-compatible.</Description>
+    <PackageTags>styloextract;minhash;lsh;pq-gram;structural;fingerprint;xxhash3</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />

@@ -6,6 +6,8 @@
     <IsPackable>true</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>AngleSharp-backed DOM parser and cleaner for the StyloExtract pipeline. Strips script, style, template, noscript, and svg nodes; normalises whitespace; preserves semantic tags and ARIA roles.</Description>
+    <PackageTags>styloextract;html;anglesharp;dom;parser;cleaner</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />

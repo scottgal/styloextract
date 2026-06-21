@@ -4,7 +4,8 @@
     <AssemblyName>StyloExtract.Playwright</AssemblyName>
     <PackageId>Mostlylucid.StyloExtract.Playwright</PackageId>
     <IsPackable>true</IsPackable>
-    <Description>Optional StyloExtract package that fetches client-side-rendered HTML via Microsoft.Playwright. NOT AOT-compatible — keeps the core StyloExtract stack AOT-able by isolating the Playwright dependency here.</Description>
+    <Description>Optional StyloExtract package that fetches client-side-rendered HTML via Microsoft.Playwright. Not AOT-compatible (Playwright uses reflection); isolated here so the core StyloExtract stack stays AOT-friendly. Use this when targets are SPAs or any page that needs JS execution before extraction.</Description>
+    <PackageTags>styloextract;playwright;html;spa;rendered;chromium;rag</PackageTags>
     <!-- Playwright uses reflection extensively; not AOT-compatible. Keep the core stack AOT-able by isolating the dep here. -->
     <IsAotCompatible>false</IsAotCompatible>
     <!-- NU1903: transitive advisory warnings from Playwright's own dependencies; scoped to this project only. -->

@@ -25,8 +25,24 @@ jobs:
       - name: Restore
         run: dotnet restore stylobot-extract.sln
 
+      - name: Resolve package version from tag
+        id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # Tag pushes (refs/tags/v1.2.3) -> 1.2.3. workflow_dispatch on main -> 0.0.0-dev.<sha>.
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${REF_NAME#v}"
+          else
+            VERSION="0.0.0-dev.${GITHUB_SHA::7}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved package version: $VERSION"
+
       - name: Build (Release)
-        run: dotnet build stylobot-extract.sln -c Release --no-restore
+        env:
+          PKG_VERSION: ${{ steps.version.outputs.version }}
+        run: dotnet build stylobot-extract.sln -c Release --no-restore -p:Version="$PKG_VERSION"
 
       - name: Test
         run: dotnet test stylobot-extract.sln -c Release --no-build --logger "trx;LogFileName=test-results.trx"
@@ -39,6 +55,8 @@ jobs:
           path: '**/test-results.trx'
 
       - name: Pack all publishable packages
+        env:
+          PKG_VERSION: ${{ steps.version.outputs.version }}
         run: |
           mkdir -p artifacts
           for proj in \
@@ -51,8 +69,8 @@ jobs:
             src/StyloExtract.Core \
             src/StyloExtract.AspNetCore \
             src/StyloExtract.Playwright; do
-            echo "=== Packing $proj ==="
-            dotnet pack "$proj" -c Release --no-build -o artifacts
+            echo "=== Packing $proj at $PKG_VERSION ==="
+            dotnet pack "$proj" -c Release --no-build -o artifacts -p:Version="$PKG_VERSION"
           done
 
       - name: Upload artifacts
