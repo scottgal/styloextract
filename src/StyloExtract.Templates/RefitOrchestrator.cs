@@ -9,6 +9,8 @@ public sealed class RefitOrchestrator
     private readonly SqliteTemplateIndex _index;
     private readonly IExtractorInducer _inducer;
     private readonly double _driftThreshold;
+    /// <summary>The configured drift threshold; exposed for gate predicates in callers.</summary>
+    public double DriftRefitThreshold => _driftThreshold;
     private readonly int _observationsBeforeStable;
     private readonly int _versionHistoryDepth;
     // EWMA smoothing factor for accumulated drift score (spec §7)
