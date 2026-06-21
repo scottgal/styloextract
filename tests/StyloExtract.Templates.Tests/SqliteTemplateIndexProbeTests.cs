@@ -10,7 +10,8 @@ public class SqliteTemplateIndexProbeTests
 {
     private static SqliteConnection NewConn()
     {
-        var c = new SqliteConnection("Data Source=:memory:");
+        var cs = $"Data Source=file:testdb-{Guid.NewGuid():N}?mode=memory&cache=shared&uri=true";
+        var c = new SqliteConnection(cs);
         c.Open();
         SqliteSchema.EnsureCreated(c);
         return c;

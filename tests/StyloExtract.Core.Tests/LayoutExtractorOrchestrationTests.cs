@@ -31,19 +31,21 @@ public class LayoutExtractorOrchestrationTests
             new LshBander(16, 8),
             new AnchorPathFingerprinter(noise, sketcher),
             new PqGramExtractor());
-        var conn = new SqliteConnection("Data Source=:memory:");
+        var cs = $"Data Source=file:testdb-{Guid.NewGuid():N}?mode=memory&cache=shared&uri=true";
+        var conn = new SqliteConnection(cs);
         conn.Open();
         SqliteSchema.EnsureCreated(conn);
-        var index = new SqliteTemplateIndex(conn);
+        var index = new SqliteTemplateIndex(cs);
         return (index, fingerprinter);
     }
 
     private static (ILayoutExtractor Extractor, SqliteConnection Conn) Build()
     {
-        var conn = new SqliteConnection("Data Source=:memory:");
+        var cs = $"Data Source=file:testdb-{Guid.NewGuid():N}?mode=memory&cache=shared&uri=true";
+        var conn = new SqliteConnection(cs);
         conn.Open();
         SqliteSchema.EnsureCreated(conn);
-        var index = new SqliteTemplateIndex(conn);
+        var index = new SqliteTemplateIndex(cs);
         var noise = ClassNoiseFilter.LoadFromEmbeddedResource();
         var sketcher = new MinHashSketcher(128);
         var fingerprinter = new StructuralFingerprinter(
@@ -72,10 +74,11 @@ public class LayoutExtractorOrchestrationTests
 
     private static (ILayoutExtractor Extractor, SqliteConnection Conn) BuildWithSink(ITemplateVersionEventSink sink)
     {
-        var conn = new SqliteConnection("Data Source=:memory:");
+        var cs = $"Data Source=file:testdb-{Guid.NewGuid():N}?mode=memory&cache=shared&uri=true";
+        var conn = new SqliteConnection(cs);
         conn.Open();
         SqliteSchema.EnsureCreated(conn);
-        var index = new SqliteTemplateIndex(conn);
+        var index = new SqliteTemplateIndex(cs);
         var noise = ClassNoiseFilter.LoadFromEmbeddedResource();
         var sketcher = new MinHashSketcher(128);
         var fingerprinter = new StructuralFingerprinter(

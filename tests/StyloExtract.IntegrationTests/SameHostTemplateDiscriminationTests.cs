@@ -15,10 +15,11 @@ public class SameHostTemplateDiscriminationTests
 {
     private static (ILayoutExtractor, SqliteConnection) Build()
     {
-        var conn = new SqliteConnection("Data Source=:memory:");
+        var cs = $"Data Source=file:testdb-{Guid.NewGuid():N}?mode=memory&cache=shared&uri=true";
+        var conn = new SqliteConnection(cs);
         conn.Open();
         SqliteSchema.EnsureCreated(conn);
-        var index = new SqliteTemplateIndex(conn);
+        var index = new SqliteTemplateIndex(cs);
         var noise = ClassNoiseFilter.LoadFromEmbeddedResource();
         var sketcher = new MinHashSketcher(128);
         var fp = new StructuralFingerprinter(

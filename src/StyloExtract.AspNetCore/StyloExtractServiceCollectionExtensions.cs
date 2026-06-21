@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using StyloExtract.Abstractions;
@@ -36,15 +35,11 @@ public static class StyloExtractServiceCollectionExtensions
         services.AddSingleton<IStructuralFingerprinter, StructuralFingerprinter>();
 
         services.AddSingleton<HostHasher>(_ => HostHasher.FromConfiguredKeyOrRandom(options.HostHashKey));
-        services.AddSingleton<SqliteConnection>(_ =>
-        {
-            var conn = new SqliteConnection($"Data Source={options.StorePath}");
-            conn.Open();
-            SqliteSchema.EnsureCreated(conn);
-            return conn;
-        });
-        services.AddSingleton<ITemplateIndex>(sp => new SqliteTemplateIndex(
-            sp.GetRequiredService<SqliteConnection>(),
+
+        // SqliteTemplateIndex ctor runs schema init internally via SqliteSingleWriter bootstrap.
+        var connectionString = $"Data Source={options.StorePath}";
+        services.AddSingleton<ITemplateIndex>(_ => new SqliteTemplateIndex(
+            connectionString,
             options.Match.AgingLambdaObs,
             options.Match.AgingLambdaRecent,
             options.Match.AgingTauDays));

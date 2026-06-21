@@ -19,10 +19,11 @@ public class FastPathMatchBench
     [GlobalSetup]
     public async Task Setup()
     {
-        _conn = new SqliteConnection("Data Source=:memory:");
+        var cs = $"Data Source=file:bench-{Guid.NewGuid():N}?mode=memory&cache=shared&uri=true";
+        _conn = new SqliteConnection(cs);
         _conn.Open();
         SqliteSchema.EnsureCreated(_conn);
-        _index = new SqliteTemplateIndex(_conn);
+        _index = new SqliteTemplateIndex(cs);
         var parser = new AngleSharpHtmlDomParser();
         var noise = ClassNoiseFilter.LoadFromEmbeddedResource();
         var sketcher = new MinHashSketcher(128);

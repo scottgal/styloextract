@@ -12,7 +12,8 @@ public class TemplateExporterTests
     [Fact]
     public async Task ExportHostAsync_ProducesSchemaV1Json()
     {
-        using var conn = new SqliteConnection("Data Source=:memory:");
+        var cs = $"Data Source=file:testdb-{Guid.NewGuid():N}?mode=memory&cache=shared&uri=true";
+        using var conn = new SqliteConnection(cs);
         conn.Open();
         SqliteSchema.EnsureCreated(conn);
         var idx = new SqliteTemplateIndex(conn);

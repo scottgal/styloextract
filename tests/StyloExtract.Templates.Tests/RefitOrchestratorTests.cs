@@ -12,10 +12,11 @@ public class RefitOrchestratorTests
     [Fact]
     public async Task MaybeRefitAsync_HighDriftAndOverObsThreshold_BumpsVersion()
     {
-        using var conn = new SqliteConnection("Data Source=:memory:");
+        var cs = $"Data Source=file:testdb-{Guid.NewGuid():N}?mode=memory&cache=shared&uri=true";
+        using var conn = new SqliteConnection(cs);
         conn.Open();
         SqliteSchema.EnsureCreated(conn);
-        var index = new SqliteTemplateIndex(conn);
+        var index = new SqliteTemplateIndex(cs);
 
         // Seed a template at version 1 with pre-accumulated drift near threshold.
         // With EWMA alpha=0.2 and a single call delta=1.0:
@@ -55,10 +56,11 @@ public class RefitOrchestratorTests
         // Spec §7: DriftScore is EWMA over per-obs deltas.
         // With alpha=0.2 and persistent delta=1.0 each call, the accumulated score
         // converges to 1.0. Verify it rises monotonically and eventually crosses threshold.
-        using var conn = new SqliteConnection("Data Source=:memory:");
+        var cs = $"Data Source=file:testdb-{Guid.NewGuid():N}?mode=memory&cache=shared&uri=true";
+        using var conn = new SqliteConnection(cs);
         conn.Open();
         SqliteSchema.EnsureCreated(conn);
-        var index = new SqliteTemplateIndex(conn);
+        var index = new SqliteTemplateIndex(cs);
 
         var fp = NewFingerprint(42);
         // Start with zero accumulated drift.

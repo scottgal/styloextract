@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
     <ProjectReference Include="..\StyloExtract.Fingerprint\StyloExtract.Fingerprint.csproj" />
+    <ProjectReference Include="..\..\..\mostlylucid.atoms\mostlylucid.ephemeral\src\mostlylucid.ephemeral.sqlite.singlewriter\mostlylucid.ephemeral.sqlite.singlewriter.csproj" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
   </ItemGroup>
 </Project>
