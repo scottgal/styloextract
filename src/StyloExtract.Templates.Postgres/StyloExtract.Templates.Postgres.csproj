@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>StyloExtract.Templates.Postgres</RootNamespace>
+    <AssemblyName>StyloExtract.Templates.Postgres</AssemblyName>
+    <PackageId>Mostlylucid.StyloExtract.Templates.Postgres</PackageId>
+    <IsPackable>true</IsPackable>
+    <IsAotCompatible>false</IsAotCompatible>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>PostgreSQL-backed template index for StyloExtract. Implements the same ITemplateIndex contract as the SQLite provider; use this package for commercial or multi-host deployments where PostgreSQL is already the operational database. Schema applied idempotently on first connection. Npgsql connection pooling handles concurrency.</Description>
+    <PackageTags>styloextract;postgres;postgresql;npgsql;template;centroid;rag;site-version</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
+    <ProjectReference Include="..\StyloExtract.Fingerprint\StyloExtract.Fingerprint.csproj" />
+    <ProjectReference Include="..\StyloExtract.Templates\StyloExtract.Templates.csproj" />
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+</Project>
