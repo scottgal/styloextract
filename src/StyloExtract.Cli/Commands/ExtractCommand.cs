@@ -73,7 +73,7 @@ public static class ExtractCommand
         {
             if (rendered)
             {
-                if (!PlaywrightInstaller.BrowsersAvailable())
+                if (!await PlaywrightInstaller.BrowsersAvailableAsync())
                 {
                     Console.Error.WriteLine("Browsers not installed. Installing chromium...");
                     var exit = PlaywrightInstaller.EnsureBrowsersInstalled("chromium");

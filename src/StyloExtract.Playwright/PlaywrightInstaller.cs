@@ -19,13 +19,13 @@ public static class PlaywrightInstaller
 
     /// <summary>
     /// Returns <see langword="true"/> when the Chromium executable is already present
-    /// on disk. Does not trigger a download. Synchronous — suitable for a startup guard.
+    /// on disk. Does not trigger a download.
     /// </summary>
-    public static bool BrowsersAvailable()
+    public static async Task<bool> BrowsersAvailableAsync()
     {
         try
         {
-            using var pw = Microsoft.Playwright.Playwright.CreateAsync().GetAwaiter().GetResult();
+            using var pw = await Microsoft.Playwright.Playwright.CreateAsync();
             var path = pw.Chromium.ExecutablePath;
             return !string.IsNullOrEmpty(path) && File.Exists(path);
         }
