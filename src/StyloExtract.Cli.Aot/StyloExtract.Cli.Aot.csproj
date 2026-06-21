@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>StyloExtract.Cli.Aot</RootNamespace>
+    <AssemblyName>stylo-extract</AssemblyName>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <PublishAot>false</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\StyloExtract.Cli.Shared\StyloExtract.Cli.Shared.csproj" />
+    <ProjectReference Include="..\StyloExtract.AspNetCore\StyloExtract.AspNetCore.csproj" />
+  </ItemGroup>
+</Project>
