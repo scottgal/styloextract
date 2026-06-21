@@ -6,7 +6,7 @@
     <IsPackable>true</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <Description>AddStyloExtract() DI extensions for ASP.NET Core, including Markdown content negotiation middleware. The single package most apps want: brings in the full StyloExtract stack (Abstractions, Html, Fingerprint, Templates, Heuristics, Markdown, Core) wired through Microsoft.Extensions.DependencyInjection. Opt-in middleware, a per-action attribute, and a Minimal API extension transparently convert HTML responses to Markdown when clients send Accept: text/markdown.</Description>
+    <Description>AddStyloExtract() DI extensions for ASP.NET Core, including Markdown content negotiation middleware. The single package most apps want: brings in the full StyloExtract stack (Abstractions, Html, Fingerprint, Templates, Heuristics, Markdown, Core) wired through Microsoft.Extensions.DependencyInjection. Opt-in middleware, a per-action attribute, and a Minimal API extension transparently convert HTML responses to Markdown when clients send Accept: text/markdown. Browser-friendly query-string Accept override (?format=markdown) and opt-in IDistributedCache support for repeat extractions (v1.1.0+).</Description>
     <PackageTags>styloextract;aspnetcore;dependencyinjection;html;extraction;rag;layout-fingerprint;markdown;content-negotiation</PackageTags>
   </PropertyGroup>
   <ItemGroup>

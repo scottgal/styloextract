@@ -123,9 +123,49 @@ The profile used for extraction is resolved in this order:
 
 The header and query names are configurable via `MarkdownNegotiationOptions.ProfileHeaderName` and `ProfileQueryName`.
 
+### Query-string Accept override (v1.1.0+)
+
+Browser clients cannot easily set custom `Accept` headers. The `AcceptOverrideQueryName` option (default: `"format"`) maps a query-string value to a virtual `Accept` header, so `?format=markdown` behaves identically to `Accept: text/markdown` for any browser.
+
+```csharp
+builder.Services.AddStyloExtractMarkdownNegotiation(o =>
+{
+    o.AcceptOverrideQueryName = "format"; // null to disable
+    // Default mappings: markdown/md => text/markdown, html => text/html,
+    //                   json => application/json, text => text/plain
+});
+```
+
+When the override fires, the response carries `X-Stylo-Accept-Override: text/markdown` so consumers can see it was applied.
+
+### Caching (v1.1.0+)
+
+Enable `Cache.Enabled` to avoid re-extracting the same URL + profile combination on repeated requests. The implementation uses `IDistributedCache` (in-memory by default; inject a real distributed cache before calling `AddStyloExtractMarkdownNegotiation` to upgrade).
+
+```csharp
+builder.Services.AddStyloExtractMarkdownNegotiation(o =>
+{
+    o.Cache.Enabled = true;
+    o.Cache.AbsoluteExpiration = TimeSpan.FromMinutes(5);
+    o.Cache.SlidingExpiration = TimeSpan.FromMinutes(2);
+    o.Cache.EnableEtag = true;               // honors If-None-Match; returns 304
+    o.Cache.EmitCacheControlHeader = false;  // set true for CDN-friendly Cache-Control: public
+});
+```
+
+Cache key shape: `sha256(method + "|" + scheme + "|" + host + "|" + path + "|" + sortedQuery(minus override key) + "|" + profile)`. The Accept override query parameter is excluded from the key so `?format=markdown` and a bare `Accept: text/markdown` request share the same cache slot.
+
+Response headers on Markdown responses:
+
+| Header | Value |
+|---|---|
+| `X-Stylo-Cache` | `miss` or `hit` |
+| `ETag` | SHA-256 digest of the Markdown bytes (when `EnableEtag = true`) |
+| `Cache-Control` | `public, max-age=N` (when `EmitCacheControlHeader = true`) |
+
 ## AOT
 
-This package is `IsAotCompatible=true`. The negotiation middleware and attribute use no reflection-based JSON serialization; Markdown output is plain text.
+This package is `IsAotCompatible=true`. The negotiation middleware and attribute use no reflection-based JSON serialization; Markdown output is plain text. `IDistributedCache` and `MemoryDistributedCache` are both AOT-safe.
 
 ---
 
