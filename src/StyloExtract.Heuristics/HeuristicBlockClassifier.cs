@@ -66,16 +66,64 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
             new HashSet<string>(ad.Hints, StringComparer.OrdinalIgnoreCase));
     }
 
-    public IReadOnlyList<ExtractedBlock> Classify(IReadOnlyList<IElement> blocks)
+    public IReadOnlyList<ExtractedBlock> Classify(IReadOnlyList<IElement> elements)
     {
-        var result = new List<ExtractedBlock>(blocks.Count);
-        int i = 0;
-        foreach (var element in blocks)
+        if (elements.Count == 0) return Array.Empty<ExtractedBlock>();
+
+        // Step 1: Classify each candidate and compute a score.
+        // The score drives non-overlapping subtree selection so that when
+        // BlockSegmenter feeds us <main>, <article>, and their wrapper <div>s,
+        // only the highest-scoring non-overlapping set is emitted.
+        // (Fix 3 is subsumed by this selection: each emitted block's text is
+        // disjoint from every other, so no separate text-dedup step is needed.)
+
+        var candidates = new List<(IElement Element, BlockRole Role, double Confidence, double Score)>(elements.Count);
+        foreach (var element in elements)
         {
             var (role, confidence) = ClassifyOne(element);
+            var score = ComputeScore(element, role);
+            candidates.Add((element, role, confidence, score));
+        }
+
+        // Step 2: Sort by score descending for greedy selection.
+        candidates.Sort((a, b) => b.Score.CompareTo(a.Score));
+
+        // Step 3: Greedy non-overlapping selection.
+        // Accept a candidate only if it is not an ancestor or descendant of any
+        // already-accepted element. This ensures disjoint text coverage.
+        var accepted = new List<(IElement Element, BlockRole Role, double Confidence)>(candidates.Count);
+        foreach (var (element, role, confidence, _) in candidates)
+        {
+            bool overlaps = accepted.Any(a =>
+                IsAncestor(a.Element, element) || IsAncestor(element, a.Element));
+            if (!overlaps)
+            {
+                accepted.Add((element, role, confidence));
+            }
+        }
+
+        // Step 4: Re-sort accepted set by DOM order so the renderer emits in reading order.
+        // Use the original element list index as a stable DOM-order proxy.
+        var indexMap = new Dictionary<IElement, int>(ReferenceEqualityComparer.Instance);
+        for (int i = 0; i < elements.Count; i++)
+        {
+            indexMap[elements[i]] = i;
+        }
+        accepted.Sort((a, b) =>
+        {
+            var ai = indexMap.TryGetValue(a.Element, out var ia) ? ia : int.MaxValue;
+            var bi = indexMap.TryGetValue(b.Element, out var ib) ? ib : int.MaxValue;
+            return ai.CompareTo(bi);
+        });
+
+        // Step 5: Construct ExtractedBlock records from the accepted, ordered set.
+        var result = new List<ExtractedBlock>(accepted.Count);
+        int blockIndex = 0;
+        foreach (var (element, role, confidence) in accepted)
+        {
             result.Add(new ExtractedBlock
             {
-                Id = $"b{i:D4}",
+                Id = $"b{blockIndex:D4}",
                 Role = role,
                 Confidence = confidence,
                 Text = element.TextContent.Trim(),
@@ -86,9 +134,74 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
                 LinkDensity = ComputeLinkDensity(element),
                 Links = ExtractLinks(element)
             });
-            i++;
+            blockIndex++;
         }
         return result;
+    }
+
+    private double ComputeScore(IElement element, BlockRole role)
+    {
+        var textLength = element.TextContent.Trim().Length;
+        var linkDensity = ComputeLinkDensity(element);
+        var baseScore = textLength * (1.0 - linkDensity);
+
+        // Role-based bonus: strongly prefer content-bearing roles so that when
+        // overlapping elements compete (e.g. <main> vs its wrapper <div>),
+        // the semantically richest element wins.
+        // Navigation, footer, header etc. get a small positive bonus so they
+        // still beat their generic wrapper ancestors.
+        var roleBonus = role switch
+        {
+            BlockRole.MainContent or BlockRole.Article => 500.0,
+            BlockRole.Table or BlockRole.CodeBlock => 200.0,
+            BlockRole.Form or BlockRole.Summary => 100.0,
+            BlockRole.Heading => 50.0,
+            BlockRole.PrimaryNavigation or BlockRole.SecondaryNavigation
+                or BlockRole.Breadcrumb => 50.0,
+            BlockRole.Sidebar or BlockRole.RelatedLinks => 20.0,
+            BlockRole.Footer or BlockRole.Header
+                or BlockRole.CookieBanner or BlockRole.Advertisement => 10.0,
+            BlockRole.Boilerplate or BlockRole.Unknown => -200.0,
+            _ => 0.0
+        };
+
+        // Tag-based nudge: prefer semantically specific tags over generic wrappers
+        // when both are classified as the same role. Only <div> and <section> get a
+        // mild penalty; named semantic tags are already captured in roleBonus.
+        var tag = element.TagName.ToLowerInvariant();
+        var tagNudge = tag is "div" ? -50.0 : 0.0;
+
+        // Class hint bonus: only applies when role is MainContent (wrapper divs with
+        // content-class names should yield to <article>/<main> siblings).
+        double classHintBonus = 0.0;
+        if (role is BlockRole.MainContent or BlockRole.Boilerplate)
+        {
+            var classTokens = (element.GetAttribute("class") ?? "")
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var token in classTokens)
+            {
+                var t = token.ToLowerInvariant();
+                if (t.Contains("content") || t.Contains("article") || t.Contains("post")
+                    || t.Contains("main") || t.Contains("entry"))
+                {
+                    classHintBonus += 300.0;
+                    break;
+                }
+            }
+            foreach (var token in classTokens)
+            {
+                var t = token.ToLowerInvariant();
+                if (t.Contains("ad") || t.Contains("advertisement") || t.Contains("sidebar")
+                    || t.Contains("nav") || t.Contains("menu") || t.Contains("footer")
+                    || t.Contains("header") || t.Contains("widget") || t.Contains("comments"))
+                {
+                    classHintBonus -= 300.0;
+                    break;
+                }
+            }
+        }
+
+        return baseScore + roleBonus + tagNudge + classHintBonus;
     }
 
     private (BlockRole Role, double Confidence) ClassifyOne(IElement element)
@@ -126,9 +239,11 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
 
         if (tag == "header") return (BlockRole.Header, 0.7);
 
-        if (tag is "main" or "article" && text.Length > 200)
+        if (tag is "main" or "article")
         {
-            return (BlockRole.MainContent, 0.92);
+            // Always treat <main> and <article> as MainContent regardless of text length.
+            // Short <main>/<article> elements still win over generic div wrappers via scoring.
+            return (BlockRole.MainContent, text.Length > 200 ? 0.92 : 0.70);
         }
 
         if (tag == "aside")
@@ -136,7 +251,37 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
             return (linkDensity > 0.5 ? BlockRole.RelatedLinks : BlockRole.Sidebar, 0.75);
         }
 
-        if (tag == "form" || element.QuerySelectorAll("input").Length >= 2)
+        // Fix 4: tighten Form classification so mobile-nav toggles and pure-button
+        // forms don't get classified as Form. Only classify as Form when there is
+        // at least one meaningful text-entry input or textarea.
+        if (tag == "form")
+        {
+            var meaningfulInputs = element.QuerySelectorAll("input, textarea")
+                .Count(input =>
+                {
+                    if (input.TagName.Equals("textarea", StringComparison.OrdinalIgnoreCase))
+                        return true;
+                    var type = (input.GetAttribute("type") ?? "text").ToLowerInvariant();
+                    return type is "text" or "email" or "search" or "tel" or "url"
+                           or "number" or "password" or "date" or "datetime-local"
+                           or "month" or "week" or "time";
+                });
+            if (meaningfulInputs >= 1)
+            {
+                return (BlockRole.Form, 0.85);
+            }
+            // form with no meaningful inputs: fall through to default classification
+        }
+        else if (element.QuerySelectorAll("input, textarea")
+            .Count(input =>
+            {
+                if (input.TagName.Equals("textarea", StringComparison.OrdinalIgnoreCase))
+                    return true;
+                var type = (input.GetAttribute("type") ?? "text").ToLowerInvariant();
+                return type is "text" or "email" or "search" or "tel" or "url"
+                       or "number" or "password" or "date" or "datetime-local"
+                       or "month" or "week" or "time";
+            }) >= 2)
         {
             return (BlockRole.Form, 0.85);
         }
@@ -193,5 +338,22 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         var current = element.ParentElement;
         while (current is not null) { depth++; current = current.ParentElement; }
         return depth;
+    }
+
+    /// <summary>
+    /// Returns true if <paramref name="potentialAncestor"/> is an ancestor of
+    /// <paramref name="potentialDescendant"/> in the DOM tree.
+    /// Used by the non-overlapping selection step to avoid emitting the same
+    /// text content in multiple blocks.
+    /// </summary>
+    private static bool IsAncestor(IElement potentialAncestor, IElement potentialDescendant)
+    {
+        var current = potentialDescendant.ParentElement;
+        while (current is not null)
+        {
+            if (ReferenceEquals(current, potentialAncestor)) return true;
+            current = current.ParentElement;
+        }
+        return false;
     }
 }
