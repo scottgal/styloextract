@@ -170,4 +170,93 @@ public class HeuristicBlockClassifierTests
             b.Role == BlockRole.MainContent && b.Text.StartsWith("Page 1"),
             "a div that is 80%+ links must not be classified as MainContent");
     }
+
+    // --- v1.2.3 regression tests: relative gate at 25% + per-role cap ---
+
+    [Fact]
+    public void Classify_LargeSidebarOnLongPage_DemotedByRelativeQualityGate()
+    {
+        // Simulates the Wikipedia long-article case: a large sidebar wrapper exists
+        // alongside a substantially larger article body. The sidebar scores well in
+        // absolute terms but only ~10-15% of the article score. The 25% gate must
+        // demote it to Boilerplate so it does not appear in output as MainContent.
+        var sidebar = "Portal: Arts Community: History Help: Reference tools. " +
+            string.Concat(Enumerable.Range(1, 30).Select(i => $"<a href='/p{i}'>Item {i}</a> "));
+        var articleBody = new string('A', 800) + " " +
+            "This is the real long-form article body containing thousands of words about the subject. " +
+            string.Concat(Enumerable.Range(1, 20).Select(i => $"Section {i} content goes here with detailed prose. "));
+        var html = $@"<html><body>
+  <div id='mw-head'>
+    <div class='mw-body-content'>{sidebar}</div>
+  </div>
+  <main><article><p>{articleBody}</p></article></main>
+</body></html>";
+        var (blocks, _) = Classify(html);
+
+        // The sidebar div must not appear as MainContent: it scores below 25% of the article.
+        var mainBlocks = blocks.Where(b => b.Role is BlockRole.MainContent or BlockRole.Article).ToList();
+        mainBlocks.Should().NotContain(b => b.Text.Contains("Portal: Arts"),
+            "sidebar scoring below 25% of the article body must be demoted by the relative quality gate");
+        mainBlocks.Should().ContainSingle(
+            "exactly one MainContent/Article block must survive after the gate");
+    }
+
+    [Fact]
+    public void Classify_MultipleNavElements_CollapseToOne()
+    {
+        // Pages sometimes have a primary nav + a breadcrumb nav + a sidebar nav that all
+        // get classified as PrimaryNavigation. The singleton role cap must keep only the
+        // highest-scoring one so we don't emit three redundant nav blocks.
+        var navLinks = string.Concat(Enumerable.Range(1, 5).Select(i => $"<a href='/p{i}'>Nav {i}</a>"));
+        var breadcrumbLinks = string.Concat(Enumerable.Range(1, 3).Select(i => $"<a href='/b{i}'>Crumb {i}</a>"));
+        var sidebarLinks = string.Concat(Enumerable.Range(1, 4).Select(i => $"<a href='/s{i}'>Side {i}</a>"));
+        var html = $@"<html><body>
+  <header><nav class='primary-nav'>{navLinks}</nav></header>
+  <nav class='breadcrumb'>{breadcrumbLinks}</nav>
+  <aside><nav class='sidebar-nav'>{sidebarLinks}</nav></aside>
+  <main><article><p>{"Real article body content. ".PadRight(500, 'x')}</p></article></main>
+</body></html>";
+        var (blocks, _) = Classify(html);
+
+        var primaryNavBlocks = blocks.Where(b => b.Role == BlockRole.PrimaryNavigation).ToList();
+        primaryNavBlocks.Should().HaveCount(1,
+            "the singleton role cap must collapse multiple PrimaryNavigation blocks to the highest-scoring one");
+    }
+
+    [Fact]
+    public void Classify_MultipleContentDivs_CollapseToOneMainContent()
+    {
+        // When multiple divs all score high enough to pass the relative gate (e.g. a page
+        // with two substantial content-classed wrappers), the role cap ensures only the
+        // highest-scoring MainContent block is emitted.
+        var contentA = "Main article body: " + new string('M', 600);
+        var contentB = "Secondary widget panel: " + new string('W', 300);
+        var html = $@"<html><body>
+  <div class='mw-body mw-body-content'>{contentB}</div>
+  <main><article class='mw-parser-output'><p>{contentA}</p></article></main>
+</body></html>";
+        var (blocks, _) = Classify(html);
+
+        var contentBlocks = blocks.Where(b => b.Role is BlockRole.MainContent or BlockRole.Article).ToList();
+        contentBlocks.Should().HaveCount(1,
+            "the singleton role cap must keep only the highest-scoring MainContent block");
+        contentBlocks[0].Text.Should().Contain("Main article body",
+            "the winner must be the higher-scoring article block, not the secondary widget panel");
+    }
+
+    [Fact]
+    public void Classify_MultipleForms_AllEmitted()
+    {
+        // Forms are NOT singleton — a page can legitimately have a search form and a
+        // login form. Both must survive the role cap.
+        var html = @"<html><body>
+  <form><input type='search' name='q' /><button>Search</button></form>
+  <form><input type='email' name='e' /><button>Subscribe</button></form>
+  <main><p>Real article content with enough text to be recognised as article content. More words here.</p></main>
+</body></html>";
+        var (blocks, _) = Classify(html);
+
+        blocks.Where(b => b.Role == BlockRole.Form).Should().HaveCount(2,
+            "Form is not a singleton role: both search form and subscribe form must be emitted");
+    }
 }
