@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using Mostlylucid.Ephemeral;
 using Mostlylucid.Ephemeral.Sqlite;
 using StyloExtract.Abstractions;
 using StyloExtract.Fingerprint;
@@ -16,6 +17,7 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
     private readonly double _lambdaObs;
     private readonly double _lambdaRecent;
     private readonly double _tauDays;
+    private readonly TypedSignalSink<StyloExtractSignal>? _signals;
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = false };
 
     // Cache keys used for read caching inside the writer.
@@ -33,7 +35,8 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
         string connectionString,
         double lambdaObs = 0.02,
         double lambdaRecent = 0.05,
-        double tauDays = 30.0)
+        double tauDays = 30.0,
+        TypedSignalSink<StyloExtractSignal>? signals = null)
     {
         // Promote bare ":memory:" or "Data Source=:memory:" to a named shared-cache URI.
         // This is required so SqliteSingleWriter's read connections see the same schema and
@@ -51,6 +54,7 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
         _lambdaObs = lambdaObs;
         _lambdaRecent = lambdaRecent;
         _tauDays = tauDays;
+        _signals = signals;
     }
 
     // Converts ":memory:" or "Data Source=:memory:" connection strings to a named shared-cache
@@ -322,6 +326,12 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
         // Invalidate cached observation count and extractor (drift update may follow)
         _writer.InvalidateCache(ObsCountKey(templateId));
         _writer.InvalidateCache(ExtractorKey(templateId));
+
+        // Read back the updated observation count for the signal payload.
+        var newObs = await GetObservationCountAsync(templateId, cancellationToken).ConfigureAwait(false);
+        _signals?.Raise(StyloExtractSignals.ObservationRecorded,
+            new StyloExtractSignal(TemplateId: templateId, ObservationCount: newObs, Similarity: similarity),
+            key: templateId.ToString("N"));
     }
 
     /// <summary>

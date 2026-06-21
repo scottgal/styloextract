@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Mostlylucid.Ephemeral;
 using StyloExtract.Abstractions;
 using StyloExtract.Core;
 using StyloExtract.Fingerprint;
@@ -38,11 +39,12 @@ public static class StyloExtractServiceCollectionExtensions
 
         // SqliteTemplateIndex ctor runs schema init internally via SqliteSingleWriter bootstrap.
         var connectionString = $"Data Source={options.StorePath}";
-        services.AddSingleton<ITemplateIndex>(_ => new SqliteTemplateIndex(
+        services.AddSingleton<ITemplateIndex>(sp => new SqliteTemplateIndex(
             connectionString,
             options.Match.AgingLambdaObs,
             options.Match.AgingLambdaRecent,
-            options.Match.AgingTauDays));
+            options.Match.AgingTauDays,
+            sp.GetRequiredService<TypedSignalSink<StyloExtractSignal>>()));
         services.AddSingleton<SqliteTemplateIndex>(sp => (SqliteTemplateIndex)sp.GetRequiredService<ITemplateIndex>());
         services.AddSingleton<RefitOrchestrator>(sp => new RefitOrchestrator(
             sp.GetRequiredService<SqliteTemplateIndex>(),
@@ -52,6 +54,10 @@ public static class StyloExtractServiceCollectionExtensions
             options.Centroid.VersionHistoryDepth));
 
         services.TryAddSingleton<ITemplateVersionEventSink, DefaultNoopVersionEventSink>();
+
+        // Register a default TypedSignalSink<StyloExtractSignal> if none is already registered.
+        // Consumers can subscribe to TypedSignalRaised to observe extraction signals.
+        services.TryAddSingleton<TypedSignalSink<StyloExtractSignal>>(_ => new TypedSignalSink<StyloExtractSignal>());
 
         services.AddSingleton<ILayoutExtractor>(sp => new LayoutExtractor(
             sp.GetRequiredService<IHtmlDomParser>(),
@@ -67,7 +73,8 @@ public static class StyloExtractServiceCollectionExtensions
             options.Match.FastPathJaccardThreshold,
             options.Match.SlowPathCosineThreshold,
             sp.GetRequiredService<RefitOrchestrator>(),
-            sp.GetRequiredService<ITemplateVersionEventSink>()));
+            sp.GetRequiredService<ITemplateVersionEventSink>(),
+            sp.GetRequiredService<TypedSignalSink<StyloExtractSignal>>()));
 
         return services;
     }

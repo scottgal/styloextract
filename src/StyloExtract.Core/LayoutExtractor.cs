@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Mostlylucid.Ephemeral;
 using StyloExtract.Abstractions;
 using StyloExtract.Templates;
 
@@ -20,6 +21,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
     private readonly double _slowPathThreshold;
     private readonly RefitOrchestrator _refit;
     private readonly ITemplateVersionEventSink _eventSink;
+    private readonly TypedSignalSink<StyloExtractSignal>? _signals;
 
     public LayoutExtractor(
         IHtmlDomParser parser,
@@ -35,7 +37,8 @@ public sealed class LayoutExtractor : ILayoutExtractor
         double fastPathThreshold,
         double slowPathThreshold,
         RefitOrchestrator refit,
-        ITemplateVersionEventSink eventSink)
+        ITemplateVersionEventSink eventSink,
+        TypedSignalSink<StyloExtractSignal>? signals = null)
     {
         _parser = parser; _cleaner = cleaner; _fingerprinter = fingerprinter;
         _segmenter = segmenter; _classifier = classifier; _renderer = renderer;
@@ -43,6 +46,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
         _fastPathThreshold = fastPathThreshold; _slowPathThreshold = slowPathThreshold;
         _refit = refit;
         _eventSink = eventSink;
+        _signals = signals;
     }
 
     public async Task<ExtractionResult> ExtractAsync(
@@ -58,10 +62,12 @@ public sealed class LayoutExtractor : ILayoutExtractor
         var doc = _parser.Parse(html, sourceUri);
         _cleaner.Clean(doc);
         parseTimer.Stop();
+        _signals?.Raise(StyloExtractSignals.ParseDone, default);
 
         var fpTimer = Stopwatch.StartNew();
         var fp = _fingerprinter.Compute(doc);
         fpTimer.Stop();
+        _signals?.Raise(StyloExtractSignals.FingerprintComputed, new StyloExtractSignal(FingerprintHex: fp.Hex));
 
         var hostHash = _hostHasher.Hash(options.HostOverride ?? sourceUri?.Host ?? "");
         var status = MatchStatus.NovelEphemeral;
@@ -84,10 +90,14 @@ public sealed class LayoutExtractor : ILayoutExtractor
                 similarity = 1.0;
                 observationCount = await _index.GetObservationCountAsync(fastHit.Value, cancellationToken);
                 status = MatchStatus.FastPathHit;
+                _signals?.Raise(StyloExtractSignals.MatchFastPathHit,
+                    new StyloExtractSignal(TemplateId: fastHit, TemplateVersion: templateVersion, Similarity: similarity),
+                    key: fastHit.Value.ToString("N"));
             }
             else
             {
                 blocks = _classifier.Classify(_segmenter.Segment(doc));
+                _signals?.Raise(StyloExtractSignals.MatchFastPathMiss, default);
             }
         }
         else
@@ -104,12 +114,20 @@ public sealed class LayoutExtractor : ILayoutExtractor
                     similarity = slow.Value.Cosine;
                     observationCount = await _index.GetObservationCountAsync(templateId.Value, cancellationToken);
                     status = MatchStatus.SlowPathMatch;
+                    _signals?.Raise(StyloExtractSignals.MatchSlowPathMatch,
+                        new StyloExtractSignal(TemplateId: templateId, TemplateVersion: templateVersion, Similarity: similarity),
+                        key: templateId.Value.ToString("N"));
                 }
-                else { blocks = _classifier.Classify(_segmenter.Segment(doc)); }
+                else
+                {
+                    blocks = _classifier.Classify(_segmenter.Segment(doc));
+                    _signals?.Raise(StyloExtractSignals.MatchSlowPathMiss, default);
+                }
             }
             else
             {
                 blocks = _classifier.Classify(_segmenter.Segment(doc));
+                _signals?.Raise(StyloExtractSignals.MatchFastPathMiss, default);
                 if (options.LearnNewTemplates)
                 {
                     var newId = Guid.NewGuid();
@@ -118,6 +136,9 @@ public sealed class LayoutExtractor : ILayoutExtractor
                     templateVersion = 1;
                     observationCount = 1;
                     status = MatchStatus.Novel;
+                    _signals?.Raise(StyloExtractSignals.TemplateNovel,
+                        new StyloExtractSignal(TemplateId: templateId, FingerprintHex: fp.Hex, HostDisplayName: sourceUri?.Host),
+                        key: templateId.Value.ToString("N"));
                 }
             }
         }
@@ -134,6 +155,16 @@ public sealed class LayoutExtractor : ILayoutExtractor
                 // Use the old fingerprint from BumpVersionAsync so SignatureJaccardDelta is non-zero.
                 var oldFp = refit.OldFingerprint ?? fp;
                 var diff = TemplateVersionDiffer.Diff(refit.OldExtractor!, refit.NewExtractor!, oldFp, fp, oldFp.PqGramCounts, fp.PqGramCounts);
+                _signals?.Raise(StyloExtractSignals.DriftObserved,
+                    new StyloExtractSignal(TemplateId: templateId, DriftDelta: diff.SignatureJaccardDelta,
+                        OldVersion: refit.OldVersion, NewVersion: refit.NewVersion),
+                    key: templateId.Value.ToString("N"));
+                _signals?.Raise(StyloExtractSignals.TemplateRefit,
+                    new StyloExtractSignal(TemplateId: templateId, OldVersion: refit.OldVersion, NewVersion: refit.NewVersion),
+                    key: templateId.Value.ToString("N"));
+                _signals?.Raise(StyloExtractSignals.VersionDetected,
+                    new StyloExtractSignal(TemplateId: templateId, OldVersion: refit.OldVersion, NewVersion: refit.NewVersion, DriftDelta: diff.SignatureJaccardDelta),
+                    key: templateId.Value.ToString("N"));
                 await _eventSink.OnVersionChangeAsync(new VersionChangeEvent
                 {
                     TemplateId = templateId.Value,
