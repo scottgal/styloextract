@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StyloExtract</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --accent: #1f6feb; --bg: #0d1117; --surface: #161b22; --border: #30363d; --text: #e6edf3; --muted: #8b949e; --code-bg: #1f2428; }
+  body { font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, monospace; background: var(--bg); color: var(--text); line-height: 1.6; font-size: 15px; padding: 0 1rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  header { max-width: 860px; margin: 3rem auto 2rem; }
+  h1 { font-size: 2.2rem; letter-spacing: -1px; }
+  .tagline { color: var(--muted); margin-top: 0.4rem; font-size: 1rem; }
+  main { max-width: 860px; margin: 0 auto 4rem; }
+  section { margin-top: 2.5rem; }
+  h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; margin-bottom: 1rem; }
+  .install-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .install-box { flex: 1; min-width: 260px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.8rem 1rem; }
+  .install-box .label { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.4rem; }
+  .install-box code { color: var(--text); font-size: 0.88rem; word-break: break-all; }
+  .wedge { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 6px; padding: 1rem 1.2rem; font-size: 0.93rem; line-height: 1.75; }
+  .cols { display: flex; gap: 1.2rem; flex-wrap: wrap; margin-top: 0; }
+  .col { flex: 1; min-width: 220px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1rem 1.1rem; }
+  .col h3 { font-size: 0.95rem; color: var(--accent); margin-bottom: 0.6rem; }
+  .col ul { list-style: none; color: var(--muted); font-size: 0.85rem; }
+  .col ul li { padding: 0.15rem 0; }
+  .col ul li::before { content: "- "; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.6rem 0.9rem; font-size: 0.82rem; overflow-x: auto; margin-top: 0.7rem; color: var(--text); }
+  .perf { background: var(--code-bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.7rem 1rem; font-size: 0.85rem; color: var(--muted); }
+  .perf strong { color: var(--text); }
+  footer { max-width: 860px; margin: 0 auto 2rem; border-top: 1px solid var(--border); padding-top: 1.2rem; font-size: 0.83rem; color: var(--muted); display: flex; gap: 1.5rem; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>StyloExtract</h1>
+  <p class="tagline">Layout-fingerprint matching with template-keyed extractor reuse for .NET 10.</p>
+</header>
+
+<main>
+
+  <section>
+    <h2>Install</h2>
+    <div class="install-row">
+      <div class="install-box">
+        <div class="label">Library (NuGet)</div>
+        <code>dotnet add package Mostlylucid.StyloExtract.AspNetCore</code>
+      </div>
+      <div class="install-box">
+        <div class="label">CLI binary</div>
+        <code><a href="https://github.com/scottgal/styloextract/releases/latest">github.com/scottgal/styloextract/releases</a></code>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What it does</h2>
+    <div class="wedge">
+      StyloExtract is not an HTML-to-Markdown converter. Generic tools like Trafilatura, Mercury, and Readability
+      parse each page in isolation: they apply heuristics, discard boilerplate, and return text. That works, but
+      it throws away something valuable: the fact that the same site usually produces the same page <em>shape</em>
+      over thousands of requests. StyloExtract treats page structure as a fingerprint. The first time it sees a
+      layout it induces an extractor (a set of CSS selectors and block roles) directly from the DOM. Every
+      subsequent page that matches the same layout fingerprint reuses that extractor rather than re-running
+      heuristics from scratch. The extractor is a learned centroid that drifts and refits as the site evolves.
+      When the centroid drift crosses a threshold, the refit is recorded as a version event, giving you
+      site-template-version monitoring as a side effect of extraction.
+    </div>
+  </section>
+
+  <section>
+    <h2>Two CLI flavors + library</h2>
+    <div class="cols">
+      <div class="col">
+        <h3>stylo-extract (AOT)</h3>
+        <ul>
+          <li>Native binary, ~11 MB on arm64</li>
+          <li>No .NET runtime required</li>
+          <li>extract, export, import, monitor</li>
+          <li>File and HTTP sources</li>
+        </ul>
+        <pre>stylo-extract extract article.html
+stylo-extract monitor --urls urls.txt \
+  --store db.db --interval 00:30:00</pre>
+      </div>
+      <div class="col">
+        <h3>stylo-extract-playwright</h3>
+        <ul>
+          <li>R2R self-contained, includes Playwright</li>
+          <li>All AOT subcommands plus:</li>
+          <li>--rendered flag for JS-rendered pages</li>
+          <li>install-browsers subcommand</li>
+        </ul>
+        <pre>stylo-extract-playwright extract \
+  https://spa-example.com/page \
+  --rendered</pre>
+      </div>
+      <div class="col">
+        <h3>Library</h3>
+        <ul>
+          <li>AddStyloExtract() DI extension</li>
+          <li>ILayoutExtractor.ExtractAsync</li>
+          <li>AOT-compatible core stack</li>
+          <li>11 StyloFlow signals per extract</li>
+        </ul>
+        <pre>var result = await extractor
+  .ExtractAsync(html, uri);
+Console.WriteLine(result.Markdown);
+Console.WriteLine(result.Match.Status);</pre>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Performance</h2>
+    <div class="perf">
+      Fast-path LSH match: <strong>ProbeFastPath = 16 us</strong> (warm cache, in-process).
+      69/69 tests green. AOT verified on all 8 core packages every push to main.
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <a href="https://github.com/scottgal/styloextract">GitHub</a>
+  <a href="https://www.nuget.org/profiles/scottgal">NuGet</a>
+  <a href="https://github.com/scottgal/styloextract/releases/latest">Latest release</a>
+  <a href="https://github.com/scottgal/styloextract/blob/main/LICENSE">Unlicense</a>
+</footer>
+
+</body>
+</html>
