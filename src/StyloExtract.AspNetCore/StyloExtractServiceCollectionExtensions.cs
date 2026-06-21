@@ -43,7 +43,11 @@ public static class StyloExtractServiceCollectionExtensions
             SqliteSchema.EnsureCreated(conn);
             return conn;
         });
-        services.AddSingleton<ITemplateIndex, SqliteTemplateIndex>();
+        services.AddSingleton<ITemplateIndex>(sp => new SqliteTemplateIndex(
+            sp.GetRequiredService<SqliteConnection>(),
+            options.Match.AgingLambdaObs,
+            options.Match.AgingLambdaRecent,
+            options.Match.AgingTauDays));
         services.AddSingleton<SqliteTemplateIndex>(sp => (SqliteTemplateIndex)sp.GetRequiredService<ITemplateIndex>());
         services.AddSingleton<RefitOrchestrator>(sp => new RefitOrchestrator(
             sp.GetRequiredService<SqliteTemplateIndex>(),
