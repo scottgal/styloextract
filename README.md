@@ -12,7 +12,7 @@ Layout-fingerprint matching with template-keyed extractor reuse for .NET 10.
 
 StyloExtract is not an HTML-to-Markdown converter. Generic tools like Trafilatura, Mercury, and Readability parse each page in isolation: they apply heuristics, discard boilerplate, and return text. That works, but it throws away something valuable: the fact that the same site usually produces the same page *shape* over thousands of requests.
 
-StyloExtract treats page structure as a fingerprint. The first time it sees a layout it induces an extractor — a set of CSS selectors and block roles — directly from the DOM. Every subsequent page that matches the same layout fingerprint reuses that extractor rather than re-running heuristics from scratch. The extractor is a learned centroid that drifts and refits as the site evolves. When the centroid drift crosses a threshold, the refit is recorded as a version event, giving you free site-template-version monitoring as a side effect of extraction.
+StyloExtract treats page structure as a fingerprint. The first time it sees a layout it induces an extractor (a set of CSS selectors and block roles) directly from the DOM. Every subsequent page that matches the same layout fingerprint reuses that extractor rather than re-running heuristics from scratch. The extractor is a learned centroid that drifts and refits as the site evolves. When the centroid drift crosses a threshold, the refit is recorded as a version event, giving you site-template-version monitoring as a side effect of extraction.
 
 Production extraction tools do not do same-template clustering. StyloExtract fills that gap. It is built for RAG pipelines, content monitoring, and any scenario where you hit the same site repeatedly and want consistent, low-latency extraction with observable version history.
 
@@ -55,7 +55,7 @@ var result = await extractor.ExtractAsync(html, new Uri("https://example.com/art
 Console.WriteLine(result.Markdown);                    // extracted content as Markdown
 Console.WriteLine(result.Match.Status);                // FastPathHit | SlowPathMatch | Novel | Refit
 Console.WriteLine(result.Match.TemplateId);            // Guid of the matched or inducted template
-Console.WriteLine(result.Match.TemplateVersion);       // version counter — increments on refit
+Console.WriteLine(result.Match.TemplateVersion);       // version counter; increments on refit
 ```
 
 ---

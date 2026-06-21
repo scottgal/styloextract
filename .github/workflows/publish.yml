@@ -61,26 +61,22 @@ jobs:
           name: nupkgs
           path: artifacts/*.nupkg
 
-      # NuGet trusted publishing (OIDC):
-      # On NuGet.org, configure a trusted publisher scoped to:
-      #   Repository owner: mostlylucid
-      #   Repository name:  stylobot-extract
+      # NuGet trusted publishing via OIDC.
+      # Configure on NuGet.org under Account Settings, Trusted Publishers:
+      #   Repository owner: scottgal
+      #   Repository name:  styloextract
       #   Workflow:         .github/workflows/publish.yml
-      # Once configured, the GitHub Actions OIDC token is exchanged automatically
-      # for a short-lived API key — no stored secret required.
-      #
-      # TODO: When the dotnet/nuget-publish-action ships with first-class OIDC
-      # support, replace the dotnet nuget push step below with that action.
-      # Tracking: https://github.com/NuGet/Home/issues/12572
-      #
-      # Until then, this step uses a stored NUGET_API_KEY secret as a fallback.
-      # To switch to OIDC-only: remove the --api-key flag and configure trusted
-      # publishing on NuGet.org as described above.
+      # The GitHub Actions OIDC token is exchanged for a short-lived NuGet
+      # token at push time. No stored secret involved.
+      - name: NuGet login via OIDC
+        uses: NuGet/login@v1
+        id: nuget_login
+        with:
+          user: scottgal
+
       - name: Push to NuGet.org
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: |
           dotnet nuget push artifacts/*.nupkg \
             --source https://api.nuget.org/v3/index.json \
-            --api-key "$NUGET_API_KEY" \
+            --api-key "${{ steps.nuget_login.outputs.NUGET_API_KEY }}" \
             --skip-duplicate
