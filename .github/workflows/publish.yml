@@ -86,6 +86,7 @@ jobs:
   build-binaries:
     needs: publish-nuget
     strategy:
+      fail-fast: false
       matrix:
         include:
           - rid: linux-x64
@@ -93,7 +94,7 @@ jobs:
             ext: ""
             archive: tar.gz
           - rid: linux-arm64
-            os: ubuntu-latest
+            os: ubuntu-24.04-arm
             ext: ""
             archive: tar.gz
           - rid: win-x64
