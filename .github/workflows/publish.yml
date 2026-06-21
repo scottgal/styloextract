@@ -1,4 +1,4 @@
-name: Publish to NuGet
+name: Publish
 
 on:
   push:
@@ -8,10 +8,10 @@ on:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 jobs:
-  publish:
+  publish-nuget:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -80,3 +80,143 @@ jobs:
             --source https://api.nuget.org/v3/index.json \
             --api-key "${{ steps.nuget_login.outputs.NUGET_API_KEY }}" \
             --skip-duplicate
+
+  build-binaries:
+    needs: publish-nuget
+    strategy:
+      matrix:
+        include:
+          - rid: linux-x64
+            os: ubuntu-latest
+            ext: ""
+            archive: tar.gz
+          - rid: linux-arm64
+            os: ubuntu-latest
+            ext: ""
+            archive: tar.gz
+          - rid: win-x64
+            os: windows-latest
+            ext: ".exe"
+            archive: zip
+          - rid: osx-x64
+            os: macos-latest
+            ext: ""
+            archive: tar.gz
+          - rid: osx-arm64
+            os: macos-latest
+            ext: ""
+            archive: tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish AOT binary (stylo-extract)
+        shell: bash
+        run: |
+          dotnet publish src/StyloExtract.Cli.Aot \
+            -c Release \
+            -r ${{ matrix.rid }} \
+            -p:PublishAot=true \
+            -p:InvariantGlobalization=true \
+            -p:StripSymbols=true \
+            -o publish/aot
+
+      - name: Publish R2R binary (stylo-extract-playwright)
+        shell: bash
+        run: |
+          dotnet publish src/StyloExtract.Cli \
+            -c Release \
+            -r ${{ matrix.rid }} \
+            -p:PublishReadyToRun=true \
+            -p:PublishSingleFile=true \
+            -p:SelfContained=true \
+            -o publish/r2r
+
+      - name: Archive binaries (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          mkdir -p dist
+          tar -czf dist/stylo-extract-${{ matrix.rid }}.tar.gz \
+            -C publish/aot stylo-extract${{ matrix.ext }}
+          tar -czf dist/stylo-extract-playwright-${{ matrix.rid }}.tar.gz \
+            -C publish/r2r stylo-extract-playwright${{ matrix.ext }}
+
+      - name: Archive binaries (zip)
+        if: matrix.archive == 'zip'
+        shell: bash
+        run: |
+          mkdir -p dist
+          cd publish/aot
+          7z a ../../dist/stylo-extract-${{ matrix.rid }}.zip stylo-extract${{ matrix.ext }}
+          cd ../../publish/r2r
+          7z a ../../dist/stylo-extract-playwright-${{ matrix.rid }}.zip stylo-extract-playwright${{ matrix.ext }}
+
+      - name: Upload binary artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.rid }}
+          path: dist/
+
+  attach-to-release:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*
+          merge-multiple: true
+          path: release-assets/
+
+      - name: Determine release type
+        id: release_type
+        run: |
+          TAG="${GITHUB_REF_NAME:-}"
+          if [[ "$TAG" =~ -(alpha|beta|rc)[0-9]* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create or update GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: ${{ steps.release_type.outputs.prerelease }}
+          body: |
+            ## StyloExtract ${{ github.ref_name }}
+
+            ### NuGet packages
+
+            All nine packages are published to NuGet.org. Add the one you need:
+
+            ```
+            dotnet add package Mostlylucid.StyloExtract.AspNetCore
+            dotnet add package Mostlylucid.StyloExtract.Playwright   # optional: JS-rendered fetching
+            ```
+
+            Full package list and docs at https://scottgal.github.io/styloextract/
+
+            ### CLI binaries
+
+            Two flavors per platform:
+
+            - `stylo-extract-<rid>` (AOT, lean): `extract`, `export`, `import`, `monitor`. No Playwright.
+            - `stylo-extract-playwright-<rid>` (R2R, self-contained): adds `--rendered` flag and `install-browsers`.
+
+            Download the archive for your platform below, extract, and run.
+
+            | Platform | AOT binary | R2R binary |
+            |----------|-----------|------------|
+            | Linux x64 | `stylo-extract-linux-x64.tar.gz` | `stylo-extract-playwright-linux-x64.tar.gz` |
+            | Linux arm64 | `stylo-extract-linux-arm64.tar.gz` | `stylo-extract-playwright-linux-arm64.tar.gz` |
+            | Windows x64 | `stylo-extract-win-x64.zip` | `stylo-extract-playwright-win-x64.zip` |
+            | macOS x64 | `stylo-extract-osx-x64.tar.gz` | `stylo-extract-playwright-osx-x64.tar.gz` |
+            | macOS arm64 | `stylo-extract-osx-arm64.tar.gz` | `stylo-extract-playwright-osx-arm64.tar.gz` |
+          files: release-assets/**
