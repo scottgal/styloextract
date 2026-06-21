@@ -38,4 +38,4 @@ This package is `IsAotCompatible=true`. AngleSharp itself is AOT-safe on .NET 10
 
 ---
 
-[Full documentation and package family](https://github.com/mostlylucid/stylobot-extract)
+[Full documentation and package family](https://github.com/scottgal/styloextract)

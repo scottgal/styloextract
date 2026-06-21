@@ -9,8 +9,8 @@
 dotnet tool install -g Mostlylucid.StyloExtract.Cli
 
 # Build from source
-git clone https://github.com/mostlylucid/stylobot-extract
-cd stylobot-extract
+git clone https://github.com/scottgal/styloextract
+cd styloextract
 dotnet build src/StyloExtract.Cli
 # Binary: src/StyloExtract.Cli/bin/Debug/net10.0/stylo-extract
 ```

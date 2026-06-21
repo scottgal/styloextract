@@ -52,4 +52,4 @@ This package is `IsAotCompatible=true`. `Microsoft.Data.Sqlite` is AOT-safe on .
 
 ---
 
-[Full documentation and package family](https://github.com/mostlylucid/stylobot-extract)
+[Full documentation and package family](https://github.com/scottgal/styloextract)

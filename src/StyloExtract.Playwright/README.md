@@ -49,4 +49,4 @@ This package is explicitly `IsAotCompatible=false`. Do not include it in AOT-pub
 
 ---
 
-[Full documentation and package family](https://github.com/mostlylucid/stylobot-extract)
+[Full documentation and package family](https://github.com/scottgal/styloextract)

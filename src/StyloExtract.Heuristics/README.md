@@ -41,4 +41,4 @@ This package is `IsAotCompatible=true`. Rule definitions are loaded from embedde
 
 ---
 
-[Full documentation and package family](https://github.com/mostlylucid/stylobot-extract)
+[Full documentation and package family](https://github.com/scottgal/styloextract)

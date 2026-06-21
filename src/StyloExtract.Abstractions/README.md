@@ -49,4 +49,4 @@ This package is `IsAotCompatible=true`. No reflection, no dynamic codegen.
 
 ---
 
-[Full documentation and package family](https://github.com/mostlylucid/stylobot-extract)
+[Full documentation and package family](https://github.com/scottgal/styloextract)

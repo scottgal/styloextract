@@ -4,7 +4,7 @@ Layout-fingerprint matching with template-keyed extractor reuse for .NET 10.
 
 [![NuGet](https://img.shields.io/nuget/v/Mostlylucid.StyloExtract.Core)](https://www.nuget.org/packages/Mostlylucid.StyloExtract.Core)
 [![License: Unlicense](https://img.shields.io/badge/license-Unlicense-blue.svg)](https://unlicense.org)
-[![CI](https://github.com/mostlylucid/stylobot-extract/actions/workflows/ci.yml/badge.svg)](https://github.com/mostlylucid/stylobot-extract/actions/workflows/ci.yml)
+[![CI](https://github.com/scottgal/styloextract/actions/workflows/ci.yml/badge.svg)](https://github.com/scottgal/styloextract/actions/workflows/ci.yml)
 
 ---
 
@@ -288,7 +288,7 @@ v1.0 - actively developed. APIs may shift before 1.0 release. Built for eventual
 
 ## Contributing
 
-Issues and PRs welcome at [github.com/mostlylucid/stylobot-extract/issues](https://github.com/mostlylucid/stylobot-extract/issues).
+Issues and PRs welcome at [github.com/scottgal/styloextract/issues](https://github.com/scottgal/styloextract/issues).
 
 ## License
 

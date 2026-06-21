@@ -10,8 +10,8 @@
     <Authors>StyloBot</Authors>
     <Company>StyloBot</Company>
     <PackageLicenseExpression>Unlicense</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/mostlylucid/stylobot-extract</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/mostlylucid/stylobot-extract</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/scottgal/styloextract</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/scottgal/styloextract</RepositoryUrl>
     <PackageIcon>icon.png</PackageIcon>
   </PropertyGroup>
   <ItemGroup Condition="'$(IsPackable)' == 'true'">
