@@ -1,2 +1,3 @@
-// Entry point placeholder — implementation added in later tasks.
-return 0;
+using BenchmarkDotNet.Running;
+
+BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);

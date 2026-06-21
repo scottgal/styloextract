@@ -7,5 +7,15 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\StyloExtract.Core\StyloExtract.Core.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.AspNetCore\StyloExtract.AspNetCore.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="article.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 </Project>
