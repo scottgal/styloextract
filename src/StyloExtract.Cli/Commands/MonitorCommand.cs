@@ -14,6 +14,7 @@ public static class MonitorCommand
         var intervalOpt = new Option<TimeSpan>("--interval") { DefaultValueFactory = _ => TimeSpan.FromMinutes(60), Description = "Poll interval (default 01:00:00). Press Ctrl-C to exit." };
         var webhookOpt = new Option<string?>("--webhook") { DefaultValueFactory = _ => null, Description = "Optional URL to POST each NDJSON event to." };
         var prettyOpt = new Option<bool>("--pretty") { DefaultValueFactory = _ => false, Description = "Write indented JSON (one event, multi-line) instead of compact NDJSON." };
+        var keyOpt = new Option<string?>("--host-hash-key") { DefaultValueFactory = _ => null, Description = "HMAC key for host hashing. Use --host-hash-key for persistent matching across process restarts." };
 
         var cmd = new Command("monitor", "Watch a list of URLs and emit NDJSON template-version events to stdout. Press Ctrl-C to stop.");
         cmd.Add(urlsOpt);
@@ -21,6 +22,7 @@ public static class MonitorCommand
         cmd.Add(intervalOpt);
         cmd.Add(webhookOpt);
         cmd.Add(prettyOpt);
+        cmd.Add(keyOpt);
 
         cmd.SetAction(async (ParseResult pr, CancellationToken ct) =>
         {
@@ -29,6 +31,7 @@ public static class MonitorCommand
             var interval = pr.GetValue(intervalOpt);
             var webhook = pr.GetValue(webhookOpt);
             var pretty = pr.GetValue(prettyOpt);
+            var key = pr.GetValue(keyOpt);
 
             var urlList = (await File.ReadAllLinesAsync(urlsFile, ct))
                 .Where(l => !string.IsNullOrWhiteSpace(l) && !l.StartsWith('#'))
@@ -37,7 +40,11 @@ public static class MonitorCommand
             var services = new ServiceCollection();
             var sink = new MonitorEventSink(Console.Out, webhook, pretty);
             services.AddSingleton<ITemplateVersionEventSink>(sink);
-            services.AddStyloExtract(o => o.StorePath = store);
+            services.AddStyloExtract(o =>
+            {
+                o.StorePath = store;
+                o.HostHashKey = key;
+            });
             var sp = services.BuildServiceProvider();
             var extractor = sp.GetRequiredService<ILayoutExtractor>();
 
