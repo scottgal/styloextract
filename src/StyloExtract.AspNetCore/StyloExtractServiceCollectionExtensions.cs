@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Mostlylucid.Ephemeral;
 using StyloExtract.Abstractions;
+using StyloExtract.AspNetCore.Policies;
 using StyloExtract.Core;
 using StyloExtract.Fingerprint;
 using StyloExtract.Heuristics;
@@ -14,6 +15,10 @@ namespace StyloExtract.AspNetCore;
 
 public static class StyloExtractServiceCollectionExtensions
 {
+    /// <summary>
+    /// Registers the full StyloExtract stack (extraction, fingerprinting, templates).
+    /// Also registers a default ResponsePolicyOptions singleton for use with UseStyloExtract().
+    /// </summary>
     public static IServiceCollection AddStyloExtract(this IServiceCollection services, Action<StyloExtractOptions>? configure = null)
     {
         var options = new StyloExtractOptions();
@@ -79,6 +84,47 @@ public static class StyloExtractServiceCollectionExtensions
             sp.GetRequiredService<TypedSignalSink<StyloExtractSignal>>(),
             sp.GetService<ILogger<LayoutExtractor>>()));
 
+        // Register a default ResponsePolicyOptions so ResponsePolicyMiddleware is always resolvable.
+        services.TryAddSingleton<ResponsePolicyOptions>();
+
         return services;
     }
+
+    /// <summary>
+    /// Registers the full StyloExtract stack and configures named response policies.
+    /// Requires AddStyloExtractMarkdownNegotiation() to have been called first when using
+    /// b.NegotiateMarkdown() inside the configurePolicy delegate.
+    /// </summary>
+    public static IServiceCollection AddStyloExtract(
+        this IServiceCollection services,
+        Action<StyloExtractOptions>? configure,
+        Action<ResponsePolicyOptions>? configurePolicy)
+    {
+        services.AddStyloExtract(configure);
+
+        if (configurePolicy is not null)
+        {
+            // Replace the TryAdd-registered descriptor with a factory that applies the delegate.
+            var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(ResponsePolicyOptions));
+            if (descriptor is not null)
+                services.Remove(descriptor);
+
+            services.AddSingleton<ResponsePolicyOptions>(_ =>
+            {
+                var opts = new ResponsePolicyOptions();
+                configurePolicy(opts);
+                return opts;
+            });
+        }
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the full StyloExtract stack with named response policies (StyloExtractOptions left at defaults).
+    /// </summary>
+    public static IServiceCollection AddStyloExtract(
+        this IServiceCollection services,
+        Action<ResponsePolicyOptions> configurePolicy)
+        => services.AddStyloExtract(null, configurePolicy);
 }
