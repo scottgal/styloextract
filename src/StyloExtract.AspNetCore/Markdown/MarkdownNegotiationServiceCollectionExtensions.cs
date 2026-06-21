@@ -35,6 +35,9 @@ public static class MarkdownNegotiationServiceCollectionExtensions
         services.TryAddSingleton<IDistributedCache, MemoryDistributedCache>();
         services.AddDistributedMemoryCache();
 
+        // Register the IResponsePolicy-based implementation for use with UseStyloExtract().
+        services.TryAddSingleton<MarkdownNegotiationPolicy>();
+
         return services;
     }
 }
