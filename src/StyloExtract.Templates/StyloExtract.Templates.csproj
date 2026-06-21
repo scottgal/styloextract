@@ -2,11 +2,13 @@
   <PropertyGroup>
     <RootNamespace>StyloExtract.Templates</RootNamespace>
     <AssemblyName>StyloExtract.Templates</AssemblyName>
+    <PackageId>Mostlylucid.StyloExtract.Templates</PackageId>
     <IsPackable>true</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
     <!-- Suppress NU1903 for transitive SQLitePCLRaw.lib.e_sqlite3 (GHSA-2m69-gcr7-jv3q)
          via Microsoft.Data.Sqlite 10.0.0. Tracking upstream for patch. -->
     <NoWarn>$(NoWarn);NU1903</NoWarn>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
   <ItemGroup>
     <!-- Grant test project access to internal members (e.g. BumpVersionAsync, PromoteInMemoryConnectionString).

@@ -2,8 +2,10 @@
   <PropertyGroup>
     <RootNamespace>StyloExtract.Html</RootNamespace>
     <AssemblyName>StyloExtract.Html</AssemblyName>
+    <PackageId>Mostlylucid.StyloExtract.Html</PackageId>
     <IsPackable>true</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />

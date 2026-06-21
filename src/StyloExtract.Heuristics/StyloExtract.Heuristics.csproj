@@ -2,8 +2,10 @@
   <PropertyGroup>
     <RootNamespace>StyloExtract.Heuristics</RootNamespace>
     <AssemblyName>StyloExtract.Heuristics</AssemblyName>
+    <PackageId>Mostlylucid.StyloExtract.Heuristics</PackageId>
     <IsPackable>true</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />

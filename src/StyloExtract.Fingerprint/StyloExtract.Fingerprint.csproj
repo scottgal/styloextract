@@ -2,8 +2,10 @@
   <PropertyGroup>
     <RootNamespace>StyloExtract.Fingerprint</RootNamespace>
     <AssemblyName>StyloExtract.Fingerprint</AssemblyName>
+    <PackageId>Mostlylucid.StyloExtract.Fingerprint</PackageId>
     <IsPackable>true</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />

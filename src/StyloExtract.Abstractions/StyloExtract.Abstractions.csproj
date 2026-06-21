@@ -2,8 +2,10 @@
   <PropertyGroup>
     <RootNamespace>StyloExtract.Abstractions</RootNamespace>
     <AssemblyName>StyloExtract.Abstractions</AssemblyName>
+    <PackageId>Mostlylucid.StyloExtract.Abstractions</PackageId>
     <IsPackable>true</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="AngleSharp" />

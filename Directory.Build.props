@@ -12,5 +12,10 @@
     <PackageLicenseExpression>Unlicense</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/mostlylucid/stylobot-extract</PackageProjectUrl>
     <RepositoryUrl>https://github.com/mostlylucid/stylobot-extract</RepositoryUrl>
+    <PackageIcon>icon.png</PackageIcon>
   </PropertyGroup>
+  <ItemGroup Condition="'$(IsPackable)' == 'true'">
+    <None Include="$(MSBuildThisFileDirectory)icon.png" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="README.md" Condition="Exists('README.md')" Pack="true" PackagePath="\" />
+  </ItemGroup>
 </Project>
