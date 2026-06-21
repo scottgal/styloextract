@@ -7,6 +7,22 @@ namespace StyloExtract.Heuristics;
 
 public sealed class HeuristicBlockClassifier : IBlockClassifier
 {
+    // Roles for which at most one instance is meaningful per page.
+    // Tables, CodeBlocks, and Forms are NOT singleton: a docs page commonly has many
+    // code samples and a sidebar may have multiple forms. All others represent structural
+    // sections that appear exactly once in a well-formed document.
+    private static readonly HashSet<BlockRole> SingletonRoles = new()
+    {
+        BlockRole.MainContent,
+        BlockRole.Article,
+        BlockRole.Heading,
+        BlockRole.Summary,
+        BlockRole.Breadcrumb,
+        BlockRole.PrimaryNavigation,
+        BlockRole.Header,
+        BlockRole.Footer,
+    };
+
     private readonly string[] _footerPhrases;
     private readonly Regex[] _copyrightPatterns;
     private readonly string[] _cookiePhrases;
@@ -139,6 +155,41 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
                 }
             }
         }
+
+        // Step 3c: Top-K per role cap.
+        // A single page has at most ONE main content block, ONE primary nav, ONE breadcrumb,
+        // ONE summary, ONE page heading. Tables, code blocks, and forms can repeat (a docs
+        // page often has many code samples). For singleton roles, keep only the highest-
+        // scoring instance and drop the rest. This prevents multiple disjoint secondary
+        // blocks (nav wrappers, TOC, toolbar) from all passing the previous filters and
+        // inflating output on long pages (Wikipedia ASP.NET, MS Docs AOT).
+        var scoreMapForRoleCap = new Dictionary<IElement, double>(ReferenceEqualityComparer.Instance);
+        foreach (var (el, _, _, sc) in candidates) scoreMapForRoleCap[el] = sc;
+
+        var bestPerSingletonRole = new Dictionary<BlockRole, (IElement Element, double Score)>();
+        foreach (var (el, role, _) in accepted)
+        {
+            if (!SingletonRoles.Contains(role)) continue;
+            var sc = scoreMapForRoleCap.TryGetValue(el, out var s) ? s : 0;
+            if (!bestPerSingletonRole.TryGetValue(role, out var current) || sc > current.Score)
+                bestPerSingletonRole[role] = (el, sc);
+        }
+
+        // Keep accepted entries: non-singleton roles pass through; singleton roles keep only the winner.
+        var acceptedAfterRoleCap = new List<(IElement Element, BlockRole Role, double Confidence)>(accepted.Count);
+        foreach (var (el, role, conf) in accepted)
+        {
+            if (!SingletonRoles.Contains(role))
+            {
+                acceptedAfterRoleCap.Add((el, role, conf));
+            }
+            else if (bestPerSingletonRole.TryGetValue(role, out var winner) && ReferenceEquals(winner.Element, el))
+            {
+                acceptedAfterRoleCap.Add((el, role, conf));
+            }
+            // else: a lower-scoring duplicate of a singleton role — drop it
+        }
+        accepted = acceptedAfterRoleCap;
 
         // Step 4: Re-sort accepted set by DOM order so the renderer emits in reading order.
         // Use the original element list index as a stable DOM-order proxy.
