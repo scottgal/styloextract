@@ -114,4 +114,60 @@ public class HeuristicBlockClassifierTests
         blocks.Should().Contain(b => b.Role == BlockRole.Form,
             "a form with a search input is a meaningful Form block");
     }
+
+    // --- v1.2.2 regression tests: sidebar + id-hint + density cap ---
+
+    [Fact]
+    public void Classify_HighLinkDensitySidebar_NotMainContent()
+    {
+        // Wikipedia-shape: id-only sidebar wrapper full of links plus an article body.
+        // The sidebar must NOT be classified as MainContent; the article must be.
+        const string articleBody = "The article body is here with substantial content. " +
+            "This paragraph deliberately contains enough prose to exceed the 200-character " +
+            "threshold and ensure the heuristic classifier treats it as real content rather " +
+            "than boilerplate. Adding more text to be thorough about reaching 500+ chars. " +
+            "More words here to pad to the minimum length needed for correct classification.";
+        var html = $@"<html><body>
+  <div id=""mw-panel"">
+    <a href=""/a"">Link A</a> <a href=""/b"">Link B</a> <a href=""/c"">Link C</a>
+    <a href=""/d"">Link D</a> <a href=""/e"">Link E</a> <a href=""/f"">Link F</a>
+  </div>
+  <main><article><p>{articleBody}</p></article></main>
+</body></html>";
+        var (blocks, _) = Classify(html);
+
+        blocks.Should().NotContain(b =>
+            b.Role == BlockRole.MainContent && b.Text.Contains("Link A"),
+            "the mw-panel sidebar must not be classified as MainContent");
+        blocks.Should().Contain(b =>
+            (b.Role == BlockRole.MainContent || b.Role == BlockRole.Article)
+            && b.Text.Contains("article body"),
+            "the article element must be classified as MainContent or Article");
+    }
+
+    [Fact]
+    public void Classify_IdAttributeNavHint_RecognisedAsNav()
+    {
+        // An element with id="navigation" must be classified as navigation even with no class.
+        const string html = "<html><body><div id=\"navigation\"><a>x</a><a>y</a><a>z</a><a>w</a></div></body></html>";
+        var (blocks, _) = Classify(html);
+
+        blocks.Should().Contain(b =>
+            b.Role == BlockRole.PrimaryNavigation || b.Role == BlockRole.SecondaryNavigation,
+            "id=\"navigation\" must trigger nav classification via IdOrClassMatches");
+    }
+
+    [Fact]
+    public void Classify_DivWrappingNavs_DemotedByLinkDensity()
+    {
+        // A <div> with no class or id but 80%+ link density must NOT be MainContent.
+        // This tests the hard-cap path in ClassifyOne for blocks that reach the fallthrough.
+        var links = string.Concat(Enumerable.Range(1, 20).Select(i => $"<a href=\"/p{i}\">Page {i}</a> "));
+        var html = $"<html><body><div>{links}</div><main><p>Real content paragraph with enough text to be recognised as article content by the heuristic classifier. Adding more words to ensure it exceeds 200 chars easily.</p></main></body></html>";
+        var (blocks, _) = Classify(html);
+
+        blocks.Should().NotContain(b =>
+            b.Role == BlockRole.MainContent && b.Text.StartsWith("Page 1"),
+            "a div that is 80%+ links must not be classified as MainContent");
+    }
 }
