@@ -9,5 +9,6 @@
     <PackageReference Include="System.CommandLine" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <ProjectReference Include="..\StyloExtract.AspNetCore\StyloExtract.AspNetCore.csproj" />
+    <ProjectReference Include="..\StyloExtract.Playwright\StyloExtract.Playwright.csproj" />
   </ItemGroup>
 </Project>
