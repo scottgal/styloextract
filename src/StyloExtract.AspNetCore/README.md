@@ -55,6 +55,79 @@ services.AddStyloExtract(o => { ... });
 
 If no sink is registered, `DefaultNoopVersionEventSink` is used (events discarded).
 
+## Response policy framework (v1.2)
+
+`IResponsePolicy` is the canonical response-transformation primitive in StyloExtract.AspNetCore.
+Markdown content negotiation is the first built-in policy instance; cache-hint emission is the second.
+The framework is modelled on `IOutputCachePolicy`'s three-phase lifecycle.
+
+### Three phases
+
+```csharp
+public interface IResponsePolicy
+{
+    // Pre-pipeline: parse request, configure vary semantics, store per-request state.
+    ValueTask OnRequestAsync(ResponsePolicyContext context);
+
+    // Pre-serve: short-circuit the response (e.g. serve from cache) without calling downstream.
+    ValueTask OnServeAsync(ResponsePolicyContext context);
+
+    // Post-produce: transform the buffered body, set headers, store in cache.
+    ValueTask OnProducedAsync(ResponsePolicyContext context);
+}
+```
+
+### Setup
+
+```csharp
+// 1. Register policies by name.
+builder.Services.AddStyloExtract(o => o.StorePath = "styloextract.db");
+builder.Services.AddStyloExtractMarkdownNegotiation(o => { ... });
+
+builder.Services.AddSingleton<ResponsePolicyOptions>(sp =>
+{
+    var opts = new ResponsePolicyOptions();
+    opts.AddPolicy("md", sp.GetRequiredService<MarkdownNegotiationPolicy>());
+    opts.AddPolicy("cache", new CacheHintPolicy(new CacheHintOptions
+    {
+        MaxAge = TimeSpan.FromMinutes(5),
+        EmitETag = true,
+        HonorIfNoneMatch = true,
+    }));
+    return opts;
+});
+
+// 2. Wire the middleware (after UseRouting, UseAuthentication, UseAuthorization).
+app.UseRouting();
+app.UseStyloExtract();
+```
+
+### Attaching policies to endpoints
+
+```csharp
+// Minimal API: chain WithResponsePolicy calls in declaration order.
+app.MapGet("/article", handler)
+    .WithResponsePolicy("md")
+    .WithResponsePolicy("cache");
+
+// MVC controller action: use [ResponsePolicy] attribute.
+[HttpGet("article")]
+[ResponsePolicy("md")]
+public IActionResult GetArticle() => Content(html, "text/html");
+```
+
+### Composition
+
+Policies run in declaration order. Each policy's `OnProducedAsync` sees the body as it was left by the preceding policy. When `MarkdownNegotiationPolicy` runs before `CacheHintPolicy`, the ETag is computed from the Markdown body, not the original HTML.
+
+### Backward compat (v1.1 paths still work)
+
+The framework is purely additive. All v1.1.0 public APIs remain unchanged:
+
+- `UseStyloExtractMarkdownNegotiation()` and `[NegotiateMarkdown]` and `WithMarkdownNegotiation()` are shims onto the same `MarkdownNegotiationPolicy` and continue to work.
+- `StyloExtractResults.HtmlOrMarkdown(...)` is unchanged.
+- Existing `AddStyloExtract(Action<StyloExtractOptions>?)` signature is unchanged.
+
 ## Markdown content negotiation
 
 StyloExtract can transparently serve Markdown instead of HTML when a client sends `Accept: text/markdown`. Three opt-in paths are provided; choose the one that fits your app.
