@@ -60,4 +60,58 @@ public class HeuristicBlockClassifierTests
         var (blocks, _) = Classify(html);
         blocks.Should().Contain(b => b.Role == BlockRole.Advertisement);
     }
+
+    // --- New tests for v1.2.1 selection behaviour ---
+
+    [Fact]
+    public void Classify_NestedWrappers_KeepsHighestScoringSubtreeOnly()
+    {
+        // A typical blog page: <main> wraps <article> wraps div wrappers.
+        // The non-overlapping selection must emit exactly ONE block covering the
+        // article body, not one block per ancestor wrapper.
+        const string body = "This is the main article body text. It contains a thorough discussion of the topic at hand with substantial prose content to ensure correct classification by the heuristic classifier.";
+        var html = $"<html><body><main><article><div class='wrapper'><div class='container'><p>{body}</p></div></div></article></main></body></html>";
+        var (blocks, _) = Classify(html);
+
+        blocks.Should().HaveCount(1, "nested wrappers must collapse to a single selected block");
+        blocks[0].Role.Should().BeOneOf(BlockRole.MainContent, BlockRole.Article);
+        blocks[0].Text.Should().Contain(body.Substring(0, 40));
+    }
+
+    [Fact]
+    public void Classify_EmptyDivs_NotEmitted()
+    {
+        // Empty wrapper divs should produce zero blocks after quality-based selection.
+        const string realContent = "This is the real article content with enough text to pass the quality gate and be selected by the non-overlapping subtree picker.";
+        var html = $"<html><body><main><article><p>{realContent}</p></article></main><div><div></div></div></body></html>";
+        var (blocks, _) = Classify(html);
+
+        // The empty <div><div></div></div> chain must not appear in output.
+        blocks.Should().NotContain(b => b.Text.Trim().Length == 0,
+            "empty blocks carry no information and must be filtered out");
+        blocks.Should().Contain(b => b.Text.Contains(realContent.Substring(0, 40)));
+    }
+
+    [Fact]
+    public void Classify_MobileNavForm_NotClassifiedAsForm()
+    {
+        // A <form> with only a button and no meaningful text input must not be
+        // classified as Form (mobile-nav toggle pattern).
+        const string html = "<html><body><form><button type='button'>Menu</button></form><main><p>Content goes here with enough text to matter.</p></main></body></html>";
+        var (blocks, _) = Classify(html);
+
+        blocks.Should().NotContain(b => b.Role == BlockRole.Form,
+            "a form with no meaningful text inputs is not a Form block");
+    }
+
+    [Fact]
+    public void Classify_SearchForm_IsClassifiedAsForm()
+    {
+        // A <form> with a search input must be classified as Form.
+        const string html = "<html><body><form><input type='search' name='q' /><button>Go</button></form></body></html>";
+        var (blocks, _) = Classify(html);
+
+        blocks.Should().Contain(b => b.Role == BlockRole.Form,
+            "a form with a search input is a meaningful Form block");
+    }
 }
