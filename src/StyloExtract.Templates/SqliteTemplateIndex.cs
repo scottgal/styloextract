@@ -345,7 +345,7 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
 
         await _writer.WriteAndInvalidateAsync(
             "UPDATE templates SET extractor_blob = @ex WHERE template_id = @id",
-            new { ex = newExBytes, id = idBytes },
+            new Dictionary<string, object?> { ["ex"] = newExBytes, ["id"] = idBytes },
             new[] { ExtractorKey(templateId) },
             cancellationToken).ConfigureAwait(false);
     }

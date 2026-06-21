@@ -1,14 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <RootNamespace>StyloExtract.Cli</RootNamespace>
-    <AssemblyName>stylo-extract</AssemblyName>
+    <AssemblyName>stylo-extract-playwright</AssemblyName>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="System.CommandLine" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
-    <ProjectReference Include="..\StyloExtract.AspNetCore\StyloExtract.AspNetCore.csproj" />
+    <ProjectReference Include="..\StyloExtract.Cli.Shared\StyloExtract.Cli.Shared.csproj" />
     <ProjectReference Include="..\StyloExtract.Playwright\StyloExtract.Playwright.csproj" />
   </ItemGroup>
 </Project>
