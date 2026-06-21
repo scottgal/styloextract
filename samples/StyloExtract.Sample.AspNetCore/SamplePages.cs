@@ -33,6 +33,10 @@ public static class SamplePages
               <tr><th>Path</th><th>Integration type</th><th>Notes</th></tr>
             </thead>
             <tbody>
+              <tr><td><a href="/api/policy-demo">/api/policy-demo</a></td><td>Response policy framework (v1.2)</td><td>Markdown + cache hints via WithResponsePolicy chain</td></tr>
+              <tr><td><a href="/api/cache-demo">/api/cache-demo</a></td><td>Cache hints only</td><td>ETag + Cache-Control via CacheHintPolicy</td></tr>
+              <tr><td><a href="/sample/policy-attr">/sample/policy-attr</a></td><td>ResponsePolicy attribute (v1.2)</td><td>[ResponsePolicy("md")] on MVC action</td></tr>
+              <tr><td><a href="/sample/legacy-attr">/sample/legacy-attr</a></td><td>NegotiateMarkdown attribute (legacy)</td><td>[NegotiateMarkdown] still works in v1.2</td></tr>
               <tr><td><a href="/article">/article</a></td><td>Middleware (global)</td><td>HTML by default; add Accept or ?format=markdown</td></tr>
               <tr><td><a href="/product">/product</a></td><td>Middleware (global, no attribute)</td><td>Shows middleware catches everything</td></tr>
               <tr><td><a href="/product/featured">/product/featured</a></td><td>MVC attribute</td><td>[NegotiateMarkdown] pinned to RagFull</td></tr>
@@ -122,6 +126,49 @@ public static class SamplePages
           <footer>
             <p>StyloExtract Sample App</p>
           </footer>
+        </body>
+        </html>
+        """;
+
+    public static string PolicyDemo() => """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="utf-8" />
+          <title>Response Policy Framework Demo</title>
+        </head>
+        <body>
+          <header><nav><a href="/">Home</a></nav></header>
+          <main>
+            <article>
+              <h1>Response Policy Framework</h1>
+              <p>
+                This endpoint is served by two chained policies: MarkdownNegotiationPolicy followed by
+                CacheHintPolicy. When you request text/markdown, the Markdown body is produced first,
+                then the cache policy computes an ETag from those Markdown bytes. The ETag you receive
+                reflects the Markdown content, not the original HTML.
+              </p>
+              <h2>How the composition works</h2>
+              <p>
+                The IResponsePolicy three-phase lifecycle runs OnRequestAsync for all policies first,
+                then buffers the downstream response, then runs OnProducedAsync for each policy in order.
+                After each policy writes RewrittenBody, the middleware updates the shared BufferedBody so
+                the next policy sees the transformed content. Policy two (CacheHintPolicy) therefore
+                computes its ETag from the already-converted Markdown bytes.
+              </p>
+              <ul>
+                <li>OnRequestAsync: parse Accept header, store If-None-Match, add Vary entries</li>
+                <li>OnServeAsync: serve from cache if available (Markdown policy only)</li>
+                <li>OnProducedAsync: convert HTML to Markdown, then compute ETag from result</li>
+              </ul>
+              <h2>Try it</h2>
+              <p>
+                Use the ETag round-trip curl commands in the README to see Cache-Control, ETag, and
+                Vary headers in action. A second request with If-None-Match returns 304 with no body.
+              </p>
+            </article>
+          </main>
+          <footer><p>StyloExtract Sample</p></footer>
         </body>
         </html>
         """;

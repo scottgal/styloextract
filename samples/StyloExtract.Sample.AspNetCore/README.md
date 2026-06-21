@@ -1,6 +1,6 @@
 # StyloExtract.Sample.AspNetCore
 
-A minimal ASP.NET Core demo app that exercises all three Markdown content negotiation paths, the query-string Accept override, and the IDistributedCache caching layer.
+A minimal ASP.NET Core demo app that exercises the response-policy framework (v1.2), all three Markdown content negotiation paths, the query-string Accept override, and the IDistributedCache caching layer.
 
 ## Running the sample
 
@@ -15,6 +15,10 @@ The app starts at `http://localhost:5080`. Visit the root path for an endpoint i
 | Path | Integration type | Notes |
 |---|---|---|
 | `/` | Index | HTML page listing all demo endpoints |
+| `/api/policy-demo` | Response policy framework (v1.2) | Markdown + cache hints via `WithResponsePolicy` chain |
+| `/api/cache-demo` | Cache hints only | ETag + Cache-Control via CacheHintPolicy |
+| `/sample/policy-attr` | ResponsePolicy attribute (v1.2) | `[ResponsePolicy("md")]` on MVC action |
+| `/sample/legacy-attr` | NegotiateMarkdown attribute (legacy) | `[NegotiateMarkdown]` still works in v1.2 |
 | `/article` | Middleware (global) | ArticleController, no attribute |
 | `/product` | Middleware (global) | ProductController, no attribute |
 | `/product/featured` | MVC attribute | `[NegotiateMarkdown(ExtractionProfile.RagFull)]` |
@@ -24,6 +28,23 @@ The app starts at `http://localhost:5080`. Visit the root path for an endpoint i
 ## curl examples
 
 ```bash
+# Response policy framework (v1.2): see ETag, Cache-Control, Content-Type
+curl -sI -H "Accept: text/markdown" http://localhost:5080/api/policy-demo | grep -iE "etag|x-stylo|content-type|cache-control"
+
+# ETag round-trip: second request returns 304 Not Modified
+ETAG=$(curl -sI -H "Accept: text/markdown" http://localhost:5080/api/policy-demo | grep -i etag | awk '{print $2}' | tr -d '\r')
+curl -sI -H "Accept: text/markdown" -H "If-None-Match: $ETAG" http://localhost:5080/api/policy-demo | head -1
+# Expected: HTTP/1.1 304 Not Modified
+
+# Cache hints only (no Markdown conversion)
+curl -sI http://localhost:5080/api/cache-demo | grep -iE "etag|cache-control"
+
+# New-style ResponsePolicy attribute on MVC action
+curl -H "Accept: text/markdown" http://localhost:5080/sample/policy-attr
+
+# Legacy NegotiateMarkdown attribute still works
+curl -H "Accept: text/markdown" http://localhost:5080/sample/legacy-attr
+
 # Plain HTML (browser default)
 curl http://localhost:5080/article
 
