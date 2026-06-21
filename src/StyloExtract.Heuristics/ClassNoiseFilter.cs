@@ -1,7 +1,5 @@
-using System.Reflection;
+using System.Text.Json;
 using System.Text.RegularExpressions;
-using YamlDotNet.Serialization;
-using YamlDotNet.Serialization.NamingConventions;
 
 namespace StyloExtract.Heuristics;
 
@@ -22,14 +20,9 @@ public sealed class ClassNoiseFilter
     {
         var assembly = typeof(ClassNoiseFilter).Assembly;
         var resourceName = assembly.GetManifestResourceNames()
-            .Single(n => n.EndsWith("class-noise-tokens.yaml", StringComparison.Ordinal));
+            .Single(n => n.EndsWith("class-noise-tokens.json", StringComparison.Ordinal));
         using var stream = assembly.GetManifestResourceStream(resourceName)!;
-        using var reader = new StreamReader(stream);
-        var yaml = reader.ReadToEnd();
-        var deserializer = new DeserializerBuilder()
-            .WithNamingConvention(CamelCaseNamingConvention.Instance)
-            .Build();
-        var dto = deserializer.Deserialize<ClassNoiseDto>(yaml);
+        var dto = JsonSerializer.Deserialize(stream, HeuristicsJsonContext.Default.ClassNoiseDto)!;
         return new ClassNoiseFilter(
             new HashSet<string>(dto.ExactTokens, StringComparer.OrdinalIgnoreCase),
             dto.Prefixes,
@@ -50,12 +43,5 @@ public sealed class ClassNoiseFilter
             }
         }
         return result;
-    }
-
-    private sealed class ClassNoiseDto
-    {
-        public List<string> ExactTokens { get; set; } = new();
-        public string[] Prefixes { get; set; } = [];
-        public string HashedBemSuffixPattern { get; set; } = "";
     }
 }

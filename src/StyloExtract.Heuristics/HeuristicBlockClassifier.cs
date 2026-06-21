@@ -1,9 +1,7 @@
-using System.Reflection;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using AngleSharp.Dom;
 using StyloExtract.Abstractions;
-using YamlDotNet.Serialization;
-using YamlDotNet.Serialization.NamingConventions;
 
 namespace StyloExtract.Heuristics;
 
@@ -32,21 +30,33 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
     public static HeuristicBlockClassifier LoadFromEmbeddedResources()
     {
         var assembly = typeof(HeuristicBlockClassifier).Assembly;
-        var deserializer = new DeserializerBuilder().WithNamingConvention(CamelCaseNamingConvention.Instance).Build();
 
-        T Load<T>(string name)
+        PhraseList LoadPhraseList(string name)
         {
             var resName = assembly.GetManifestResourceNames().Single(n => n.EndsWith(name, StringComparison.Ordinal));
             using var s = assembly.GetManifestResourceStream(resName)!;
-            using var r = new StreamReader(s);
-            return deserializer.Deserialize<T>(r.ReadToEnd());
+            return JsonSerializer.Deserialize(s, HeuristicsJsonContext.Default.PhraseList)!;
         }
 
-        var footer = Load<PhraseList>("footer-phrases.yaml");
-        var copyright = Load<PatternList>("copyright-patterns.yaml");
-        var cookie = Load<PhraseList>("cookie-banner-phrases.yaml");
-        var nav = Load<HintList>("nav-class-hints.yaml");
-        var ad = Load<HintList>("ad-class-hints.yaml");
+        PatternList LoadPatternList(string name)
+        {
+            var resName = assembly.GetManifestResourceNames().Single(n => n.EndsWith(name, StringComparison.Ordinal));
+            using var s = assembly.GetManifestResourceStream(resName)!;
+            return JsonSerializer.Deserialize(s, HeuristicsJsonContext.Default.PatternList)!;
+        }
+
+        HintList LoadHintList(string name)
+        {
+            var resName = assembly.GetManifestResourceNames().Single(n => n.EndsWith(name, StringComparison.Ordinal));
+            using var s = assembly.GetManifestResourceStream(resName)!;
+            return JsonSerializer.Deserialize(s, HeuristicsJsonContext.Default.HintList)!;
+        }
+
+        var footer = LoadPhraseList("footer-phrases.json");
+        var copyright = LoadPatternList("copyright-patterns.json");
+        var cookie = LoadPhraseList("cookie-banner-phrases.json");
+        var nav = LoadHintList("nav-class-hints.json");
+        var ad = LoadHintList("ad-class-hints.json");
 
         return new HeuristicBlockClassifier(
             footer.Phrases.ToArray(),
@@ -184,8 +194,4 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         while (current is not null) { depth++; current = current.ParentElement; }
         return depth;
     }
-
-    private sealed class PhraseList { public List<string> Phrases { get; set; } = new(); }
-    private sealed class PatternList { public List<string> Patterns { get; set; } = new(); }
-    private sealed class HintList { public List<string> Hints { get; set; } = new(); }
 }

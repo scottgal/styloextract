@@ -1,0 +1,26 @@
+{
+  "exactTokens": [
+    "dark-mode",
+    "light-mode",
+    "dark",
+    "light",
+    "active",
+    "hidden",
+    "visible",
+    "selected",
+    "open",
+    "closed",
+    "loading",
+    "loaded",
+    "error"
+  ],
+  "prefixes": [
+    "is-",
+    "js-",
+    "has-",
+    "data-",
+    "state-",
+    "aria-"
+  ],
+  "hashedBemSuffixPattern": "__[a-z0-9]{4,}$"
+}

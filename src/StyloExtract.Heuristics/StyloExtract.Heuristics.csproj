@@ -3,13 +3,13 @@
     <RootNamespace>StyloExtract.Heuristics</RootNamespace>
     <AssemblyName>StyloExtract.Heuristics</AssemblyName>
     <IsPackable>true</IsPackable>
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
-    <PackageReference Include="YamlDotNet" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="Definitions\**\*.yaml" />
+    <EmbeddedResource Include="Definitions\**\*.json" />
   </ItemGroup>
 </Project>
