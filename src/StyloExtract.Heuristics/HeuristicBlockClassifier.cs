@@ -177,14 +177,22 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         var tag = element.TagName.ToLowerInvariant();
         var tagNudge = tag is "div" ? -50.0 : 0.0;
 
-        // Class hint bonus: only applies when role is MainContent (wrapper divs with
-        // content-class names should yield to <article>/<main> siblings).
+        // Class/id hint bonus: only applies when role is MainContent (wrapper divs with
+        // content-class/id names should yield to <article>/<main> siblings).
+        // Both class tokens and the id attribute are checked so that CMS patterns using
+        // id-only identifiers (e.g. id="mw-panel", id="footer", id="mw-navigation")
+        // are treated identically to class-based hints.
         double classHintBonus = 0.0;
         if (role is BlockRole.MainContent or BlockRole.Boilerplate)
         {
             var classTokens = (element.GetAttribute("class") ?? "")
                 .Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            foreach (var token in classTokens)
+            var idAttr = element.GetAttribute("id") ?? "";
+            // Combine class tokens and id as one pool of tokens to check.
+            var allHintTokens = idAttr.Length > 0
+                ? classTokens.Append(idAttr)
+                : classTokens;
+            foreach (var token in allHintTokens)
             {
                 var t = token.ToLowerInvariant();
                 if (t.Contains("content") || t.Contains("article") || t.Contains("post")
@@ -194,7 +202,7 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
                     break;
                 }
             }
-            foreach (var token in classTokens)
+            foreach (var token in allHintTokens)
             {
                 var t = token.ToLowerInvariant();
                 if (t.Contains("ad") || t.Contains("advertisement") || t.Contains("sidebar")
@@ -217,15 +225,12 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         var text = element.TextContent;
         var linkDensity = ComputeLinkDensity(element);
 
-        bool ClassMatches(HashSet<string> hints) => classTokens.Any(c =>
-            hints.Any(h => c.Contains(h, StringComparison.OrdinalIgnoreCase)));
-
         bool TextContainsAny(IEnumerable<string> phrases) =>
             phrases.Any(p => text.Contains(p, StringComparison.OrdinalIgnoreCase));
 
         bool TextMatchesAny(Regex[] patterns) => patterns.Any(r => r.IsMatch(text));
 
-        if (tag is "nav" || ClassMatches(_navHints))
+        if (tag is "nav" || IdOrClassMatches(element, _navHints))
         {
             if (linkDensity > 0.7)
             {
@@ -299,7 +304,7 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
             return (BlockRole.CookieBanner, 0.9);
         }
 
-        if (ClassMatches(_adHints) && linkDensity > 0.5)
+        if (IdOrClassMatches(element, _adHints) && linkDensity > 0.5)
         {
             return (BlockRole.Advertisement, 0.8);
         }
@@ -356,6 +361,25 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         var current = element.ParentElement;
         while (current is not null) { depth++; current = current.ParentElement; }
         return depth;
+    }
+
+    /// <summary>
+    /// Returns true when any hint substring matches a class token OR the element's id
+    /// attribute. This handles CMS patterns (Drupal, older WordPress, Wikipedia) that use
+    /// id-only identifiers like id="mw-panel" or id="footer" instead of class names.
+    /// </summary>
+    private static bool IdOrClassMatches(IElement element, HashSet<string> hints)
+    {
+        var classTokens = (element.GetAttribute("class") ?? "")
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (classTokens.Any(c => hints.Any(h => c.Contains(h, StringComparison.OrdinalIgnoreCase))))
+            return true;
+
+        var id = element.GetAttribute("id");
+        if (!string.IsNullOrEmpty(id) && hints.Any(h => id.Contains(h, StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        return false;
     }
 
     /// <summary>
