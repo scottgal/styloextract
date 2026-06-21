@@ -3,6 +3,7 @@
     <RootNamespace>StyloExtract.Fingerprint</RootNamespace>
     <AssemblyName>StyloExtract.Fingerprint</AssemblyName>
     <IsPackable>true</IsPackable>
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />

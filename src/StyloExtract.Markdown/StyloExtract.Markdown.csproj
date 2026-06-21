@@ -3,6 +3,7 @@
     <RootNamespace>StyloExtract.Markdown</RootNamespace>
     <AssemblyName>StyloExtract.Markdown</AssemblyName>
     <IsPackable>true</IsPackable>
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />

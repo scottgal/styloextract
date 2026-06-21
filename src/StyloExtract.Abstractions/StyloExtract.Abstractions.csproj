@@ -3,6 +3,7 @@
     <RootNamespace>StyloExtract.Abstractions</RootNamespace>
     <AssemblyName>StyloExtract.Abstractions</AssemblyName>
     <IsPackable>true</IsPackable>
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="AngleSharp" />

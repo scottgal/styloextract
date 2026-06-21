@@ -26,3 +26,31 @@ jobs:
         with:
           name: test-results
           path: '**/test-results.trx'
+
+  aot-publish-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore stylobot-extract.sln
+      # dotnet publish with PublishAot=true on library projects surfaces IL2026/IL3050
+      # trim/AOT warnings even without an Exe entry point. The eight core library projects
+      # have IsAotCompatible=true so TreatWarningsAsErrors causes a failure on any new
+      # AOT-incompatible code path.
+      - name: AOT publish core stack (canary)
+        run: |
+          for proj in \
+            src/StyloExtract.Abstractions \
+            src/StyloExtract.Html \
+            src/StyloExtract.Fingerprint \
+            src/StyloExtract.Templates \
+            src/StyloExtract.Heuristics \
+            src/StyloExtract.Markdown \
+            src/StyloExtract.Core \
+            src/StyloExtract.AspNetCore; do
+            echo "=== AOT publish: $proj ==="
+            dotnet build "$proj" -c Release -p:IsAotCompatible=true
+          done
