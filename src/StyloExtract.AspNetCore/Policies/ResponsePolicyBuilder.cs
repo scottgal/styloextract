@@ -8,6 +8,7 @@ namespace StyloExtract.AspNetCore.Policies;
 public sealed class ResponsePolicyBuilder
 {
     private readonly IServiceProvider? _serviceProvider;
+    private readonly Dictionary<string, IResponsePolicy> _namedPolicies = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Constructs a builder with an optional service provider for DI-resolved policies.</summary>
     public ResponsePolicyBuilder(IServiceProvider? serviceProvider = null)
@@ -29,6 +30,24 @@ public sealed class ResponsePolicyBuilder
     }
 
     /// <summary>
+    /// Registers a named policy by configuring an inner ResponsePolicyBuilder.
+    /// The inner builder receives the same service provider as this builder.
+    /// Policy names are case-insensitive.
+    /// </summary>
+    /// <param name="name">The policy name used with WithResponsePolicy() or [ResponsePolicy].</param>
+    /// <param name="configure">Delegate that configures the inner builder (e.g. p.NegotiateMarkdown(), p.CacheHints()).</param>
+    public ResponsePolicyBuilder AddPolicy(string name, Action<ResponsePolicyBuilder> configure)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        var inner = new ResponsePolicyBuilder(_serviceProvider);
+        configure(inner);
+        _namedPolicies[name] = inner.Build();
+        return this;
+    }
+
+    /// <summary>
     /// Builds and returns the configured policy.
     /// Throws InvalidOperationException if no policy was configured.
     /// </summary>
@@ -39,5 +58,15 @@ public sealed class ResponsePolicyBuilder
                 "No policy was configured on this ResponsePolicyBuilder. " +
                 "Call NegotiateMarkdown(), CacheHints(), or Use(policy) first.");
         return Built;
+    }
+
+    /// <summary>
+    /// Applies all named policies registered via AddPolicy() to the provided ResponsePolicyOptions.
+    /// Called by the AddStyloExtract(Action&lt;ResponsePolicyBuilder&gt;) overload.
+    /// </summary>
+    internal void ApplyNamedPoliciesTo(ResponsePolicyOptions options)
+    {
+        foreach (var (name, policy) in _namedPolicies)
+            options.AddPolicy(name, policy);
     }
 }

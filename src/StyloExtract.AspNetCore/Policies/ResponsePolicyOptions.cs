@@ -6,13 +6,14 @@ namespace StyloExtract.AspNetCore.Policies;
 /// </summary>
 public sealed class ResponsePolicyOptions
 {
-    private readonly Dictionary<string, IResponsePolicy> _policies = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IResponsePolicy> _policies = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The registered named policies, keyed by name.</summary>
     public IReadOnlyDictionary<string, IResponsePolicy> Policies => _policies;
 
     /// <summary>
-    /// Registers a named policy. Later calls with the same name replace the earlier registration.
+    /// Registers a named policy. Policy names are case-insensitive.
+    /// Later calls with the same name (regardless of case) replace the earlier registration.
     /// Returns this instance for fluent chaining.
     /// </summary>
     public ResponsePolicyOptions AddPolicy(string name, IResponsePolicy policy)

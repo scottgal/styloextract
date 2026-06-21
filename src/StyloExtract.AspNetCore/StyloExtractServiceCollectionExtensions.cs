@@ -127,4 +127,48 @@ public static class StyloExtractServiceCollectionExtensions
         this IServiceCollection services,
         Action<ResponsePolicyOptions> configurePolicy)
         => services.AddStyloExtract(null, configurePolicy);
+
+    /// <summary>
+    /// Registers the full StyloExtract stack and configures named response policies via the fluent
+    /// <see cref="ResponsePolicyBuilder"/>. This is the recommended registration path for new code.
+    /// </summary>
+    /// <remarks>
+    /// Call <c>AddStyloExtractMarkdownNegotiation()</c> before this method when using
+    /// <c>p.NegotiateMarkdown()</c> inside the builder delegate so that
+    /// <see cref="StyloExtract.AspNetCore.Markdown.MarkdownNegotiationPolicy"/> is resolvable from DI.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// services.AddStyloExtract(o => o.StorePath = "styloextract.db");
+    /// services.AddStyloExtractMarkdownNegotiation();
+    /// services.AddStyloExtract(b =>
+    /// {
+    ///     b.AddPolicy("md",    p => p.NegotiateMarkdown());
+    ///     b.AddPolicy("cache", p => p.CacheHints(o => o.MaxAge = TimeSpan.FromMinutes(10)));
+    /// });
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddStyloExtract(
+        this IServiceCollection services,
+        Action<ResponsePolicyBuilder> configureBuilder)
+    {
+        ArgumentNullException.ThrowIfNull(configureBuilder);
+
+        // Replace any TryAdd-registered ResponsePolicyOptions descriptor with a factory
+        // so the service provider is available at construction time (needed by NegotiateMarkdown()).
+        var existing = services.FirstOrDefault(d => d.ServiceType == typeof(ResponsePolicyOptions));
+        if (existing is not null)
+            services.Remove(existing);
+
+        services.AddSingleton<ResponsePolicyOptions>(sp =>
+        {
+            var builder = new ResponsePolicyBuilder(sp);
+            configureBuilder(builder);
+            var opts = new ResponsePolicyOptions();
+            builder.ApplyNamedPoliciesTo(opts);
+            return opts;
+        });
+
+        return services;
+    }
 }
