@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>StyloExtract.AspNetCore.Tests</RootNamespace>
+    <AssemblyName>StyloExtract.AspNetCore.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <!-- Suppress NU1903 for transitive SQLitePCLRaw.lib.e_sqlite3 (GHSA-2m69-gcr7-jv3q)
+         via Microsoft.Data.Sqlite 10.0.0. Tracking upstream for patch. -->
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\StyloExtract.AspNetCore\StyloExtract.AspNetCore.csproj" />
+  </ItemGroup>
+</Project>
