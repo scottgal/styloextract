@@ -60,10 +60,7 @@ public sealed class ResponsePolicyMiddleware
                 if (policyContext.RewrittenContentType is not null)
                     context.Response.ContentType = policyContext.RewrittenContentType;
 
-                // RFC 7232 §4.1: do not set Content-Length on a 304 response.
-                if (context.Response.StatusCode != 304)
-                    context.Response.ContentLength = servedBody.Length;
-
+                context.Response.ContentLength = servedBody.Length;
                 await context.Response.Body.WriteAsync(servedBody, context.RequestAborted);
             }
             return;
@@ -129,11 +126,17 @@ public sealed class ResponsePolicyMiddleware
         if (policyContext.ProducedContentType is not null)
             context.Response.ContentType = policyContext.ProducedContentType;
 
-        // RFC 7232 §4.1: a 304 response must not carry Content-Length derived from an empty body.
-        // Either omit Content-Length entirely or echo the original 200 length — we omit it here
-        // since we do not track the original 200 response's length.
-        if (context.Response.StatusCode != 304)
+        if (context.Response.StatusCode == 304)
+        {
+            // RFC 7232 §4.1: a 304 response must not carry Content-Length derived from an empty body.
+            // The downstream handler may have set Content-Length on the response before the status code
+            // was changed to 304 by a policy; clear it explicitly to satisfy the RFC.
+            context.Response.ContentLength = null;
+        }
+        else
+        {
             context.Response.ContentLength = finalBody.Length;
+        }
 
         await originalBody.WriteAsync(finalBody, context.RequestAborted);
     }
@@ -167,6 +170,25 @@ public sealed class ResponsePolicyMiddleware
         {
             var syntheticMeta = new ResponsePolicyMetadata(attr.PolicyName);
             AddPolicy(syntheticMeta, policies, seen);
+        }
+
+        // Discover CacheHintsAttribute entries and synthesize an inline CacheHintPolicy
+        // applied AFTER any named policies. Treated as an anonymous per-endpoint policy.
+        var cacheHintsEntries = endpoint.Metadata.GetOrderedMetadata<CacheHints.CacheHintsAttribute>();
+        foreach (var attr in cacheHintsEntries)
+        {
+            var inlinePolicy = new CacheHints.CacheHintPolicy(new CacheHints.CacheHintOptions
+            {
+                MaxAge = attr.MaxAgeSeconds > 0 ? TimeSpan.FromSeconds(attr.MaxAgeSeconds) : null,
+                Public = attr.Public,
+                MustRevalidate = attr.MustRevalidate,
+                NoStore = attr.NoStore,
+                EmitETag = attr.EmitETag,
+                HonorIfNoneMatch = attr.EmitETag,
+            });
+            // Inline policies are always distinct instances; no dedup needed, but apply seen guard for safety.
+            if (seen.Add(inlinePolicy))
+                policies.Add(inlinePolicy);
         }
 
         // Fallback to DefaultPolicy if nothing resolved.
