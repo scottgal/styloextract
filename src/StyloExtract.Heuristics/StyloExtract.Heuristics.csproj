@@ -10,6 +10,10 @@
     <PackageTags>styloextract;heuristics;html;block;classifier;rag;aot</PackageTags>
   </PropertyGroup>
   <ItemGroup>
+    <!-- InternalsVisibleTo via csproj avoids a separate AssemblyInfo.cs file. -->
+    <InternalsVisibleTo Include="StyloExtract.Heuristics.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
