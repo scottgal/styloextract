@@ -9,7 +9,9 @@ public static class TemplateVersionDiffer
         LearnedExtractor oldEx,
         LearnedExtractor newEx,
         StructuralFingerprint oldFp,
-        StructuralFingerprint newFp)
+        StructuralFingerprint newFp,
+        IReadOnlyDictionary<string, double>? oldPqGramCounts = null,
+        IReadOnlyDictionary<string, double>? newPqGramCounts = null)
     {
         var oldByRole = oldEx.Rules.GroupBy(r => r.Role).ToDictionary(g => g.Key, g => g.ToList());
         var newByRole = newEx.Rules.GroupBy(r => r.Role).ToDictionary(g => g.Key, g => g.ToList());
@@ -34,7 +36,9 @@ public static class TemplateVersionDiffer
             }
         }
 
-        var topPq = ComputeTopPqGramDimensions(oldEx, newEx);
+        var topPq = ComputeTopPqGramDimensions(
+            oldPqGramCounts ?? oldFp.PqGramCounts,
+            newPqGramCounts ?? newFp.PqGramCounts);
         var jaccardDelta = 1.0 - JaccardEstimator.Estimate(oldFp.StructuralMinHash, newFp.StructuralMinHash);
 
         return new TemplateVersionDiff
@@ -47,10 +51,24 @@ public static class TemplateVersionDiffer
         };
     }
 
-    private static IReadOnlyList<PqGramDimensionChange> ComputeTopPqGramDimensions(LearnedExtractor _, LearnedExtractor __)
+    private static IReadOnlyList<PqGramDimensionChange> ComputeTopPqGramDimensions(
+        IReadOnlyDictionary<string, double> oldCounts,
+        IReadOnlyDictionary<string, double> newCounts)
     {
-        // pq-gram counts are stored on the StructuralFingerprint, not LearnedExtractor.
-        // Caller-supplied diff path will need to pass them separately; v1 returns empty list when not available.
-        return Array.Empty<PqGramDimensionChange>();
+        // Union keys from both old and new pq-gram dictionaries, sort by absolute difference, take top 10.
+        var allKeys = new HashSet<string>(oldCounts.Keys);
+        allKeys.UnionWith(newCounts.Keys);
+
+        return allKeys
+            .Select(k =>
+            {
+                oldCounts.TryGetValue(k, out var oldVal);
+                newCounts.TryGetValue(k, out var newVal);
+                return (Key: k, OldVal: oldVal, NewVal: newVal, AbsDelta: Math.Abs(newVal - oldVal));
+            })
+            .OrderByDescending(x => x.AbsDelta)
+            .Take(10)
+            .Select(x => new PqGramDimensionChange { PqGramKey = x.Key, OldCount = x.OldVal, NewCount = x.NewVal })
+            .ToList();
     }
 }

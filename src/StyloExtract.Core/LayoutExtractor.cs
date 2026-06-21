@@ -131,7 +131,9 @@ public sealed class LayoutExtractor : ILayoutExtractor
             {
                 status = MatchStatus.Refit;
                 templateVersion = refit.NewVersion;
-                var diff = TemplateVersionDiffer.Diff(refit.OldExtractor!, refit.NewExtractor!, fp, fp);
+                // Use the old fingerprint from BumpVersionAsync so SignatureJaccardDelta is non-zero.
+                var oldFp = refit.OldFingerprint ?? fp;
+                var diff = TemplateVersionDiffer.Diff(refit.OldExtractor!, refit.NewExtractor!, oldFp, fp, oldFp.PqGramCounts, fp.PqGramCounts);
                 await _eventSink.OnVersionChangeAsync(new VersionChangeEvent
                 {
                     TemplateId = templateId.Value,
