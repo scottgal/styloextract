@@ -109,14 +109,18 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         // menus, which have ~450 chars at ~0.45 link density and score ~86, while
         // the actual article wrapper scores ~18000+).
         // Only applies when there is at least one accepted content block scoring
-        // above the "high-content" threshold. Content-role blocks scoring below 1%
+        // above the "high-content" threshold. Content-role blocks scoring below 25%
         // of the best content score are demoted to Boilerplate so the renderer drops them.
+        // v1.2.2 used 5%; tightened to 25% in v1.2.3 because 5% still let large-sidebar
+        // wrappers through on long articles where their absolute text length kept them
+        // above the floor. Wikipedia's "Main menu" wrapper at 8% of the article body's
+        // score is exactly this case.
         var bestContentScore = candidates
             .Where(c => c.Role is BlockRole.MainContent or BlockRole.Article)
             .Select(c => c.Score)
             .DefaultIfEmpty(0)
             .Max();
-        const double ContentQualityRatio = 0.05; // 5% of the best content score
+        const double ContentQualityRatio = 0.25; // 25% of the best content score
         const double HighContentThreshold = 1000.0; // only activate gate when real content exists
         if (bestContentScore >= HighContentThreshold)
         {
