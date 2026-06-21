@@ -18,7 +18,8 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
     private readonly double _lambdaRecent;
     private readonly double _tauDays;
     private readonly TypedSignalSink<StyloExtractSignal>? _signals;
-    private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = false };
+    // Source-gen typed serializer used for AOT-compatible serialization of LearnedExtractor blobs.
+    // All blobs use camelCase JSON (breaking change from earlier PascalCase; see TemplatesJsonContext).
 
     // Cache keys used for read caching inside the writer.
     private static string ExtractorKey(Guid id) => $"extractor:{id:N}";
@@ -98,7 +99,7 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
         var sigBytes = UintArrayToBytes(fingerprint.StructuralMinHash);
         var anchorBytes = UintArrayToBytes(fingerprint.AnchorMinHash);
         var pqBytes = PqGramVectorCodec.Encode(fingerprint.PqGramCounts);
-        var extractorBytes = JsonSerializer.SerializeToUtf8Bytes(extractor, JsonOpts);
+        var extractorBytes = JsonSerializer.SerializeToUtf8Bytes(extractor, TemplatesJsonContext.Default.LearnedExtractor);
         var idBytes = id.ToByteArray();
 
         await _writer.ExecuteInTransactionAsync(async (conn, tx, ct) =>
@@ -149,7 +150,7 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
             cmd.CommandText = "SELECT extractor_blob FROM templates WHERE template_id = @id";
             cmd.Parameters.AddWithValue("@id", idBytes);
             var blob = (byte[]?)await cmd.ExecuteScalarAsync(cancellationToken);
-            return blob is null ? null : JsonSerializer.Deserialize<LearnedExtractor>(blob, JsonOpts);
+            return blob is null ? null : JsonSerializer.Deserialize(blob, TemplatesJsonContext.Default.LearnedExtractor);
         }, ct: cancellationToken).ConfigureAwait(false);
     }
 
@@ -339,7 +340,7 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
     /// </summary>
     internal async Task UpdateExtractorAsync(Guid templateId, LearnedExtractor newExtractor, CancellationToken cancellationToken)
     {
-        var newExBytes = JsonSerializer.SerializeToUtf8Bytes(newExtractor, JsonOpts);
+        var newExBytes = JsonSerializer.SerializeToUtf8Bytes(newExtractor, TemplatesJsonContext.Default.LearnedExtractor);
         var idBytes = templateId.ToByteArray();
 
         await _writer.WriteAndInvalidateAsync(
@@ -358,7 +359,7 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
         CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var newExBytes = JsonSerializer.SerializeToUtf8Bytes(newExtractor, JsonOpts);
+        var newExBytes = JsonSerializer.SerializeToUtf8Bytes(newExtractor, TemplatesJsonContext.Default.LearnedExtractor);
         var newSigBytes = UintArrayToBytes(newFp.StructuralMinHash);
         var newAnchorBytes = UintArrayToBytes(newFp.AnchorMinHash);
         var newPqBytes = PqGramVectorCodec.Encode(newFp.PqGramCounts);

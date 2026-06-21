@@ -12,7 +12,7 @@ public static class TemplateImporter
 {
     public static async Task<ImportResult> ImportAsync(SqliteConnection conn, byte[] hostHash, Stream input, CancellationToken ct)
     {
-        var doc = await JsonSerializer.DeserializeAsync<ExportSchemaV1>(input, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }, ct);
+        var doc = await JsonSerializer.DeserializeAsync(input, TemplatesJsonContext.Default.ExportSchemaV1, ct);
         if (doc is null) return new ImportResult(0, 0, 0);
         if (doc.SchemaVersion != 1) throw new InvalidDataException($"Unsupported schemaVersion {doc.SchemaVersion}");
 
@@ -25,7 +25,8 @@ public static class TemplateImporter
             var sigBytes = Convert.FromBase64String(t.Fingerprints.SignatureMinhash);
             var anchorBytes = Convert.FromBase64String(t.Fingerprints.AnchorSignature);
             var pqBytes = PqGramVectorCodec.Encode(t.Fingerprints.PqGramVector.Values);
-            var extractorBytes = JsonSerializer.SerializeToUtf8Bytes(t.Extractor);
+            // Re-serialize with the canonical source-gen context (camelCase).
+            var extractorBytes = JsonSerializer.SerializeToUtf8Bytes(t.Extractor, TemplatesJsonContext.Default.LearnedExtractor);
 
             // Check if already exists
             bool existed;

@@ -7,12 +7,6 @@ namespace StyloExtract.Templates;
 
 public static class TemplateExporter
 {
-    private static readonly JsonSerializerOptions JsonOpts = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
-
     public static async Task ExportHostAsync(
         SqliteConnection conn,
         byte[] hostHash,
@@ -35,7 +29,7 @@ public static class TemplateExporter
             var anchorBytes = (byte[])r["anchor_signature"];
             var pqBytes = (byte[])r["pq_gram_vector"];
             var extractorBlob = (byte[])r["extractor_blob"];
-            var extractor = JsonSerializer.Deserialize<LearnedExtractor>(extractorBlob)!;
+            var extractor = JsonSerializer.Deserialize(extractorBlob, TemplatesJsonContext.Default.LearnedExtractor)!;
             var pqDecoded = PqGramVectorCodec.Decode(pqBytes);
             templates.Add(new ExportTemplate
             {
@@ -74,6 +68,7 @@ public static class TemplateExporter
             },
             Templates = templates
         };
-        await JsonSerializer.SerializeAsync(output, doc, JsonOpts, ct);
+        // Use the indented context for human-readable export output.
+        await JsonSerializer.SerializeAsync(output, doc, TemplatesJsonContextIndented.Default.ExportSchemaV1, ct);
     }
 }
