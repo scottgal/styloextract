@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>StyloExtract.Playwright</RootNamespace>
+    <AssemblyName>StyloExtract.Playwright</AssemblyName>
+    <IsPackable>true</IsPackable>
+    <Description>Optional StyloExtract package that fetches client-side-rendered HTML via Microsoft.Playwright. NOT AOT-compatible — keeps the core StyloExtract stack AOT-able by isolating the Playwright dependency here.</Description>
+    <!-- Playwright uses reflection extensively; not AOT-compatible. Keep the core stack AOT-able by isolating the dep here. -->
+    <IsAotCompatible>false</IsAotCompatible>
+    <!-- NU1903: transitive advisory warnings from Playwright's own dependencies; scoped to this project only. -->
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
+    <PackageReference Include="Microsoft.Playwright" />
+  </ItemGroup>
+</Project>
