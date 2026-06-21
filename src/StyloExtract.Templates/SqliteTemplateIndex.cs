@@ -162,8 +162,142 @@ public sealed class SqliteTemplateIndex : ITemplateIndex
         return best;
     }
 
-    public Task RecordObservationAsync(Guid templateId, StructuralFingerprint fingerprint, double similarity, CancellationToken cancellationToken)
-        => throw new NotImplementedException("Filled in M4");
+    public async Task RecordObservationAsync(Guid templateId, StructuralFingerprint fingerprint, double similarity, CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var sigBytes = UintArrayToBytes(fingerprint.StructuralMinHash);
+
+        await using var tx = await _conn.BeginTransactionAsync(cancellationToken);
+        await using (var upd = _conn.CreateCommand())
+        {
+            upd.Transaction = (SqliteTransaction)tx;
+            upd.CommandText = "UPDATE templates SET observation_count = observation_count + 1, last_seen = @now WHERE template_id = @id";
+            upd.Parameters.AddWithValue("@id", templateId.ToByteArray());
+            upd.Parameters.AddWithValue("@now", now);
+            await upd.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await using (var ins = _conn.CreateCommand())
+        {
+            ins.Transaction = (SqliteTransaction)tx;
+            ins.CommandText = "INSERT INTO template_observations(template_id, observed_at, signature_minhash, similarity_at_match) VALUES (@id, @now, @sig, @sim)";
+            ins.Parameters.AddWithValue("@id", templateId.ToByteArray());
+            ins.Parameters.AddWithValue("@now", now);
+            ins.Parameters.AddWithValue("@sig", sigBytes);
+            ins.Parameters.AddWithValue("@sim", similarity);
+            await ins.ExecuteNonQueryAsync(cancellationToken);
+        }
+        // LRU bound: keep only last 100 observations per template
+        await using (var trim = _conn.CreateCommand())
+        {
+            trim.Transaction = (SqliteTransaction)tx;
+            trim.CommandText = """
+                DELETE FROM template_observations
+                WHERE rowid IN (
+                  SELECT rowid FROM template_observations WHERE template_id = @id
+                  ORDER BY observed_at DESC LIMIT -1 OFFSET 100
+                )
+                """;
+            trim.Parameters.AddWithValue("@id", templateId.ToByteArray());
+            await trim.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await tx.CommitAsync(cancellationToken);
+    }
+
+    internal async Task<(int OldVersion, int NewVersion)> BumpVersionAsync(
+        Guid templateId,
+        LearnedExtractor newExtractor,
+        StructuralFingerprint newFp,
+        string reason,
+        int versionHistoryDepth,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var newExBytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(newExtractor, JsonOpts);
+        var newSigBytes = UintArrayToBytes(newFp.StructuralMinHash);
+        var newAnchorBytes = UintArrayToBytes(newFp.AnchorMinHash);
+        var newPqBytes = Serialization.PqGramVectorCodec.Encode(newFp.PqGramCounts);
+
+        await using var tx = await _conn.BeginTransactionAsync(cancellationToken);
+        int oldVersion = 0;
+        byte[]? oldSig = null;
+        byte[]? oldPq = null;
+        byte[]? oldExBlob = null;
+        await using (var read = _conn.CreateCommand())
+        {
+            read.Transaction = (SqliteTransaction)tx;
+            read.CommandText = "SELECT version_number, signature_minhash, pq_gram_vector, extractor_blob FROM templates WHERE template_id = @id";
+            read.Parameters.AddWithValue("@id", templateId.ToByteArray());
+            await using var r = await read.ExecuteReaderAsync(cancellationToken);
+            if (await r.ReadAsync(cancellationToken))
+            {
+                oldVersion = r.GetInt32(0);
+                oldSig = (byte[])r["signature_minhash"];
+                oldPq = (byte[])r["pq_gram_vector"];
+                oldExBlob = (byte[])r["extractor_blob"];
+            }
+        }
+        // Retire old row to history
+        await using (var hist = _conn.CreateCommand())
+        {
+            hist.Transaction = (SqliteTransaction)tx;
+            hist.CommandText = """
+                INSERT INTO template_version_history(template_id, version_number, signature_minhash, pq_gram_vector, extractor_blob, retired_at, retirement_reason)
+                VALUES (@id, @ver, @sig, @pq, @ex, @now, @reason)
+                """;
+            hist.Parameters.AddWithValue("@id", templateId.ToByteArray());
+            hist.Parameters.AddWithValue("@ver", oldVersion);
+            hist.Parameters.AddWithValue("@sig", (object?)oldSig ?? DBNull.Value);
+            hist.Parameters.AddWithValue("@pq", (object?)oldPq ?? DBNull.Value);
+            hist.Parameters.AddWithValue("@ex", (object?)oldExBlob ?? DBNull.Value);
+            hist.Parameters.AddWithValue("@now", now);
+            hist.Parameters.AddWithValue("@reason", reason);
+            await hist.ExecuteNonQueryAsync(cancellationToken);
+        }
+        // Trim history to versionHistoryDepth
+        await using (var trim = _conn.CreateCommand())
+        {
+            trim.Transaction = (SqliteTransaction)tx;
+            trim.CommandText = """
+                DELETE FROM template_version_history
+                WHERE template_id = @id
+                  AND version_number NOT IN (
+                    SELECT version_number FROM template_version_history
+                    WHERE template_id = @id
+                    ORDER BY retired_at DESC LIMIT @keep
+                  )
+                """;
+            trim.Parameters.AddWithValue("@id", templateId.ToByteArray());
+            trim.Parameters.AddWithValue("@keep", versionHistoryDepth);
+            await trim.ExecuteNonQueryAsync(cancellationToken);
+        }
+        int newVersion = oldVersion + 1;
+        await using (var upd = _conn.CreateCommand())
+        {
+            upd.Transaction = (SqliteTransaction)tx;
+            upd.CommandText = """
+                UPDATE templates SET
+                  version_number = @ver,
+                  signature_minhash = @sig,
+                  anchor_signature = @anchor,
+                  pq_gram_vector = @pq,
+                  pq_gram_norm = @norm,
+                  extractor_blob = @ex,
+                  last_refit_at = @now
+                WHERE template_id = @id
+                """;
+            upd.Parameters.AddWithValue("@id", templateId.ToByteArray());
+            upd.Parameters.AddWithValue("@ver", newVersion);
+            upd.Parameters.AddWithValue("@sig", newSigBytes);
+            upd.Parameters.AddWithValue("@anchor", newAnchorBytes);
+            upd.Parameters.AddWithValue("@pq", newPqBytes);
+            upd.Parameters.AddWithValue("@norm", newFp.PqGramNorm);
+            upd.Parameters.AddWithValue("@ex", newExBytes);
+            upd.Parameters.AddWithValue("@now", now);
+            await upd.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await tx.CommitAsync(cancellationToken);
+        return (oldVersion, newVersion);
+    }
 
     private static byte[] UintArrayToBytes(uint[] sig)
     {

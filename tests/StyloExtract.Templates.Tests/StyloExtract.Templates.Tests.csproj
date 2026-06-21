@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\StyloExtract.Templates\StyloExtract.Templates.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Heuristics\StyloExtract.Heuristics.csproj" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
