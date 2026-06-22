@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Mostlylucid.StyloExtract.StyloBot</RootNamespace>
+    <AssemblyName>Mostlylucid.StyloExtract.StyloBot</AssemblyName>
+    <PackageId>Mostlylucid.StyloExtract.StyloBot</PackageId>
+    <IsPackable>true</IsPackable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <Description>Bridge between StyloExtract and StyloBot's IActionPolicy registry. Provides extract-markdown / extract-headers / extract-sidecar / extract-passthrough action policies that operators reference by name from EndpointPolicy rules or [BotAction] attributes.</Description>
+    <PackageTags>styloextract;stylobot;bot-detection;action-policy;markdown;html-extraction</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\StyloExtract.AspNetCore\StyloExtract.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\..\stylobot\src\Mostlylucid.BotDetection\Mostlylucid.BotDetection.csproj" />
+  </ItemGroup>
+</Project>
