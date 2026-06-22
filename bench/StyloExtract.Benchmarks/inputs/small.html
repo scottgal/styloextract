@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Understanding Dependency Injection in ASP.NET Core</title>
+  <meta name="description" content="A concise guide to dependency injection patterns in modern .NET applications.">
+  <link rel="stylesheet" href="/assets/css/main.css">
+  <script>
+    (function(w,d,s){var f=d.getElementsByTagName(s)[0];var j=d.createElement(s);j.async=true;j.src='https://cdn.example.com/analytics.js';f.parentNode.insertBefore(j,f);})(window,document,'script');
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="site-logo"><a href="/">TechBlog</a></div>
+    <nav class="main-nav" aria-label="Primary navigation">
+      <a href="/">Home</a>
+      <a href="/articles">Articles</a>
+      <a href="/tutorials">Tutorials</a>
+      <a href="/about">About</a>
+      <a href="/contact">Contact</a>
+    </nav>
+  </header>
+
+  <main class="page-main">
+    <article class="post-single entry-content">
+      <header class="post-header">
+        <nav class="breadcrumb" aria-label="Breadcrumb">
+          <a href="/">Home</a> &rsaquo; <a href="/tutorials">Tutorials</a> &rsaquo; <span>Dependency Injection</span>
+        </nav>
+        <h1 class="post-title">Understanding Dependency Injection in ASP.NET Core</h1>
+        <div class="post-meta">
+          <span class="author">By Alice Thompson</span>
+          <time datetime="2026-06-15">June 15, 2026</time>
+          <span class="read-time">8 min read</span>
+        </div>
+      </header>
+
+      <div class="post-content">
+        <p>Dependency injection is a foundational pattern in modern .NET application development. When you register services in the container, the framework automatically resolves and injects them wherever they are needed. This decoupling makes components easier to test, maintain, and replace without touching the call sites that depend on them.</p>
+
+        <p>The built-in DI container in ASP.NET Core supports three service lifetimes: singleton, scoped, and transient. Choosing the correct lifetime for each service prevents subtle bugs that can be extremely difficult to diagnose in production. A common mistake is registering a stateful service as transient when it should be scoped to the current HTTP request.</p>
+
+        <h2>Registering Services</h2>
+        <p>Service registration happens in <code>Program.cs</code> via the <code>IServiceCollection</code> interface. You call extension methods like <code>AddSingleton&lt;T&gt;</code>, <code>AddScoped&lt;T&gt;</code>, or <code>AddTransient&lt;T&gt;</code> to bind an interface to its implementation. The container wires everything up before the application starts handling requests.</p>
+
+        <p>For larger applications you can group related registrations into extension methods on <code>IServiceCollection</code>. This keeps <code>Program.cs</code> readable and allows feature modules to register their own dependencies independently. The modular approach also makes it straightforward to swap implementations for testing purposes by registering a test double instead of the real service.</p>
+
+        <h2>Constructor Injection</h2>
+        <p>Constructor injection is the dominant pattern in ASP.NET Core applications. When the DI container constructs a controller or service, it inspects the constructor parameters and resolves each dependency from the container. If a dependency cannot be resolved, the container throws an exception at startup rather than at the point where the service would first be used.</p>
+
+        <p>Property injection is available but is generally discouraged because it makes dependencies optional in a way that hides required collaborators. Explicit constructor dependencies serve as self-documenting contracts: any class that needs a database context or an HTTP client must declare those requirements up front, making the dependency graph visible to anyone reading the code.</p>
+
+        <h2>Testing with DI</h2>
+        <p>The primary benefit of dependency injection for testing is the ability to substitute real services with mock or stub implementations. In xUnit or NUnit test projects you can build a minimal <code>ServiceCollection</code>, register the production services you want to test, replace the external dependencies with test doubles, and then resolve the subject under test from the container. The production code remains completely unaware of the substitution.</p>
+      </div>
+
+      <footer class="post-footer">
+        <div class="tags">
+          <a href="/tags/dotnet" class="tag">.NET</a>
+          <a href="/tags/aspnetcore" class="tag">ASP.NET Core</a>
+          <a href="/tags/di" class="tag">Dependency Injection</a>
+        </div>
+      </footer>
+    </article>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <p>&copy; 2026 TechBlog. All rights reserved.</p>
+      <nav class="footer-nav">
+        <a href="/privacy">Privacy Policy</a>
+        <a href="/terms">Terms of Service</a>
+        <a href="/rss">RSS Feed</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>

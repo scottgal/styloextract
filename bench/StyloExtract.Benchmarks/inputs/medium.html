@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Building Scalable Microservices with .NET and Kubernetes | DevBlog</title>
+  <meta name="description" content="A comprehensive tutorial on building, deploying, and scaling microservices using .NET 8 and Kubernetes.">
+  <link rel="stylesheet" href="/assets/css/blog.css">
+  <link rel="canonical" href="https://devblog.example.com/microservices-dotnet-kubernetes">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    "headline": "Building Scalable Microservices with .NET and Kubernetes",
+    "author": {"@type": "Person", "name": "Marcus Chen"},
+    "datePublished": "2026-06-10",
+    "description": "A comprehensive tutorial on building, deploying, and scaling microservices.",
+    "articleBody": "Microservices architecture has transformed how teams build and deploy large applications. By decomposing a monolithic application into independently deployable services, organizations gain the ability to scale individual components, deploy changes faster, and isolate failures. This tutorial walks through the full lifecycle of building a microservices application on .NET and deploying it to Kubernetes."
+  }
+  </script>
+  <noscript>Please enable JavaScript for the best experience.</noscript>
+  <style>.ad-placeholder { display:none; }</style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="site-logo" href="/"><span>Dev</span>Blog</a>
+      <nav class="main-navigation" role="navigation" aria-label="Main navigation">
+        <ul>
+          <li><a href="/">Home</a></li>
+          <li><a href="/tutorials">Tutorials</a></li>
+          <li><a href="/reference">Reference</a></li>
+          <li><a href="/community">Community</a></li>
+          <li><a href="/newsletter">Newsletter</a></li>
+          <li><a href="/about">About</a></li>
+        </ul>
+      </nav>
+      <div class="header-actions">
+        <a href="/search" aria-label="Search">Search</a>
+        <a href="/subscribe" class="btn-subscribe">Subscribe</a>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout-container">
+    <main class="content-area" role="main">
+      <article class="post entry-content wp-block-post-content">
+        <header class="article-header">
+          <nav class="breadcrumb-nav" aria-label="Breadcrumb">
+            <ol>
+              <li><a href="/">Home</a></li>
+              <li><a href="/tutorials">Tutorials</a></li>
+              <li><a href="/tutorials/kubernetes">Kubernetes</a></li>
+              <li aria-current="page">Microservices with .NET</li>
+            </ol>
+          </nav>
+          <div class="article-category"><a href="/categories/cloud">Cloud Architecture</a></div>
+          <h1 class="article-title">Building Scalable Microservices with .NET and Kubernetes</h1>
+          <div class="article-meta">
+            <div class="author-info">
+              <img src="/authors/marcus-chen.jpg" alt="Marcus Chen" class="author-avatar" width="40" height="40">
+              <div>
+                <span class="author-name">Marcus Chen</span>
+                <span class="author-title">Senior Software Architect</span>
+              </div>
+            </div>
+            <div class="article-date">
+              <time datetime="2026-06-10">June 10, 2026</time>
+              <span class="read-time">22 min read</span>
+            </div>
+            <div class="article-stats">
+              <span>18.4k views</span>
+              <span>342 comments</span>
+            </div>
+          </div>
+          <div class="toolbar" role="toolbar">
+            <button class="btn-like" aria-label="Like article">Like</button>
+            <button class="btn-share" aria-label="Share article">Share</button>
+            <button class="btn-bookmark" aria-label="Bookmark article">Bookmark</button>
+          </div>
+        </header>
+
+        <div class="article-body">
+          <p class="article-lead">Microservices architecture has transformed how teams build and deploy large-scale applications. By decomposing a monolithic application into independently deployable services, organizations gain the ability to scale individual components without touching the rest of the system, deploy changes at their own cadence, and isolate failures so that a bug in the payment service does not take down the entire catalog.</p>
+
+          <p>This tutorial walks through the full lifecycle of a microservices application built on .NET 8 and deployed to Kubernetes. We will cover service discovery, inter-service communication via gRPC and HTTP, distributed tracing with OpenTelemetry, and rolling deployments with zero-downtime strategies. By the end you will have a working reference architecture that you can adapt for real production workloads.</p>
+
+          <p>Before we dive into code, it is worth understanding why Kubernetes has become the de facto standard for container orchestration. Kubernetes provides a declarative API for describing the desired state of your cluster. You write YAML manifests that specify how many replicas of each service should run, what resources they require, and how they should be exposed to clients. The control plane continuously reconciles the actual state with the desired state, restarting failed pods and scaling deployments in response to load.</p>
+
+          <h2>Project Structure and Service Boundaries</h2>
+          <p>Defining service boundaries is the hardest part of microservices design and the most consequential. Boundaries drawn too coarsely produce distributed monoliths that retain all the operational complexity of microservices with none of the flexibility. Boundaries drawn too finely produce nano-services that spend most of their time on network round-trips and serialization rather than on actual business logic.</p>
+
+          <p>For our reference application we will build a simple e-commerce backend with four services: a Catalog service that manages product listings and inventory, an Orders service that handles the order lifecycle, a Payments service for processing transactions, and an Notifications service for sending transactional emails and push notifications. Each service owns its own database and communicates exclusively through well-defined APIs, never by sharing a database schema.</p>
+
+          <p>The project layout follows a standard multi-project solution structure. Each service lives in its own folder under <code>src/Services/</code> and has its own <code>.csproj</code>. Shared domain types and interfaces go in a <code>BuildingBlocks</code> folder that all services reference. Integration tests for cross-service scenarios live under <code>tests/Integration/</code> and use <code>Testcontainers</code> to spin up the required infrastructure.</p>
+
+          <h2>Defining gRPC Contracts</h2>
+          <p>We use gRPC for synchronous inter-service communication because Protocol Buffers give us strongly-typed contracts that are enforced at compile time. Any change to a <code>.proto</code> file that breaks a consumer surfaces as a build error rather than a runtime failure at three in the morning.</p>
+
+          <p>The Catalog service exposes a <code>ProductService</code> with methods for listing, getting, and updating product records. The <code>.proto</code> file lives in a shared <code>Protos/</code> folder that is referenced by both the server-side implementation and all client assemblies. Code generation is wired into the build pipeline so that developers never need to run a separate codegen step.</p>
+
+          <p>For asynchronous communication we use a RabbitMQ message broker with MassTransit as the abstraction layer. When the Orders service successfully places an order, it publishes an <code>OrderPlacedEvent</code> that the Notifications service subscribes to. This publish-subscribe pattern decouples the two services: the Orders service does not know or care how many consumers exist, and adding a new consumer requires no changes to the publisher.</p>
+
+          <h2>Service Discovery and Load Balancing</h2>
+          <p>In Kubernetes, service discovery is built in. Each service exposes a stable DNS name of the form <code>service-name.namespace.svc.cluster.local</code>. The built-in kube-proxy implements basic round-robin load balancing across all healthy pods backing a service. For more sophisticated traffic management, including canary releases and circuit breaking, we use Istio as our service mesh.</p>
+
+          <p>Istio injects an Envoy sidecar proxy into every pod. All inter-service traffic flows through the sidecar, which enforces mutual TLS, collects telemetry, and applies traffic policies. The control plane lets you configure retries, timeouts, and circuit breakers via <code>VirtualService</code> and <code>DestinationRule</code> custom resources without changing any application code.</p>
+
+          <p>Client-side service discovery with a library like Steeltoe or a custom <code>IServiceEndpointSelector</code> is an alternative for environments where a service mesh is not available. The client queries a service registry on every request and caches the results with a short TTL. This approach adds complexity but gives you fine-grained control over load-balancing strategy and failure handling.</p>
+
+          <h2>Distributed Tracing with OpenTelemetry</h2>
+          <p>Debugging a distributed system without tracing is like debugging a monolith without a debugger. OpenTelemetry provides a vendor-neutral API for emitting traces, metrics, and logs from your application. The SDK ships as a NuGet package and integrates with ASP.NET Core via the <code>AddOpenTelemetry()</code> extension method.</p>
+
+          <p>Each incoming HTTP request or gRPC call automatically creates a root span. Downstream calls to other services or databases create child spans that inherit the parent trace context through HTTP headers. The complete trace is exported to a backend like Jaeger or Zipkin where you can visualize the full call graph, identify bottlenecks, and correlate spans across services by their shared trace ID.</p>
+
+          <p>We configure the tracer to sample 100% of traces in development and 5% in production. Tail-based sampling in the collector keeps costs manageable: we always retain traces that contained errors regardless of the sample rate. This ensures that every failed request is visible in the tracing backend even under high load.</p>
+
+          <h2>Health Checks and Readiness Probes</h2>
+          <p>Kubernetes uses liveness and readiness probes to decide when to restart a pod and when to include it in the load-balancing pool. ASP.NET Core exposes health endpoints via the <code>AddHealthChecks()</code> extension method. We register a liveness check that returns healthy as long as the process is running and a readiness check that verifies connectivity to the database and message broker before the pod starts receiving traffic.</p>
+
+          <p>The <code>HealthCheckPublisher</code> background service polls the health checks at a configurable interval and publishes the results to OpenTelemetry as gauge metrics. This lets you alert on degraded health before the pod fails its readiness probe and gets removed from the pool entirely, giving you an early warning that something is trending towards failure.</p>
+
+          <h2>Deployments and Rolling Updates</h2>
+          <p>We define each service as a Kubernetes <code>Deployment</code> resource with a <code>RollingUpdate</code> strategy. The <code>maxUnavailable</code> and <code>maxSurge</code> parameters control how many pods can be unavailable or in excess of the desired count during a rollout. Setting <code>maxUnavailable: 0</code> and <code>maxSurge: 1</code> ensures zero-downtime deploys at the cost of temporarily running one extra pod.</p>
+
+          <p>Container images are tagged with the Git commit SHA rather than a mutable tag like <code>latest</code>. This makes rollbacks trivial: to revert to the previous version you update the image tag in the deployment manifest and apply it. The rollout history is stored in Kubernetes so you can inspect the previous revision and compare resource definitions.</p>
+
+          <p>Resource requests and limits are specified for every container. Requests tell the scheduler how much CPU and memory to reserve for a pod when scheduling it onto a node. Limits cap the maximum resources the container can consume. Setting requests equal to limits gives predictable scheduling and prevents noisy-neighbour problems at the cost of potentially over-provisioning in exchange for guaranteed resource allocation.</p>
+
+          <h2>Horizontal Pod Autoscaling</h2>
+          <p>The Horizontal Pod Autoscaler adjusts the number of pod replicas based on observed metrics. The standard configuration scales on CPU utilization, but you can also scale on custom metrics exported via the Prometheus adapter. For the Orders service we scale on the length of the MassTransit consumer queue: when the queue depth exceeds a threshold, the autoscaler adds replicas to process messages faster.</p>
+
+          <p>KEDA, the Kubernetes Event-driven Autoscaling project, makes queue-based scaling straightforward. A <code>ScaledObject</code> custom resource references the RabbitMQ queue and specifies the target message count per replica. KEDA translates this into the standard Kubernetes autoscaling API, so all existing monitoring and alerting tooling continues to work without modification.</p>
+
+          <h2>Configuration Management</h2>
+          <p>Twelve-factor app methodology demands that configuration be stored in the environment rather than in code. In Kubernetes, configuration is stored in <code>ConfigMap</code> objects and injected into pods as environment variables or mounted as files. The <code>IConfiguration</code> API in ASP.NET Core reads from environment variables by default, so the transition from local development using <code>appsettings.json</code> to production using environment variables is transparent.</p>
+
+          <p>For configuration that changes frequently without a deployment, such as feature flags or rate limiting thresholds, a dedicated configuration service like Azure App Configuration, AWS AppConfig, or LaunchDarkly is preferable. The <code>IOptionsMonitor</code> pattern in ASP.NET Core makes it straightforward to react to configuration changes at runtime without restarting the application. The options class listens for change notifications and updates the in-memory representation, which is then picked up by the next request to use that configuration value.</p>
+
+          <p>Avoid the temptation to store large amounts of configuration in environment variables. A pod with dozens of environment variables becomes difficult to reason about and test. For large configuration payloads, use a mounted <code>ConfigMap</code> volume. The mounted volume approach also supports configuration hot-reloading: when the ConfigMap is updated, Kubernetes updates the mounted file after a short propagation delay, which your application can detect and apply without a restart.</p>
+
+          <h2>Pod Disruption Budgets</h2>
+          <p>A Pod Disruption Budget specifies the minimum number of replicas that must remain available during voluntary disruptions such as node drains, cluster upgrades, or manual pod evictions. Without a disruption budget, a node drain could take down multiple replicas simultaneously, causing a service outage. A budget with <code>minAvailable: 1</code> ensures that at least one replica is running throughout any disruption.</p>
+
+          <p>Disruption budgets interact with the autoscaler: if the autoscaler scales down to fewer replicas than the disruption budget allows, the scale-down is blocked. This is intentional behavior; the budget represents an operator guarantee about service availability. If you find the budget is blocking legitimate scale-downs, review whether the budget thresholds are still appropriate for your current traffic levels.</p>
+
+          <h2>Resource Quotas and Limit Ranges</h2>
+          <p>Resource quotas constrain the total resources that can be consumed by all pods in a namespace. They prevent a single team from monopolizing cluster capacity and help enforce capacity planning discipline. A namespace with a CPU quota of four cores and a memory quota of 8GB cannot schedule more pods than those limits allow, regardless of what the underlying nodes can provide.</p>
+
+          <p>Limit ranges set default resource requests and limits for pods that do not specify them explicitly. Without a limit range, pods without resource limits can consume unbounded amounts of CPU and memory, which causes noisy-neighbour problems and makes capacity planning impossible. Setting sensible defaults catches the common case of developers forgetting to add resource limits to their manifests.</p>
+
+          <h2>Secrets Management</h2>
+          <p>Never bake secrets into container images or environment variable literals in your Kubernetes manifests. Instead, store secrets in a dedicated secrets manager such as HashiCorp Vault, AWS Secrets Manager, or Azure Key Vault. The External Secrets Operator synchronizes secrets from the external store into Kubernetes <code>Secret</code> objects that your pods can consume as environment variables or mounted volumes.</p>
+
+          <p>For lower-complexity deployments, Kubernetes <code>Secrets</code> combined with RBAC is often sufficient. The key is ensuring secrets are rotated automatically and that the rotation is reflected in running pods without manual intervention. Vault's dynamic secrets feature generates short-lived credentials on demand, eliminating the problem of long-lived credentials leaking through logs or error messages.</p>
+
+          <p>Workload identity, available in managed Kubernetes offerings like GKE Workload Identity and AWS EKS IAM Roles for Service Accounts, is the cleanest solution for cloud services: each pod assumes an IAM role and can access cloud resources directly without any static credentials in the cluster at all.</p>
+
+          <h2>Networking and Ingress</h2>
+          <p>Kubernetes services are only reachable from within the cluster by default. To expose services to external clients you define an <code>Ingress</code> resource backed by an ingress controller such as nginx, Traefik, or the cloud provider's native load balancer integration. The ingress controller terminates TLS, routes traffic by hostname and path, and optionally handles rate limiting and authentication.</p>
+
+          <p>For HTTP-only traffic, an <code>Ingress</code> is sufficient. For more complex routing scenarios, such as routing to different services based on gRPC service name or supporting WebSocket long-lived connections, you may need a Gateway API resource instead. The Kubernetes Gateway API is the successor to the legacy Ingress API and provides a richer, more extensible model for defining traffic routing rules.</p>
+
+          <p>Network policies restrict which pods can communicate with each other. By default, all pods in a namespace can reach all other pods in the cluster. A default-deny network policy combined with explicit allow rules for known communication paths gives you defense-in-depth: even if an attacker compromises one pod, they cannot trivially reach the database or the secrets manager.</p>
+
+          <h2>Observability Stack</h2>
+          <p>A complete observability stack for Kubernetes includes metrics, logs, and traces. For metrics we use Prometheus for collection and Grafana for visualization. The kube-state-metrics and node-exporter projects expose cluster-level metrics that supplement the application metrics your services emit. Grafana dashboards are checked into version control alongside the application code so that developers can iterate on them without touching production.</p>
+
+          <p>Log aggregation with Loki and Grafana provides a unified query interface for logs across all services. Structured logging with JSON output is essential: unstructured log lines are difficult to query efficiently at scale. We configure the <code>Microsoft.Extensions.Logging</code> provider to write structured JSON to stdout, and Loki's Promtail agent scrapes the pod logs and indexes them for querying.</p>
+
+          <p>Traces from OpenTelemetry are exported to Tempo, which integrates natively with Grafana. The combination of Prometheus metrics, Loki logs, and Tempo traces in a single Grafana workspace enables correlated investigation: when an alert fires on a spike in error rate, you can click through from the metric to the relevant log lines and from a log line to the full distributed trace, all within the same UI.</p>
+
+          <h2>CI/CD Pipeline</h2>
+          <p>The CI/CD pipeline builds Docker images, runs unit and integration tests, pushes images to the container registry, and applies Kubernetes manifests. We use GitHub Actions for CI and Argo CD for continuous delivery. The key principle is that the pipeline never applies manifests directly to the cluster; instead, it commits updated image tags to a GitOps repository that Argo CD watches.</p>
+
+          <p>Argo CD continuously reconciles the cluster state with the declarative manifests in the GitOps repository. When a new image tag is committed, Argo CD detects the drift and applies the updated manifest. The audit trail lives in the Git history: every deployment is a commit, and rolling back is as simple as reverting the commit and letting Argo CD re-sync.</p>
+
+          <p>Pre-deployment validation with <code>kubeval</code> and <code>conftest</code> catches manifest errors before they reach the cluster. Policy enforcement with OPA Gatekeeper enforces organizational standards such as requiring resource limits on all containers and prohibiting <code>:latest</code> image tags in production. These gates run as admission webhooks and reject non-compliant resources at the API server.</p>
+
+          <h2>Database Patterns for Microservices</h2>
+          <p>Each microservice owns its own persistent store. Sharing a database between services is an anti-pattern: it creates a hidden coupling at the schema level and makes it impossible to evolve the services independently. When two services write to the same table, a schema change for one service must be coordinated with the other, negating the independence that microservices are supposed to provide.</p>
+
+          <p>Choosing the right database technology for each service is a significant advantage of the microservices model. A catalog service that serves high read volumes with infrequent writes benefits from a read-optimized store like PostgreSQL with materialized views and aggressive caching. A session store benefits from a key-value store like Redis with TTL-based expiration. A time-series metrics store benefits from InfluxDB or TimescaleDB. The database-per-service pattern lets you pick the right tool for each job.</p>
+
+          <p>The outbox pattern ensures reliable message delivery when a service needs to update its database and publish an event atomically. Without the outbox, a service might update the database and then fail before publishing the event, leaving the system in an inconsistent state. The outbox pattern writes the event to a table in the same database transaction as the business data change. A separate relay process reads from the outbox table and publishes messages to the broker, deleting each record after successful publication. Because the relay uses at-least-once delivery, consumers must be idempotent.</p>
+
+          <h2>Error Handling and Resiliency Patterns</h2>
+          <p>In a distributed system, partial failures are inevitable. A service may be temporarily unavailable, a network partition may separate pods, or a downstream dependency may respond with intermittent errors. Your services must be resilient to these scenarios without propagating failures to their callers. The three canonical resiliency patterns are retry with backoff, circuit breaking, and bulkhead isolation.</p>
+
+          <p>The <code>Polly</code> library provides all of these patterns for .NET applications. A retry policy automatically retries failed requests with exponential backoff and jitter. The jitter term is important: without it, all retrying clients synchronize their retry attempts, causing a thundering-herd effect that can overwhelm a recovering downstream service. Add jitter to spread retries over a time window.</p>
+
+          <p>A circuit breaker stops sending requests to a failing service after a threshold of consecutive failures is exceeded. The circuit transitions from closed (passing requests) to open (rejecting requests with a fast-fail response) when the threshold is hit. After a configurable timeout the circuit transitions to half-open, allowing a probe request through. If the probe succeeds, the circuit closes; if it fails, the circuit stays open and the timeout resets.</p>
+
+          <p>Bulkhead isolation limits the number of concurrent requests to a downstream dependency. Without bulkheads, a slow dependency can exhaust the thread pool or connection pool of the calling service, causing it to appear down even though the dependency is merely slow rather than unavailable. Separate thread pools or semaphore-based concurrency limits for different downstream services prevent one slow dependency from bringing down the entire service.</p>
+
+          <h2>Testing Microservices</h2>
+          <p>Unit tests for individual service components remain straightforward: mock the dependencies, exercise the behavior, assert the outcomes. The complexity arises when you need to test behaviors that span service boundaries. Integration tests that exercise a real service instance against real infrastructure dependencies are essential for catching issues that unit tests cannot reveal.</p>
+
+          <p>Testcontainers eliminates the need for a running Kubernetes cluster in CI. Each integration test spins up the required infrastructure containers (PostgreSQL, RabbitMQ, Redis) via the Docker API, runs the tests, and tears the containers down. The containers are isolated per test run, so parallel test execution does not cause interference. Startup time is typically a few seconds per container, making this approach practical even in fast CI pipelines.</p>
+
+          <p>Contract testing with Pact ensures that a consumer's expectations of a provider's API are met without requiring both services to be running simultaneously. The consumer generates a pact file describing the interactions it expects, and the provider verifies that its actual implementation satisfies the pact. This catches API contract violations early without end-to-end integration tests that require the entire system to be running.</p>
+
+          <p>End-to-end tests against a fully deployed environment provide the final confidence layer. These tests run a realistic user journey from start to finish and verify observable outcomes. They are necessarily slower and more brittle than unit or integration tests, so their number should be limited to the most critical user journeys. The goal is not comprehensive coverage but a smoke test that validates the integration wiring.</p>
+
+          <p>Load testing should be part of every service's pre-production validation gate. A service that passes all functional tests may still fail under realistic traffic patterns because of database connection pool exhaustion, garbage collection pauses, or lock contention in shared resources. K6 and NBomber are excellent load testing tools with first-class support for .NET and a scripting model that lets you define realistic user scenarios with think time and data variation.</p>
+
+          <p>Chaos engineering, popularized by Netflix Chaos Monkey, deliberately injects failures into production systems to validate their resilience claims. Start with a defined steady state, introduce a controlled perturbation such as killing a random pod or injecting network latency, and observe whether the system returns to steady state within an acceptable time window. Chaos Mesh for Kubernetes provides a Kubernetes-native interface for injecting various failure types including pod failures, network partitions, and I/O errors.</p>
+
+          <h2>Multi-Tenancy and Namespace Strategy</h2>
+          <p>Namespaces provide a basic level of isolation between different teams or environments within a single cluster. A common pattern is to use one namespace per environment per service, with RBAC rules that prevent developers from applying manifests to production namespaces directly. All production changes go through the CI/CD pipeline, which enforces code review and automated testing before deployment.</p>
+
+          <p>For stronger isolation, such as when multiple customers share a cluster, you can use virtual clusters with tools like vCluster. Each tenant gets a virtual Kubernetes API server that appears to the tenant as a fully independent cluster but shares the underlying node resources. This provides tenant isolation at the API level without the operational overhead of provisioning a separate physical cluster for every tenant.</p>
+
+          <h2>Conclusion</h2>
+          <p>Microservices on Kubernetes is not a silver bullet. It introduces genuine operational complexity around service discovery, distributed tracing, and deployment coordination that does not exist in a well-structured monolith. Teams should adopt microservices only when they have genuinely independent deployment cadences or scaling requirements that make the added complexity worthwhile.</p>
+
+          <p>That said, the combination of .NET, Kubernetes, and OpenTelemetry provides an excellent foundation for building and operating large-scale distributed systems. The ecosystem is mature, the tooling is excellent, and the community has produced extensive guidance on patterns for resilience, observability, and security. The reference architecture in this tutorial is a starting point you can extend as your requirements evolve.</p>
+
+          <p>If you found this tutorial useful, consider sharing it with a colleague or leaving a comment below with questions or suggestions for follow-up topics. Future posts in this series will cover advanced patterns including sagas, outbox pattern for reliable messaging, and multi-cluster failover strategies.</p>
+        </div>
+
+        <footer class="article-footer">
+          <div class="tags-section">
+            <span class="tags-label">Tags:</span>
+            <a href="/tags/dotnet" class="tag">.NET</a>
+            <a href="/tags/kubernetes" class="tag">Kubernetes</a>
+            <a href="/tags/microservices" class="tag">Microservices</a>
+            <a href="/tags/grpc" class="tag">gRPC</a>
+            <a href="/tags/opentelemetry" class="tag">OpenTelemetry</a>
+          </div>
+          <div class="share-section">
+            <span>Share this article:</span>
+            <a href="#" rel="nofollow">Twitter</a>
+            <a href="#" rel="nofollow">LinkedIn</a>
+            <a href="#" rel="nofollow">HackerNews</a>
+          </div>
+        </footer>
+      </article>
+
+      <section class="comments-section" id="comments">
+        <h2 class="comments-heading">342 Comments</h2>
+        <div class="comments-list">
+          <div class="comment" id="comment-1">
+            <div class="comment-meta">
+              <span class="comment-author">Sarah K.</span>
+              <time class="comment-date" datetime="2026-06-10T14:22:00Z">June 10, 2026 at 14:22</time>
+            </div>
+            <div class="comment-body">
+              <p>Excellent write-up. The section on defining service boundaries resonated strongly with me. We learned this lesson the hard way after splitting our monolith too aggressively and ending up with forty services that each owned a tiny slice of the domain. The coordination overhead was staggering.</p>
+            </div>
+          </div>
+          <div class="comment" id="comment-2">
+            <div class="comment-meta">
+              <span class="comment-author">DevOps_Dan</span>
+              <time class="comment-date" datetime="2026-06-10T15:05:00Z">June 10, 2026 at 15:05</time>
+            </div>
+            <div class="comment-body">
+              <p>One thing worth mentioning: if you are running in a cloud environment with managed Kubernetes you should evaluate whether the managed autoscaler (like GKE Autopilot or AWS EKS Fargate) is sufficient before reaching for KEDA. For most workloads the built-in CPU and memory scaling is adequate and eliminates the operational burden of managing KEDA itself.</p>
+            </div>
+          </div>
+          <div class="comment" id="comment-3">
+            <div class="comment-meta">
+              <span class="comment-author">CloudNativeAlex</span>
+              <time class="comment-date" datetime="2026-06-10T16:30:00Z">June 10, 2026 at 16:30</time>
+            </div>
+            <div class="comment-body">
+              <p>Great point about tail-based sampling. We switched to tail sampling six months ago and our tracing costs dropped by 60% while our visibility into error scenarios actually improved because we now retain 100% of error traces.</p>
+            </div>
+          </div>
+          <div class="comment" id="comment-4">
+            <div class="comment-meta">
+              <span class="comment-author">Priya M.</span>
+              <time class="comment-date" datetime="2026-06-10T17:15:00Z">June 10, 2026 at 17:15</time>
+            </div>
+            <div class="comment-body">
+              <p>How do you handle database migrations across service boundaries? We currently run Flyway as an init container before each deployment but this occasionally causes race conditions during rolling updates where the new schema is not yet compatible with the old binary.</p>
+            </div>
+          </div>
+          <div class="comment" id="comment-5">
+            <div class="comment-meta">
+              <span class="comment-author">Marcus Chen</span>
+              <time class="comment-date" datetime="2026-06-10T18:00:00Z">June 10, 2026 at 18:00 (author)</time>
+            </div>
+            <div class="comment-body">
+              <p>Great question Priya. We use expand-contract migrations: first deploy a migration that adds the new column as nullable, then deploy the application code that uses it, then make the column non-nullable in a follow-up migration after all pods are running the new code. This guarantees that both the old and new binary versions are compatible with the schema during the rollout window.</p>
+            </div>
+          </div>
+          <div class="comment" id="comment-6">
+            <div class="comment-meta">
+              <span class="comment-author">ThomasH</span>
+              <time class="comment-date" datetime="2026-06-10T19:45:00Z">June 10, 2026 at 19:45</time>
+            </div>
+            <div class="comment-body">
+              <p>Worth noting that Istio's resource overhead is non-trivial. Each sidecar proxy adds about 50-100ms of latency to service startup and a few hundred MB of memory per node. For smaller teams the complexity of managing a service mesh might outweigh the benefits. Linkerd is a lighter-weight alternative worth evaluating.</p>
+            </div>
+          </div>
+          <div class="comment" id="comment-7">
+            <div class="comment-meta">
+              <span class="comment-author">NadiaP</span>
+              <time class="comment-date" datetime="2026-06-11T08:12:00Z">June 11, 2026 at 08:12</time>
+            </div>
+            <div class="comment-body">
+              <p>The expand-contract migration pattern Marcus described is essential reading for anyone doing zero-downtime deployments. We use the same pattern and additionally run both old and new schema versions in parallel using feature flags so we can toggle the migration off if something goes wrong. The extra complexity pays for itself in sleep.</p>
+            </div>
+          </div>
+          <div class="comment" id="comment-8">
+            <div class="comment-meta">
+              <span class="comment-author">FelixR</span>
+              <time class="comment-date" datetime="2026-06-11T09:33:00Z">June 11, 2026 at 09:33</time>
+            </div>
+            <div class="comment-body">
+              <p>For teams just getting started I would recommend starting with a modular monolith rather than microservices. Extract services only when you have a proven deployment boundary that genuinely needs independence. The CQRS and event-sourcing patterns that work well in microservices also work perfectly well within a modular monolith and are much easier to debug.</p>
+            </div>
+          </div>
+          <div class="comment" id="comment-9">
+            <div class="comment-meta">
+              <span class="comment-author">JessicaW</span>
+              <time class="comment-date" datetime="2026-06-11T11:05:00Z">June 11, 2026 at 11:05</time>
+            </div>
+            <div class="comment-body">
+              <p>Has anyone successfully used Dapr with this stack? We evaluated it last year but found the added abstraction layer complicated our debugging workflow significantly. The virtual actor model is interesting for stateful workloads but it is a lot of Dapr-specific knowledge to acquire.</p>
+            </div>
+          </div>
+          <div class="comment" id="comment-10">
+            <div class="comment-meta">
+              <span class="comment-author">RobertM</span>
+              <time class="comment-date" datetime="2026-06-11T13:20:00Z">June 11, 2026 at 13:20</time>
+            </div>
+            <div class="comment-body">
+              <p>Excellent series. One piece missing from the deployment section: blue-green deployments. For services with database schema changes that cannot be rolled back easily, keeping the old deployment around until you have verified the new one is working correctly is much safer than rolling back in place. Argo Rollouts makes this straightforward alongside the standard Kubernetes API.</p>
+            </div>
+          </div>
+          <div class="comment" id="comment-11">
+            <div class="comment-meta">
+              <span class="comment-author">YukiT</span>
+              <time class="comment-date" datetime="2026-06-11T14:55:00Z">June 11, 2026 at 14:55</time>
+            </div>
+            <div class="comment-body">
+              <p>For the network policy section: be careful with Calico or Cilium as the CNI. The policy model differs slightly between them and between managed Kubernetes offerings. We spent two days debugging a connectivity issue that turned out to be a Calico policy that worked in our CI cluster but not in production because the managed offering used a different CNI. Always test network policies explicitly in an environment that mirrors production.</p>
+            </div>
+          </div>
+        </div>
+        <div class="comment-form-wrapper">
+          <h3>Leave a comment</h3>
+          <form class="comment-form" action="/comments" method="post">
+            <div class="form-group">
+              <label for="comment-name">Name</label>
+              <input type="text" id="comment-name" name="name" required>
+            </div>
+            <div class="form-group">
+              <label for="comment-email">Email</label>
+              <input type="email" id="comment-email" name="email" required>
+            </div>
+            <div class="form-group">
+              <label for="comment-text">Comment</label>
+              <textarea id="comment-text" name="body" rows="5" required></textarea>
+            </div>
+            <button type="submit">Post Comment</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="related-posts">
+        <h2>Related Articles</h2>
+        <div class="related-posts-grid">
+          <div class="related-post-card">
+            <a href="/tutorials/docker-compose-local-dev">
+              <img src="/thumbnails/docker-compose.jpg" alt="Docker Compose for Local Development" width="300" height="200">
+              <h3>Docker Compose for Local Development</h3>
+              <p>Set up a complete local environment with Docker Compose, including databases, message brokers, and hot-reload support.</p>
+            </a>
+          </div>
+          <div class="related-post-card">
+            <a href="/tutorials/opentelemetry-aspnetcore">
+              <img src="/thumbnails/otel.jpg" alt="OpenTelemetry in ASP.NET Core" width="300" height="200">
+              <h3>OpenTelemetry in ASP.NET Core</h3>
+              <p>Configure distributed tracing, metrics, and structured logging with the OpenTelemetry SDK for ASP.NET Core applications.</p>
+            </a>
+          </div>
+          <div class="related-post-card">
+            <a href="/tutorials/masstransit-rabbitmq">
+              <img src="/thumbnails/masstransit.jpg" alt="MassTransit and RabbitMQ" width="300" height="200">
+              <h3>Async Messaging with MassTransit and RabbitMQ</h3>
+              <p>Build reliable asynchronous workflows using MassTransit, saga state machines, and RabbitMQ as the message broker.</p>
+            </a>
+          </div>
+          <div class="related-post-card">
+            <a href="/tutorials/grpc-dotnet">
+              <img src="/thumbnails/grpc.jpg" alt="gRPC in .NET" width="300" height="200">
+              <h3>gRPC in .NET 8</h3>
+              <p>Define Protocol Buffer contracts, generate strongly typed client and server stubs, and build high-performance gRPC services in .NET.</p>
+            </a>
+          </div>
+          <div class="related-post-card">
+            <a href="/tutorials/kubernetes-hpa">
+              <img src="/thumbnails/hpa.jpg" alt="Kubernetes HPA" width="300" height="200">
+              <h3>Kubernetes Horizontal Pod Autoscaling</h3>
+              <p>Scale your deployments automatically based on CPU, memory, or custom metrics with Kubernetes HPA and KEDA.</p>
+            </a>
+          </div>
+          <div class="related-post-card">
+            <a href="/tutorials/istio-service-mesh">
+              <img src="/thumbnails/istio.jpg" alt="Istio Service Mesh" width="300" height="200">
+              <h3>Getting Started with Istio Service Mesh</h3>
+              <p>Configure mutual TLS, traffic management, and observability across microservices with Istio and Envoy sidecars.</p>
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <aside class="sidebar" role="complementary" aria-label="Sidebar">
+      <div class="sidebar-widget">
+        <h3 class="widget-title">Table of Contents</h3>
+        <nav class="toc" aria-label="Article table of contents">
+          <ol>
+            <li><a href="#project-structure">Project Structure and Service Boundaries</a></li>
+            <li><a href="#grpc-contracts">Defining gRPC Contracts</a></li>
+            <li><a href="#service-discovery">Service Discovery and Load Balancing</a></li>
+            <li><a href="#distributed-tracing">Distributed Tracing with OpenTelemetry</a></li>
+            <li><a href="#health-checks">Health Checks and Readiness Probes</a></li>
+            <li><a href="#deployments">Deployments and Rolling Updates</a></li>
+            <li><a href="#hpa">Horizontal Pod Autoscaling</a></li>
+            <li><a href="#conclusion">Conclusion</a></li>
+          </ol>
+        </nav>
+      </div>
+      <div class="sidebar-widget">
+        <h3 class="widget-title">Popular This Week</h3>
+        <ul class="popular-list">
+          <li><a href="/tutorials/ef-core-performance">EF Core Performance Tips</a></li>
+          <li><a href="/tutorials/blazor-ssr">Blazor Server-Side Rendering Deep Dive</a></li>
+          <li><a href="/tutorials/aspnetcore-minimal-apis">Minimal APIs in ASP.NET Core 8</a></li>
+          <li><a href="/tutorials/csharp-source-generators">C# Source Generators</a></li>
+          <li><a href="/tutorials/dotnet-aot">Native AOT in .NET 8</a></li>
+        </ul>
+      </div>
+      <div class="sidebar-widget ad-widget">
+        <h3 class="widget-title">Sponsored</h3>
+        <div class="ad-placeholder" aria-hidden="true">
+          <a href="https://sponsor.example.com" rel="nofollow sponsored">
+            <img src="/ads/sponsor-300x250.png" alt="Sponsor Ad" width="300" height="250">
+          </a>
+        </div>
+      </div>
+      <div class="sidebar-widget newsletter-widget">
+        <h3 class="widget-title">Subscribe to the Newsletter</h3>
+        <p>Get new tutorials delivered to your inbox every week.</p>
+        <form class="newsletter-form" action="/subscribe" method="post">
+          <input type="email" name="email" placeholder="you@example.com" required>
+          <button type="submit">Subscribe</button>
+        </form>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="site-footer" role="contentinfo">
+    <div class="footer-inner">
+      <div class="footer-columns">
+        <div class="footer-col">
+          <h4>DevBlog</h4>
+          <p>In-depth tutorials, reference guides, and opinion pieces for software engineers working with .NET and cloud technologies.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Tutorials</h4>
+          <ul>
+            <li><a href="/tutorials/aspnetcore">.NET &amp; ASP.NET Core</a></li>
+            <li><a href="/tutorials/kubernetes">Kubernetes</a></li>
+            <li><a href="/tutorials/databases">Databases</a></li>
+            <li><a href="/tutorials/frontend">Frontend</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Community</h4>
+          <ul>
+            <li><a href="/forum">Forum</a></li>
+            <li><a href="/discord">Discord</a></li>
+            <li><a href="/github">GitHub</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Legal</h4>
+          <ul>
+            <li><a href="/privacy">Privacy Policy</a></li>
+            <li><a href="/terms">Terms of Service</a></li>
+            <li><a href="/cookies">Cookie Policy</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 DevBlog. All rights reserved.</p>
+      </div>
+    </div>
+  </footer>
+  <div id="cookie-banner" class="cookie-banner" role="alert">
+    <p>We use cookies to improve your experience. By continuing to use this site you accept our <a href="/cookies">Cookie Policy</a>.</p>
+    <button id="cookie-accept">Accept All</button>
+    <button id="cookie-reject">Reject Non-Essential</button>
+  </div>
+</body>
+</html>
