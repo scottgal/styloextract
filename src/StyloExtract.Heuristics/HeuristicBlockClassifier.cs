@@ -303,14 +303,42 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         // Step 3: Greedy non-overlapping selection.
         // Accept a candidate only if it is not an ancestor or descendant of any
         // already-accepted element. This ensures disjoint text coverage.
+        //
+        // Two hash sets make both directions of the overlap check linear in DOM
+        // depth instead of O(N_accepted * depth) per candidate. On the WCXB Large
+        // input (~1500-node DOM, ~300 candidates) the original `accepted.Any(IsAncestor)`
+        // loop accounted for ~25.9 MB of per-call allocation and a substantial
+        // share of Classify time (bench 0496369). This rewrite keeps behavior
+        // identical: a candidate is rejected iff it shares any element along its
+        // ancestor path with an accepted element, in either direction.
         var accepted = new List<(IElement Element, BlockRole Role, double Confidence)>(candidates.Count);
+        var acceptedElements = new HashSet<IElement>(ReferenceEqualityComparer.Instance);
+        var ancestorsOfAccepted = new HashSet<IElement>(ReferenceEqualityComparer.Instance);
         foreach (var (element, role, confidence, _) in candidates)
         {
-            bool overlaps = accepted.Any(a =>
-                IsAncestor(a.Element, element) || IsAncestor(element, a.Element));
+            // Overlap-as-descendant: walk up from candidate looking for any accepted ancestor.
+            bool overlaps = false;
+            var cur = element.ParentElement;
+            while (cur is not null)
+            {
+                if (acceptedElements.Contains(cur)) { overlaps = true; break; }
+                cur = cur.ParentElement;
+            }
+            // Overlap-as-ancestor: O(1) lookup against precomputed ancestor set.
+            if (!overlaps && ancestorsOfAccepted.Contains(element)) overlaps = true;
+
             if (!overlaps)
             {
                 accepted.Add((element, role, confidence));
+                acceptedElements.Add(element);
+                // Record candidate's ancestor path so future "is candidate an ancestor of
+                // an accepted?" checks are O(1). The early break exploits the fact that if
+                // a parent is already in the set, all its ancestors are too.
+                var anc = element.ParentElement;
+                while (anc is not null && ancestorsOfAccepted.Add(anc))
+                {
+                    anc = anc.ParentElement;
+                }
             }
         }
 
