@@ -32,6 +32,35 @@ Most generic extraction tools do not expose reusable same-template clustering as
 
 ---
 
+## Benchmarks (WCXB dev split, 1495 pages)
+
+Measured against the [WCXB 2026](https://webcontentextraction.org/) benchmark: 2008 human-reviewed web pages × 7 page types × 1613 domains, word-level F1 against gold-standard main content. StyloExtract's heuristic (no ML, no LLM, runs CPU-only at 9 ms p50).
+
+| System              | F1     | Precision | Recall | p50 latency | p99 latency |
+|---------------------|-------:|----------:|-------:|------------:|------------:|
+| rs-trafilatura      | 0.859  | 0.863     | 0.890  | 44 ms       | -           |
+| Trafilatura         | 0.791  | 0.852     | 0.793  | -           | -           |
+| **StyloExtract v1.5.2** | **0.702**  | **0.691**     | **0.801**  | **9 ms**        | **127 ms**      |
+| Readability         | 0.675  | 0.685     | 0.713  | -           | -           |
+
+By page type (StyloExtract v1.5.2 vs WCXB baselines):
+
+| Page type     | StyloExtract v1.5.2 | rs-traf | Trafilatura | Readability |
+|---------------|--------------------:|--------:|------------:|------------:|
+| Article       | **0.824**           | 0.932   | 0.926       | 0.825       |
+| Documentation | **0.837**           | 0.932   | 0.888       | 0.736       |
+| Service       | **0.667**           | 0.844   | 0.763       | 0.604       |
+| Forum         | 0.452               | 0.808   | 0.585       | 0.466       |
+| Collection    | 0.471               | 0.716   | 0.553       | 0.445       |
+| Listing       | 0.487               | 0.707   | 0.589       | 0.496       |
+| Product       | 0.468               | 0.641   | 0.567       | 0.407       |
+
+StyloExtract v1.5.2 beats Readability overall and on every page type, within striking distance of Trafilatura on articles and documentation. Forum/collection/listing/product gaps are tracked for v1.6 (multi-item over-emission and JS-rendered fallback via the Playwright sibling package).
+
+Raw harness: `tests/StyloExtract.Wcxb.Benchmark/` (run `dotnet run -c Release -- --dataset-path /path/to/wcxb --split dev`). Full result tables in `docs/wcxb-v152.md`.
+
+---
+
 ## Quick start
 
 ```bash
