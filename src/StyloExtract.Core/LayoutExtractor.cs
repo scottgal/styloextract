@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Mostlylucid.Ephemeral;
 using StyloExtract.Abstractions;
+using StyloExtract.Heuristics;
 using StyloExtract.Templates;
 
 namespace StyloExtract.Core;
@@ -229,6 +230,40 @@ public sealed class LayoutExtractor : ILayoutExtractor
         }
 
         matchTimer.Stop();
+
+        // Schema.org JSON-LD fallback: when the heuristic produced essentially no content,
+        // try to extract from any application/ld+json blobs the page ships. Activates only
+        // when the heuristic returned < FallbackMinTextLength chars of trimmed text. The
+        // resulting plain text is wrapped in a synthetic MainContent block so the renderer
+        // emits it under the chosen profile.
+        // Empirical: WCXB diagnostic surfaced 48 pages where the heuristic emits 1-200 chars
+        // but the page ships substantial schema.org content (QAPage, DiscussionForumPosting,
+        // FAQPage, ItemList, NewsArticle, BlogPosting) that contains the gold answer.
+        const int FallbackMinTextLength = 200;
+        var combinedText = blocks.Sum(b => b.Text.Length);
+        if (combinedText < FallbackMinTextLength)
+        {
+            var jsonLdText = JsonLdContentExtractor.ExtractMainContent(doc);
+            if (!string.IsNullOrWhiteSpace(jsonLdText) && jsonLdText.Length >= FallbackMinTextLength)
+            {
+                var fallbackBlock = new ExtractedBlock
+                {
+                    Id = "json-ld",
+                    Role = BlockRole.MainContent,
+                    Confidence = 0.7,
+                    Text = jsonLdText,
+                    Markdown = "",
+                    XPath = "/structured-data",
+                    CssSelector = "script[type='application/ld+json']",
+                    TextLength = jsonLdText.Length,
+                    LinkDensity = 0.0,
+                    Links = Array.Empty<ExtractedLink>(),
+                };
+                var augmented = new List<ExtractedBlock>(blocks.Count + 1) { fallbackBlock };
+                augmented.AddRange(blocks);
+                blocks = augmented;
+            }
+        }
 
         var renderTimer = Stopwatch.StartNew();
         var markdown = _renderer.Render(blocks, options.Profile);
