@@ -68,7 +68,8 @@ jobs:
             src/StyloExtract.Markdown \
             src/StyloExtract.Core \
             src/StyloExtract.AspNetCore \
-            src/StyloExtract.Playwright; do
+            src/StyloExtract.Playwright \
+            src/Mostlylucid.StyloExtract.StyloBot; do
             echo "=== Packing $proj at $PKG_VERSION ==="
             dotnet pack "$proj" -c Release --no-build -o artifacts -p:Version="$PKG_VERSION"
           done
@@ -215,10 +216,11 @@ jobs:
 
             ### NuGet packages
 
-            All nine packages are published to NuGet.org. Add the one you need:
+            All ten packages are published to NuGet.org. Add the one you need:
 
             ```
             dotnet add package Mostlylucid.StyloExtract.AspNetCore
+            dotnet add package Mostlylucid.StyloExtract.StyloBot     # optional: StyloBot action policies
             dotnet add package Mostlylucid.StyloExtract.Playwright   # optional: JS-rendered fetching
             ```
 
