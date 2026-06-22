@@ -26,6 +26,23 @@ internal static class IntraBlockCleaner
         "feedback", "edit-this-page", "share", "suggest-change",
         // AI widgets, auth banners, and metadata bars inside article bodies
         "ai-summary", "article-metadata", "notification-info",
+        // E-commerce widget patterns (WCXB diagnostic surfaced 55 product pages emitting
+        // 30-90x too much content from product-page widgets bleeding into MainContent).
+        // Most-leaked snippets across product/collection pages: "add to cart" (11 pages),
+        // "related products" (3), "you may also like" (2), "sort and filter" (3 collection
+        // pages), "quick shop"/"add to bag"/"add to wishlist"/"pick up in store" / "shop now".
+        "add-to-cart", "add-to-bag", "add-to-wishlist", "add-to-list",
+        "wishlist", "quick-shop", "quick-view", "shop-now", "buy-now", "buy-button",
+        "related-products", "related-items", "related-articles",
+        "you-may-also-like", "ymal", "recently-viewed", "recommended-for-you",
+        "people-also-bought", "people-also-viewed", "customers-also-bought",
+        "customers-also-viewed", "recommendations", "recommended-products",
+        "product-card", "product-grid", "product-list", "product-tile",
+        "filter-bar", "filter-and-sort", "sort-and-filter", "sort-bar",
+        "pickup-in-store", "pick-up-in-store", "store-locator",
+        "newsletter-signup", "newsletter-form", "subscribe-form",
+        "merch-rcmd", "vi-merch", "cross-sell", "upsell",
+        "smart-navigator",
     };
 
     /// <summary>

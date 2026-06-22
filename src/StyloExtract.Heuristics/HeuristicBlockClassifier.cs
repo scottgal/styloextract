@@ -116,24 +116,32 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         // Empirical: WCXB consumerreports.org page had <main> at 23523 chars; an outer
         // <div class="crux-container"> wrapper at 47k chars dominated selection, and
         // post-cleanup the emitted MainContent was 38 chars of residue.
-        // Only suppress the wrapper if the semantic descendant has substantial text:
-        // collection/product pages commonly have an empty <main> with a breadcrumb and the
-        // real product grid in a child <div> — suppressing the wrapper there would crush
-        // the only content candidate. SubstantialTextThreshold balances "this semantic tag
-        // actually carries the article body" against "this semantic tag is just a chrome
-        // marker for an otherwise-empty region". Empirical: WCXB collection F1 -0.063 and
-        // product F1 -0.032 in v1.5.3 because the unconditional suppression demoted the
-        // real content wrapper on grid-style listings.
+        // Only suppress the wrapper if the semantic descendant has substantial NON-LINK
+        // text. Two thresholds combine:
+        //
+        // 1. SubstantialSemanticTextThreshold (500 chars): collection/product pages commonly
+        //    have an empty <main> containing only a breadcrumb and the real content lives in
+        //    a sibling div. Suppressing the wrapper there would crush the only content
+        //    candidate.
+        //
+        // 2. LinkDensityCeiling (0.5): REI / Etsy / e-commerce category pages have a <main>
+        //    that contains 500-2000 chars of breadcrumb + intro + a 80%-link product grid.
+        //    By textLength alone the <main> qualifies as substantial, but its actual prose
+        //    content is tiny - the bulk is link text in product cards. Treating that <main>
+        //    as "the article" forces IntraBlockCleaner to strip the link-heavy descendants,
+        //    leaving 1 char of residue. WCXB v1.5.3 collection F1 -0.053 traces to 18 REI
+        //    category pages each going F1 0.66-0.75 -> 0.00 with pred_chars=1.
         const int SubstantialSemanticTextThreshold = 500;
+        const double SemanticElementMaxLinkDensity = 0.5;
         var semanticElements = new List<IElement>();
         for (int i = 0; i < candidates.Count; i++)
         {
             var t = candidates[i].Element.TagName.ToLowerInvariant();
-            if ((t == "main" || t == "article")
-                && candidates[i].Element.TextContent.Trim().Length >= SubstantialSemanticTextThreshold)
-            {
-                semanticElements.Add(candidates[i].Element);
-            }
+            if (t != "main" && t != "article") continue;
+            var el = candidates[i].Element;
+            if (el.TextContent.Trim().Length < SubstantialSemanticTextThreshold) continue;
+            if (ComputeLinkDensity(el) >= SemanticElementMaxLinkDensity) continue;
+            semanticElements.Add(el);
         }
         if (semanticElements.Count > 0)
         {
