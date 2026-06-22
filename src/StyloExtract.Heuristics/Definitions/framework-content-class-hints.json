@@ -1,0 +1,31 @@
+{
+  "hints": [
+    "entry-content",
+    "post-content",
+    "the-content",
+    "wp-block-post-content",
+    "post-body",
+    "entry-body",
+    "article-body",
+    "article-content",
+    "post-article",
+    "gh-content",
+    "kg-content",
+    "post-full-content",
+    "field--name-body",
+    "node__content",
+    "field--type-text-with-summary",
+    "magento-content-area",
+    "product-info-description",
+    "gutenberg-content",
+    "story-body",
+    "story-content",
+    "rich-text-content",
+    "main-content",
+    "primary-content",
+    "page-content",
+    "content-body",
+    "blog-post-content",
+    "blog-content"
+  ]
+}

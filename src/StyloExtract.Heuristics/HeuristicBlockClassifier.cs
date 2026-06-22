@@ -28,19 +28,22 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
     private readonly string[] _cookiePhrases;
     private readonly HashSet<string> _navHints;
     private readonly HashSet<string> _adHints;
+    private readonly HashSet<string> _frameworkContentHints;
 
     private HeuristicBlockClassifier(
         string[] footerPhrases,
         Regex[] copyrightPatterns,
         string[] cookiePhrases,
         HashSet<string> navHints,
-        HashSet<string> adHints)
+        HashSet<string> adHints,
+        HashSet<string> frameworkContentHints)
     {
         _footerPhrases = footerPhrases;
         _copyrightPatterns = copyrightPatterns;
         _cookiePhrases = cookiePhrases;
         _navHints = navHints;
         _adHints = adHints;
+        _frameworkContentHints = frameworkContentHints;
     }
 
     public static HeuristicBlockClassifier LoadFromEmbeddedResources()
@@ -73,13 +76,15 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         var cookie = LoadPhraseList("cookie-banner-phrases.json");
         var nav = LoadHintList("nav-class-hints.json");
         var ad = LoadHintList("ad-class-hints.json");
+        var frameworkContent = LoadHintList("framework-content-class-hints.json");
 
         return new HeuristicBlockClassifier(
             footer.Phrases.ToArray(),
             copyright.Patterns.Select(p => new Regex(p, RegexOptions.IgnoreCase | RegexOptions.Compiled)).ToArray(),
             cookie.Phrases.ToArray(),
             new HashSet<string>(nav.Hints, StringComparer.OrdinalIgnoreCase),
-            new HashSet<string>(ad.Hints, StringComparer.OrdinalIgnoreCase));
+            new HashSet<string>(ad.Hints, StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>(frameworkContent.Hints, StringComparer.OrdinalIgnoreCase));
     }
 
     public IReadOnlyList<ExtractedBlock> Classify(IReadOnlyList<IElement> elements)
@@ -630,6 +635,24 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
             // Always treat <main> and <article> as MainContent regardless of text length.
             // Short <main>/<article> elements still win over generic div wrappers via scoring.
             return (BlockRole.MainContent, text.Length > 200 ? 0.92 : 0.70);
+        }
+
+        // Framework-emitted content wrappers: CMS templates commonly wrap the article body
+        // in a recognised class like `entry-content` (WordPress), `post-content` (WordPress /
+        // Ghost), `wp-block-post-content` (Gutenberg), `gh-content` / `kg-content` (Ghost
+        // Casper), `field--name-body` (Drupal), `magento-content-area` (Magento), etc.
+        // These hints live in Definitions/framework-content-class-hints.json so adding
+        // patterns for new frameworks is data, not code.
+        //
+        // Linkbase guard: if the class-matched element is overwhelmingly links (>= 0.6),
+        // it is more likely a related-posts/category-nav widget that happens to use a
+        // content-sounding class, so fall through to other classification.
+        if ((tag == "div" || tag == "section") && IdOrClassMatches(element, _frameworkContentHints))
+        {
+            if (linkDensity < 0.6)
+            {
+                return (BlockRole.MainContent, text.Length > 200 ? 0.92 : 0.70);
+            }
         }
 
         if (tag == "aside")
