@@ -101,6 +101,59 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
             candidates.Add((element, role, confidence, score));
         }
 
+        // Step 1a: Suppress wrapper <div>/<section> candidates that ANCESTOR a semantic
+        // <main>/<article> present in the candidate set. The wrapper's textLength includes
+        // the chrome around the semantic element (top nav, footer, mega-menu), so its
+        // fall-through score (textLength * linkPenalty^2) would otherwise win the greedy
+        // non-overlapping selection over the actual <main>/<article>, which would then be
+        // rejected as descendant. IntraBlockCleaner would later strip the nav-classed
+        // descendants from the wrapper, leaving only residue.
+        //
+        // Crush the wrapper's score so the inner semantic tag wins greedy. The wrapper
+        // remains in the candidate list (it might still be selected elsewhere as Boilerplate
+        // context), but cannot beat its semantic descendant.
+        //
+        // Empirical: WCXB consumerreports.org page had <main> at 23523 chars; an outer
+        // <div class="crux-container"> wrapper at 47k chars dominated selection, and
+        // post-cleanup the emitted MainContent was 38 chars of residue.
+        // Only suppress the wrapper if the semantic descendant has substantial text:
+        // collection/product pages commonly have an empty <main> with a breadcrumb and the
+        // real product grid in a child <div> — suppressing the wrapper there would crush
+        // the only content candidate. SubstantialTextThreshold balances "this semantic tag
+        // actually carries the article body" against "this semantic tag is just a chrome
+        // marker for an otherwise-empty region". Empirical: WCXB collection F1 -0.063 and
+        // product F1 -0.032 in v1.5.3 because the unconditional suppression demoted the
+        // real content wrapper on grid-style listings.
+        const int SubstantialSemanticTextThreshold = 500;
+        var semanticElements = new List<IElement>();
+        for (int i = 0; i < candidates.Count; i++)
+        {
+            var t = candidates[i].Element.TagName.ToLowerInvariant();
+            if ((t == "main" || t == "article")
+                && candidates[i].Element.TextContent.Trim().Length >= SubstantialSemanticTextThreshold)
+            {
+                semanticElements.Add(candidates[i].Element);
+            }
+        }
+        if (semanticElements.Count > 0)
+        {
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                var c = candidates[i];
+                var ctag = c.Element.TagName.ToLowerInvariant();
+                if (ctag != "div" && ctag != "section") continue;
+                foreach (var sem in semanticElements)
+                {
+                    if (ReferenceEquals(c.Element, sem)) continue;
+                    if (IsAncestor(c.Element, sem))
+                    {
+                        candidates[i] = (c.Element, BlockRole.Boilerplate, 0.3, -8000.0);
+                        break;
+                    }
+                }
+            }
+        }
+
         // Step 1b: Repeated-item detection.
         // Find containers whose direct children form a homogeneous repeated-block
         // pattern (forum posts, listing cards, collection entries). When found:
@@ -296,13 +349,43 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         var scoreMapForRoleCap = new Dictionary<IElement, double>(ReferenceEqualityComparer.Instance);
         foreach (var (el, _, _, sc) in candidates) scoreMapForRoleCap[el] = sc;
 
-        var bestPerSingletonRole = new Dictionary<BlockRole, (IElement Element, double Score)>();
-        foreach (var (el, role, _) in accepted)
+        // Within a singleton role, a candidate from the semantic-tag classification path
+        // (conf >= 0.70, returned for <main>/<article>/<header>/<nav>/<aside>) ALWAYS
+        // beats a fallthrough candidate (conf 0.50, returned for div/section with text > 200),
+        // regardless of raw score. This fixes the WCXB consumerreports / Shopify pattern
+        // where a 47k-char wrapper div (mega-menu + chrome) outscored a 14k-char <main> on
+        // textLength * linkPenalty^2 and won MainContent, leaving IntraBlockCleaner to strip
+        // the mega-menu and emit ~38 chars of residue. Score-only comparison ignored the
+        // explicit semantic intent encoded by the page author's <main>/<article> tag.
+        const double SemanticTagConfidenceFloor = 0.70;
+        bool IsSemanticTagCandidate(IElement el, double conf)
+        {
+            if (conf < SemanticTagConfidenceFloor) return false;
+            var tag = el.TagName.ToLowerInvariant();
+            return tag is "main" or "article" or "header" or "nav" or "aside" or "footer";
+        }
+
+        var bestPerSingletonRole = new Dictionary<BlockRole, (IElement Element, double Score, bool IsSemantic)>();
+        foreach (var (el, role, conf) in accepted)
         {
             if (!SingletonRoles.Contains(role)) continue;
             var sc = scoreMapForRoleCap.TryGetValue(el, out var s) ? s : 0;
-            if (!bestPerSingletonRole.TryGetValue(role, out var current) || sc > current.Score)
-                bestPerSingletonRole[role] = (el, sc);
+            var isSemantic = IsSemanticTagCandidate(el, conf);
+            if (!bestPerSingletonRole.TryGetValue(role, out var current))
+            {
+                bestPerSingletonRole[role] = (el, sc, isSemantic);
+                continue;
+            }
+            // Semantic-tag candidate beats fallthrough regardless of score.
+            // Within the same tier (both semantic or both fallthrough), highest score wins.
+            if (isSemantic && !current.IsSemantic)
+            {
+                bestPerSingletonRole[role] = (el, sc, true);
+            }
+            else if (isSemantic == current.IsSemantic && sc > current.Score)
+            {
+                bestPerSingletonRole[role] = (el, sc, isSemantic);
+            }
         }
 
         // Keep accepted entries: non-singleton roles pass through; singleton roles keep only the winner.
@@ -317,7 +400,7 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
             {
                 acceptedAfterRoleCap.Add((el, role, conf));
             }
-            // else: a lower-scoring duplicate of a singleton role — drop it
+            // else: a lower-scoring (or non-semantic) duplicate of a singleton role — drop it
         }
         accepted = acceptedAfterRoleCap;
 
