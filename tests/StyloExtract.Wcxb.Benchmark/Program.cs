@@ -11,6 +11,49 @@ using StyloExtract.AspNetCore;
 
 namespace StyloExtract.Wcxb.Benchmark;
 
+// Diagnostic JSONL record (written only when --diagnostic is set).
+file sealed class DiagnosticEntry
+{
+    [JsonPropertyName("file_id")]
+    public string FileId { get; set; } = "";
+
+    [JsonPropertyName("page_type")]
+    public string PageType { get; set; } = "";
+
+    [JsonPropertyName("url")]
+    public string Url { get; set; } = "";
+
+    [JsonPropertyName("f1")]
+    public double F1 { get; set; }
+
+    [JsonPropertyName("precision")]
+    public double Precision { get; set; }
+
+    [JsonPropertyName("recall")]
+    public double Recall { get; set; }
+
+    [JsonPropertyName("gold_chars")]
+    public int GoldChars { get; set; }
+
+    [JsonPropertyName("pred_chars")]
+    public int PredChars { get; set; }
+
+    [JsonPropertyName("with_hit_count")]
+    public int WithHitCount { get; set; }
+
+    [JsonPropertyName("with_total")]
+    public int WithTotal { get; set; }
+
+    [JsonPropertyName("without_violations")]
+    public List<string> WithoutViolations { get; set; } = [];
+
+    [JsonPropertyName("extra_words_sample")]
+    public List<string> ExtraWordsSample { get; set; } = [];
+
+    [JsonPropertyName("missing_words_sample")]
+    public List<string> MissingWordsSample { get; set; } = [];
+}
+
 // Baseline numbers from WCXB paper (dev split)
 file static class Baselines
 {
@@ -109,6 +152,60 @@ sealed record PageResult(
     double WithoutReject,
     long LatencyMs);
 
+// Helper for diagnostic word-frequency analysis (used only when --diagnostic is set).
+file static class DiagnosticWords
+{
+    private static readonly Regex WordPat = new(@"\w+", RegexOptions.Compiled);
+
+    private static readonly FrozenSet<string> Stopwords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "the", "a", "an", "and", "or", "of", "to", "for", "in", "on", "at",
+        "is", "are", "was", "were", "it", "its", "this", "that", "be", "by", "with",
+        "as", "not", "but", "from", "have", "has", "had", "do", "does", "did",
+        "will", "would", "can", "could", "may", "might", "shall", "should",
+        "our", "we", "you", "your", "they", "their", "he", "she", "his", "her",
+        "us", "me", "my", "i", "s", "t", "re", "ll", "ve", "d", "m",
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+    public static Dictionary<string, int> Counts(string text)
+    {
+        var result = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (Match m in WordPat.Matches(text.ToLowerInvariant()))
+        {
+            if (!Stopwords.Contains(m.Value))
+                result[m.Value] = result.GetValueOrDefault(m.Value) + 1;
+        }
+        return result;
+    }
+
+    public static List<string> TopExtra(Dictionary<string, int> predCounts, Dictionary<string, int> refCounts, int n)
+    {
+        // Words in pred that appear more than in ref, sorted by excess frequency
+        var excess = new List<(string Word, int Excess)>();
+        foreach (var (w, pc) in predCounts)
+        {
+            int rc = refCounts.GetValueOrDefault(w);
+            int diff = pc - rc;
+            if (diff > 0)
+                excess.Add((w, diff));
+        }
+        return excess.OrderByDescending(x => x.Excess).Take(n).Select(x => x.Word).ToList();
+    }
+
+    public static List<string> TopMissing(Dictionary<string, int> predCounts, Dictionary<string, int> refCounts, int n)
+    {
+        var missing = new List<(string Word, int Count)>();
+        foreach (var (w, rc) in refCounts)
+        {
+            int pc = predCounts.GetValueOrDefault(w);
+            int diff = rc - pc;
+            if (diff > 0)
+                missing.Add((w, diff));
+        }
+        return missing.OrderByDescending(x => x.Count).Take(n).Select(x => x.Word).ToList();
+    }
+}
+
 static partial class WordF1
 {
     // Can't use GeneratedRegex in a file-local class, use a compiled instance instead.
@@ -158,21 +255,25 @@ static class Program
     static async Task<int> Main(string[] args)
     {
         // Parse CLI args
-        string datasetPath = "/tmp/wcxb";
-        string split       = "dev";
-        string profile     = "MainContentOnly";
-        int    maxPages    = int.MaxValue;
-        string outPath     = "docs/wcxb.md";
+        string datasetPath  = "/tmp/wcxb";
+        string split        = "dev";
+        string profile      = "MainContentOnly";
+        int    maxPages     = int.MaxValue;
+        string outPath      = "docs/wcxb.md";
+        bool   diagnostic   = false;
+        string diagnosticOut = "/tmp/wcxb-diag.jsonl";
 
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
-                case "--dataset-path" when i + 1 < args.Length: datasetPath = args[++i]; break;
-                case "--split"        when i + 1 < args.Length: split       = args[++i]; break;
-                case "--profile"      when i + 1 < args.Length: profile     = args[++i]; break;
-                case "--max-pages"    when i + 1 < args.Length: maxPages    = int.Parse(args[++i]); break;
-                case "--out"          when i + 1 < args.Length: outPath     = args[++i]; break;
+                case "--dataset-path"   when i + 1 < args.Length: datasetPath   = args[++i]; break;
+                case "--split"          when i + 1 < args.Length: split         = args[++i]; break;
+                case "--profile"        when i + 1 < args.Length: profile       = args[++i]; break;
+                case "--max-pages"      when i + 1 < args.Length: maxPages      = int.Parse(args[++i]); break;
+                case "--out"            when i + 1 < args.Length: outPath       = args[++i]; break;
+                case "--diagnostic-out" when i + 1 < args.Length: diagnosticOut = args[++i]; break;
+                case "--diagnostic": diagnostic = true; break;
             }
         }
 
@@ -225,6 +326,18 @@ static class Program
             int errors   = 0;
             var wallClock = Stopwatch.StartNew();
 
+            // Open diagnostic JSONL writer only when the flag is set; null otherwise.
+            StreamWriter? diagWriter = null;
+            if (diagnostic)
+            {
+                var diagDir = Path.GetDirectoryName(diagnosticOut);
+                if (!string.IsNullOrEmpty(diagDir))
+                    Directory.CreateDirectory(diagDir);
+                diagWriter = new StreamWriter(diagnosticOut, append: false, Encoding.UTF8);
+            }
+
+            try
+            {
             for (int i = 0; i < gtFiles.Length; i++)
             {
                 var gtFile = gtFiles[i];
@@ -298,27 +411,73 @@ static class Program
 
                 // with[] recall: % of must-appear snippets found (case-folded substring)
                 double withHit = 1.0;
+                int withHitCount = 0;
+                int withTotal = 0;
                 if (doc.GroundTruth.With is { Count: > 0 } withs)
                 {
                     var mdLower = markdown.ToLowerInvariant();
-                    int hits = withs.Count(s => mdLower.Contains(s.ToLowerInvariant()));
-                    withHit = (double)hits / withs.Count;
+                    withTotal = withs.Count;
+                    withHitCount = withs.Count(s => mdLower.Contains(s.ToLowerInvariant()));
+                    withHit = (double)withHitCount / withTotal;
                 }
 
                 // without[] rejection: % of must-NOT-appear snippets absent
                 double withoutReject = 1.0;
+                var withoutViolations = new List<string>();
                 if (doc.GroundTruth.Without is { Count: > 0 } withouts)
                 {
                     var mdLower = markdown.ToLowerInvariant();
-                    int absent = withouts.Count(s => !mdLower.Contains(s.ToLowerInvariant()));
+                    foreach (var s in withouts)
+                    {
+                        if (mdLower.Contains(s.ToLowerInvariant()))
+                            withoutViolations.Add(s);
+                    }
+                    int absent = withouts.Count - withoutViolations.Count;
                     withoutReject = (double)absent / withouts.Count;
                 }
 
                 var pageType = doc.Internal?.PageType?.Primary ?? "unknown";
                 results.Add(new PageResult(fileId, pageType, f1, prec, rec, withHit, withoutReject, latencyMs));
 
+                // Write diagnostic entry if requested
+                if (diagWriter is not null)
+                {
+                    var predCounts = DiagnosticWords.Counts(markdown);
+                    var refCounts  = DiagnosticWords.Counts(doc.GroundTruth.MainContent);
+
+                    var entry = new DiagnosticEntry
+                    {
+                        FileId           = fileId,
+                        PageType         = pageType,
+                        Url              = doc.Url ?? "",
+                        F1               = Math.Round(f1, 4),
+                        Precision        = Math.Round(prec, 4),
+                        Recall           = Math.Round(rec, 4),
+                        GoldChars        = doc.GroundTruth.MainContent.Length,
+                        PredChars        = markdown.Length,
+                        WithHitCount     = withHitCount,
+                        WithTotal        = withTotal,
+                        WithoutViolations = withoutViolations,
+                        ExtraWordsSample  = DiagnosticWords.TopExtra(predCounts, refCounts, 30),
+                        MissingWordsSample = DiagnosticWords.TopMissing(predCounts, refCounts, 30),
+                    };
+
+                    await diagWriter.WriteLineAsync(JsonSerializer.Serialize(entry));
+                }
+
                 if ((i + 1) % 100 == 0)
                     Console.WriteLine($"  {i + 1}/{gtFiles.Length} pages done... (errors so far: {errors})");
+            }
+            }
+            finally
+            {
+                if (diagWriter is not null)
+                {
+                    await diagWriter.FlushAsync();
+                    await diagWriter.DisposeAsync();
+                    if (diagnostic)
+                        Console.WriteLine($"Diagnostic JSONL written to: {diagnosticOut}");
+                }
             }
 
             wallClock.Stop();
