@@ -127,16 +127,54 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
                 {
                     // Demote the containers: mark as Boilerplate so the non-overlapping
                     // step deprioritises them in favour of the RepeatedItem children.
-                    // EXCEPTION: if the container has substantial extra text beyond the
+                    // EXCEPTION 1: if the container has substantial extra text beyond the
                     // items' combined text (ratio < 0.85), the container holds "wrapper"
                     // content (intro paragraphs, summary sections) that we must not lose.
-                    // In that case, keep the container at its natural score and DO NOT
-                    // inject RepeatedItem children for this group — the existing classifier
-                    // picks the container correctly.
+                    // EXCEPTION 2: if the container is nested inside a MainContent / Article
+                    // candidate, the group is a sub-widget (related-posts grid, recommended
+                    // articles, "people also read") embedded INSIDE the main article. The
+                    // article is the page's actual content; the widget is not. Skipping
+                    // injection lets the main article win selection. WordPress / Squarespace /
+                    // Ghost templates routinely embed 3-6 related-post cards inside the post's
+                    // own <article> wrapper, which previously suppressed the main content
+                    // entirely via overlap-rejection (the cards win at score 50000 each, then
+                    // the main article is rejected as their ancestor).
                     const double ContainerWrappingRatioThreshold = 0.85;
+                    // Exception 2 threshold: a group's items must occupy at least this fraction
+                    // of their MainContent/Article ancestor's text to count as "the real content".
+                    // Below this they are a sub-widget (related-posts grid, recommended articles)
+                    // embedded inside the actual main content, and injecting them would suppress
+                    // the main content via overlap-rejection. WordPress / Squarespace templates
+                    // routinely show 3-6 related-post cards (each ~150 chars: title + excerpt)
+                    // inside a 15k-char article wrapper — that's 4%, well below this threshold.
+                    // A real forum thread's posts span essentially the full main element (>90%).
+                    const double ItemsFractionOfMainContentThreshold = 0.60;
+
+                    var mainContentCandidates = candidates
+                        .Where(c => c.Role is BlockRole.MainContent or BlockRole.Article)
+                        .Select(c => c.Element)
+                        .ToList();
+
                     var groupsToInject = new List<RepeatedItemGroup>(repeatedGroups.Count);
                     foreach (var g in repeatedGroups)
                     {
+                        // Exception 2: skip if container is nested inside a MainContent/Article
+                        // candidate AND the group's items occupy a small fraction of that
+                        // candidate's text (the group is a sub-widget, not the page's content).
+                        var mainAncestor = FindAncestorIn(g.Container, mainContentCandidates);
+                        if (mainAncestor is not null)
+                        {
+                            var ancestorTextLen = mainAncestor.TextContent.Trim().Length;
+                            var itemsTotalText = g.Items.Sum(item => item.TextContent.Trim().Length);
+                            var itemsFractionOfAncestor = ancestorTextLen > 0
+                                ? (double)itemsTotalText / ancestorTextLen
+                                : 0;
+                            if (itemsFractionOfAncestor < ItemsFractionOfMainContentThreshold)
+                            {
+                                continue;
+                            }
+                        }
+
                         var containerTextLen = g.Container.TextContent.Trim().Length;
                         var itemsTextLen = g.Items.Sum(item => item.TextContent.Trim().Length);
                         var ratio = containerTextLen > 0 ? (double)itemsTextLen / containerTextLen : 0;
@@ -529,19 +567,12 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
             }
             // form with no meaningful inputs: fall through to default classification
         }
-        else if (element.QuerySelectorAll("input, textarea")
-            .Count(input =>
-            {
-                if (input.TagName.Equals("textarea", StringComparison.OrdinalIgnoreCase))
-                    return true;
-                var type = (input.GetAttribute("type") ?? "text").ToLowerInvariant();
-                return type is "text" or "email" or "search" or "tel" or "url"
-                       or "number" or "password" or "date" or "datetime-local"
-                       or "month" or "week" or "time";
-            }) >= 2)
-        {
-            return (BlockRole.Form, 0.85);
-        }
+        // Note: We DO NOT classify a non-<form> element as Form just because it contains
+        // inputs in its descendants. Almost every CMS page wrapper contains a search form
+        // plus a comment/newsletter form (>= 2 inputs) reachable via QuerySelectorAll;
+        // classifying the page wrapper as Form would suppress the actual main content via
+        // overlap-rejection (the Form-classified wrapper outscores its descendants). Real
+        // forms must use the <form> tag.
 
         if (tag == "table") return (BlockRole.Table, 0.95);
 
@@ -643,5 +674,22 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
             current = current.ParentElement;
         }
         return false;
+    }
+
+    // Walk up from element; return the first ancestor that is in the candidate list,
+    // or null if no ancestor matches. O(depth × |candidates|).
+    private static IElement? FindAncestorIn(IElement element, IReadOnlyList<IElement> candidates)
+    {
+        if (candidates.Count == 0) return null;
+        var current = element.ParentElement;
+        while (current is not null)
+        {
+            foreach (var c in candidates)
+            {
+                if (ReferenceEquals(c, current)) return current;
+            }
+            current = current.ParentElement;
+        }
+        return null;
     }
 }

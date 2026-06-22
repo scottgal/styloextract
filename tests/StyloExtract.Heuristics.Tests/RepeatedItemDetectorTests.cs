@@ -241,6 +241,41 @@ public class RepeatedItemDetectorTests
     }
 
     [Fact]
+    public void Skips_RelatedPostsWidget_NestedInsideArticle()
+    {
+        // Reproducer for the catastrophic-failure pattern that drove 24.8% of WCXB pages
+        // to pred_chars=1. WordPress / Squarespace blog posts embed 3-4 related-post cards
+        // INSIDE the main <article>. Previously RepeatedItemDetector grabbed those cards,
+        // injected them at score 50000 each, and the main <article> was overlap-rejected
+        // because the cards were its descendants. Result: empty extraction.
+        var mainBody = string.Concat(Enumerable.Range(1, 8).Select(i =>
+            $"<p>Paragraph {i}: {LongText(200)}</p>"));
+        var relatedCards = string.Concat(Enumerable.Range(1, 4).Select(i =>
+            $"<article class=\"post col-4\"><div class=\"content\">Related {i} title</div></article>"));
+        var html =
+            "<html><body><main>"
+            + "<article class=\"the-post single-default\">"
+            + "<h1>Main article title</h1>"
+            + mainBody
+            + $"<section class=\"related-posts grid-3\">{relatedCards}</section>"
+            + "</article>"
+            + "</main></body></html>";
+
+        var blocks = Classify(html);
+
+        bool hasMainContent = blocks.Any(b =>
+            b.Role is BlockRole.MainContent or BlockRole.Article
+            && b.Text.Contains("Paragraph 1"));
+        hasMainContent.Should().BeTrue(
+            "main <article> must survive: the related-posts cards are a sub-widget, not the page content");
+
+        bool hasRelatedAsRepeatedItem = blocks.Any(b =>
+            b.Role == BlockRole.RepeatedItem && b.Text.Contains("Related"));
+        hasRelatedAsRepeatedItem.Should().BeFalse(
+            "related-posts cards must NOT be emitted as RepeatedItem when nested inside MainContent");
+    }
+
+    [Fact]
     public void Article_Page_Not_Degraded_By_RepeatedItemDetector()
     {
         // A standard article page must NOT be changed: single MainContent block.
