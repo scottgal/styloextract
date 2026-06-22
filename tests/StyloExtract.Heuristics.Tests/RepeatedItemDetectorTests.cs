@@ -190,6 +190,41 @@ public class RepeatedItemDetectorTests
     }
 
     [Fact]
+    public void Skips_FormFieldGrid_GravityFormsPattern()
+    {
+        // Gravity Forms / WPForms emit 5+ similar gfield divs inside a form. They look
+        // like repeated items (same class, substantial label+description text) but are
+        // input UI, not page content. Containers inside <form> must be skipped.
+        var fields = string.Concat(Enumerable.Range(1, 6).Select(i =>
+            $"<div class=\"gfield gfield--type-text\"><label>Question {i}</label>"
+            + $"<div class=\"description\">{LongText(140)}</div><input type=\"text\"/></div>"));
+        var html = $"<html><body><form id=\"contact\"><div class=\"gform_fields\">{fields}</div></form></body></html>";
+
+        var body = ParseBody(html);
+        var groups = RepeatedItemDetector.Detect(body);
+
+        groups.Should().BeEmpty("repeated form-field rows are input UI, not content items");
+    }
+
+    [Fact]
+    public void Skips_StyleOnlyDivs_WithoutClassSignal()
+    {
+        // Some doc/service pages use bare <div style="max-width:Npx"> wrappers around
+        // unrelated content. Three of them in a row should NOT count as items; without
+        // any class signal we cannot conclude they form a typed group.
+        var html = "<html><body><div id=\"wrap\">"
+            + $"<div style=\"max-width:600px\">Block one: {LongText(140)}</div>"
+            + $"<div style=\"max-width:600px\">Block two: {LongText(140)}</div>"
+            + $"<div style=\"max-width:600px\">Block three: {LongText(140)}</div>"
+            + "</div></body></html>";
+
+        var body = ParseBody(html);
+        var groups = RepeatedItemDetector.Detect(body);
+
+        groups.Should().BeEmpty("style-only divs without class signal do not form a typed group");
+    }
+
+    [Fact]
     public void Article_Page_Not_Degraded_By_RepeatedItemDetector()
     {
         // A standard article page must NOT be changed: single MainContent block.
