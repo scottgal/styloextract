@@ -23,6 +23,13 @@ internal static class RepeatedItemDetector
     private const int MinChildTextLength = 100;
     private const double MinClassOverlap = 0.5;
 
+    // SVG text that exceeds this length indicates the element is primarily a diagram
+    // container (railroad syntax charts, data-vis SVGs) rather than prose content.
+    // Inline icon SVGs typically produce near-zero text; diagram SVGs produce hundreds
+    // of keyword labels. Skip any child whose SVG descendants contribute more than this
+    // many characters — their TextContent is dominated by diagram keyword noise, not prose.
+    private const int SvgTextLengthThreshold = 100;
+
     // Container tags that should never be treated as repeated-item wrappers.
     // table/tbody/thead: rows are handled by the Table renderer.
     // header/footer/nav/aside: structural chrome.
@@ -78,10 +85,11 @@ internal static class RepeatedItemDetector
             if (SkipContainerTags.Contains(container.TagName)) continue;
 
             // Skip containers that are inside structural chrome elements (article, footer,
-            // header, nav, aside). An <article> represents a single self-contained composition;
-            // structural sub-divs inside it are part of that article's internal structure.
-            // Footer/header/nav chrome can contain repeated column divs that look like items
-            // (site-map columns, nav dropdowns) but are navigation, not content.
+            // header, nav, aside, form). An <article> represents a single self-contained
+            // composition; structural sub-divs inside it are part of that article's internal
+            // structure. Footer/header/nav chrome can contain repeated column divs that look
+            // like items (site-map columns, nav dropdowns) but are navigation, not content.
+            // <form> children are form fields (input rows, section headers), not content items.
             // Forum sites that use <article class="post"> per post are handled correctly because
             // those <article> elements are siblings inside a plain <div> container (not nested
             // inside a parent <article> or <footer>).
@@ -92,8 +100,15 @@ internal static class RepeatedItemDetector
 
             // Filter children: must have substantial trimmed text (count non-whitespace
             // characters so that version-number lists like "\n  devel\n" don't qualify).
+            // Also exclude children that are primarily SVG diagram containers: inline SVG
+            // elements (syntax railroad diagrams, data-vis charts) produce substantial
+            // TextContent from keyword labels, but that text is not prose content.
+            // Skip any child whose SVG descendants emit more than SvgTextLengthThreshold
+            // characters — they are diagram/visualisation wrappers, not repeating items.
             var substantialChildren = children
-                .Where(c => c.TextContent.Trim().Length >= MinChildTextLength)
+                .Where(c =>
+                    c.TextContent.Trim().Length >= MinChildTextLength
+                    && !HasSubstantialSvgContent(c))
                 .ToList();
 
             if (substantialChildren.Count < MinChildren) continue;
@@ -153,9 +168,13 @@ internal static class RepeatedItemDetector
     // If a container is nested inside any of these, it is not a repeated-content region.
     // article: single-composition content (code examples, version notes are part of the article).
     // footer/header/nav/aside: structural page chrome (navigation columns, site maps, sponsor rows).
+    // form: children of a <form> are form fields (input rows, section dividers, validation hints),
+    //   not content items. Gravity Forms, WPForms and similar CMS form plugins produce 10-50
+    //   repeated <div class="gfield ..."> siblings that all pass the text and class-overlap
+    //   checks but are input UI, not page content.
     private static readonly HashSet<string> SkipAncestorTags = new(StringComparer.OrdinalIgnoreCase)
     {
-        "article", "footer", "header", "nav", "aside",
+        "article", "footer", "header", "nav", "aside", "form",
     };
 
     /// <summary>
@@ -175,6 +194,21 @@ internal static class RepeatedItemDetector
         return false;
     }
 
+    /// <summary>
+    /// Returns true if the element contains SVG descendants whose combined text content
+    /// exceeds <see cref="SvgTextLengthThreshold"/>. Such elements are diagram or
+    /// visualisation containers (railroad syntax charts, data-vis SVGs) whose TextContent
+    /// is dominated by keyword labels rather than prose, making them unsuitable candidates
+    /// for repeated-item detection.
+    /// </summary>
+    private static bool HasSubstantialSvgContent(IElement element)
+    {
+        var svgs = element.QuerySelectorAll("svg");
+        if (!svgs.Any()) return false;
+        var svgTextLength = svgs.Sum(svg => svg.TextContent.Length);
+        return svgTextLength > SvgTextLengthThreshold;
+    }
+
     private static double ComputeLinkDensity(IElement element)
     {
         var totalText = element.TextContent.Trim().Length;
@@ -187,15 +221,18 @@ internal static class RepeatedItemDetector
     {
         // All items already share the same tag name (group key).
         // Require that at least MinClassOverlap fraction of class tokens are shared
-        // across all items. Items with no class tokens are treated as uniformly classed
-        // (e.g. raw <article> elements) and pass.
+        // across all items.
+        // Items where ALL elements have empty class sets are treated as heterogeneous:
+        // style-only containers (e.g., div[style="max-width:Npx"]) carry no semantic
+        // class signal and should not be treated as "uniformly typed" repeated items.
         var classSets = items
             .Select(i => (i.ClassName ?? string.Empty)
                 .Split(' ', StringSplitOptions.RemoveEmptyEntries)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase))
             .ToList();
 
-        if (classSets.All(s => s.Count == 0)) return true;
+        // All items have empty class lists: no shared type signal. Do not fire.
+        if (classSets.All(s => s.Count == 0)) return false;
 
         // Intersection of all class sets.
         var intersect = new HashSet<string>(classSets[0], StringComparer.OrdinalIgnoreCase);
@@ -203,7 +240,7 @@ internal static class RepeatedItemDetector
             intersect.IntersectWith(classSets[i]);
 
         var avgSize = classSets.Average(s => s.Count);
-        if (avgSize == 0) return true;
+        if (avgSize == 0) return false;
 
         return (double)intersect.Count / avgSize >= MinClassOverlap;
     }
