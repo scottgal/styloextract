@@ -1,0 +1,21 @@
+{
+  "skipContainerTags": [
+    "table", "tbody", "thead", "tfoot", "tr",
+    "head", "html", "body",
+    "header", "footer", "nav", "aside",
+    "article", "main", "section",
+    "dd", "dt", "li",
+    "p", "span", "blockquote"
+  ],
+  "skipChildTags": [
+    "p", "ul", "ol", "dl", "li", "dt", "dd", "span", "td", "th",
+    "blockquote", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "code",
+    "section"
+  ],
+  "skipAncestorTags": [
+    "article", "footer", "header", "nav", "aside", "form"
+  ],
+  "selfTypedTags": [
+    "article", "section", "li"
+  ]
+}

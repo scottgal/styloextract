@@ -27,9 +27,18 @@ internal sealed class HintList
     public List<string> Hints { get; set; } = new();
 }
 
+internal sealed class RepeatedItemTagRules
+{
+    public List<string> SkipContainerTags { get; set; } = new();
+    public List<string> SkipChildTags { get; set; } = new();
+    public List<string> SkipAncestorTags { get; set; } = new();
+    public List<string> SelfTypedTags { get; set; } = new();
+}
+
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(ClassNoiseDto))]
 [JsonSerializable(typeof(PhraseList))]
 [JsonSerializable(typeof(PatternList))]
 [JsonSerializable(typeof(HintList))]
+[JsonSerializable(typeof(RepeatedItemTagRules))]
 internal sealed partial class HeuristicsJsonContext : JsonSerializerContext;

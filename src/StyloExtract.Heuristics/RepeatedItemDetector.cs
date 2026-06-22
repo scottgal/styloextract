@@ -32,45 +32,38 @@ internal static class RepeatedItemDetector
 
     // Container tags that should never be treated as repeated-item wrappers.
     // table/tbody/thead: rows are handled by the Table renderer.
-    // header/footer/nav/aside: structural chrome.
-    // head/html/body: document skeleton.
-    // article/main/section: single-content semantic elements whose child paragraphs
-    //   are prose flow, not repeated structural blocks.
-    private static readonly HashSet<string> SkipContainerTags = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "table", "tbody", "thead", "tfoot", "tr",
-        "head", "html", "body",
-        "header", "footer", "nav", "aside",
-        "article", "main", "section",
-        // Definition-list containers: dd (definition description) and dt (term) hold
-        // single-definition content, not collections of independent items.
-        "dd", "dt", "li",
-        // Inline/phrase elements that can nest block content in HTML5 but are not containers
-        // for repeated structural items.
-        "p", "span", "blockquote",
-    };
+    // Tag rules (skipContainerTags, skipChildTags, skipAncestorTags, selfTypedTags)
+    // are loaded from Definitions/repeated-item-tag-rules.json. Edit the JSON to add
+    // new tag patterns; code is the dispatcher.
+    //
+    // skipContainerTags: container element tags that should never be treated as
+    //   repeated-item wrappers (tables, semantic chrome, prose flow elements).
+    // skipChildTags: child element tags that are prose / inline-flow / list / heading /
+    //   code-block elements and must not be treated as repeated structural items.
+    private static readonly TagRulesData _tagRules = LoadTagRules();
+    private static readonly HashSet<string> SkipContainerTags = _tagRules.SkipContainer;
+    private static readonly HashSet<string> SkipChildTags = _tagRules.SkipChild;
 
-    // Child element tags that are prose/inline-flow, list containers, or semantic
-    // document structure elements and must not be treated as repeated structural items
-    // even when they are numerous and share the same tag.
-    // <p>: paragraphs inside an article body.
-    // <ul>/<ol>/<dl>: list containers that are part of content flow.
-    // <li>: list items (part of list structure, not structural repeated blocks).
-    // <dt>/<dd>: definition list terms/descriptions.
-    // <span>: inline spans.
-    // <td>/<th>: table cells.
-    // <blockquote>: prose quotations.
-    // <h1>-<h6>: headings (structural document markers, not repeated content items).
-    // <pre>/<code>: code blocks.
-    // <section>: documentation and articles frequently use multiple <section> elements
-    //   as subdivisions of a single topic (MDN, ReadTheDocs, etc.). Sections within a
-    //   document are content flow, not independent repeated-item collections.
-    private static readonly HashSet<string> SkipChildTags = new(StringComparer.OrdinalIgnoreCase)
+    private sealed record TagRulesData(
+        HashSet<string> SkipContainer,
+        HashSet<string> SkipChild,
+        HashSet<string> SkipAncestor,
+        HashSet<string> SelfTyped);
+
+    private static TagRulesData LoadTagRules()
     {
-        "p", "ul", "ol", "dl", "li", "dt", "dd", "span", "td", "th",
-        "blockquote", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "code",
-        "section",
-    };
+        var assembly = typeof(RepeatedItemDetector).Assembly;
+        var resName = assembly.GetManifestResourceNames()
+            .Single(n => n.EndsWith("repeated-item-tag-rules.json", StringComparison.Ordinal));
+        using var stream = assembly.GetManifestResourceStream(resName)!;
+        var dto = System.Text.Json.JsonSerializer
+            .Deserialize(stream, HeuristicsJsonContext.Default.RepeatedItemTagRules)!;
+        return new TagRulesData(
+            new HashSet<string>(dto.SkipContainerTags, StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>(dto.SkipChildTags, StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>(dto.SkipAncestorTags, StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>(dto.SelfTypedTags, StringComparer.OrdinalIgnoreCase));
+    }
 
     /// <summary>
     /// Walk the subtree rooted at <paramref name="root"/>, find non-overlapping
@@ -167,15 +160,7 @@ internal static class RepeatedItemDetector
     // Ancestor element tags that indicate the container is inside structural chrome.
     // If a container is nested inside any of these, it is not a repeated-content region.
     // article: single-composition content (code examples, version notes are part of the article).
-    // footer/header/nav/aside: structural page chrome (navigation columns, site maps, sponsor rows).
-    // form: children of a <form> are form fields (input rows, section dividers, validation hints),
-    //   not content items. Gravity Forms, WPForms and similar CMS form plugins produce 10-50
-    //   repeated <div class="gfield ..."> siblings that all pass the text and class-overlap
-    //   checks but are input UI, not page content.
-    private static readonly HashSet<string> SkipAncestorTags = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "article", "footer", "header", "nav", "aside", "form",
-    };
+    private static readonly HashSet<string> SkipAncestorTags = _tagRules.SkipAncestor;
 
     /// <summary>
     /// Returns true if the element is nested inside any element whose tag is in
@@ -217,13 +202,7 @@ internal static class RepeatedItemDetector
         return (double)linkText / totalText;
     }
 
-    // Semantically self-typed tags: when items share one of these tags AND have no class
-    // signal, the tag itself indicates a typed group (forum posts often use bare <article>
-    // or <li> without classes). Generic containers (div/span) require a class signal.
-    private static readonly HashSet<string> SelfTypedTags = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "article", "section", "li",
-    };
+    private static readonly HashSet<string> SelfTypedTags = _tagRules.SelfTyped;
 
     private static bool HaveSimilarClassSignatures(IReadOnlyList<IElement> items)
     {

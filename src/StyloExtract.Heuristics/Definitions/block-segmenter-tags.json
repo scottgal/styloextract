@@ -1,0 +1,5 @@
+{
+  "hints": [
+    "header", "footer", "nav", "main", "article", "section", "aside", "form", "table"
+  ]
+}

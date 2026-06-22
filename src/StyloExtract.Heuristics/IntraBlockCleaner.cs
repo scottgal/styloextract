@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AngleSharp.Dom;
 
 namespace StyloExtract.Heuristics;
@@ -14,36 +15,24 @@ namespace StyloExtract.Heuristics;
 /// </summary>
 internal static class IntraBlockCleaner
 {
-    private static readonly HashSet<string> ContaminationHints = new(StringComparer.OrdinalIgnoreCase)
+    // Contamination hints loaded from the embedded JSON resource. The data lives in
+    // Definitions/intra-block-contamination-hints.json so that adding patterns does not
+    // require recompiling code. The list categories: standard nav/toc/toolbar/breadcrumb,
+    // CMS-specific (MediaWiki, MS Docs, GitHub, dev portals), AI widgets and metadata
+    // bars, plus e-commerce widget patterns (cart/wishlist/related-products/quick-shop/
+    // newsletter/recommendations etc.) added in v1.5.4 after WCXB diagnostic showed 55
+    // product pages emitting 30-90x too much content from those widgets.
+    private static readonly HashSet<string> ContaminationHints = LoadContaminationHints();
+
+    private static HashSet<string> LoadContaminationHints()
     {
-        "nav", "menu", "breadcrumb", "toc", "table-of-contents", "toolbar",
-        "action-bar", "actions", "page-actions", "sidebar", "mw-jump-link",
-        "headerlink", "edit-page", "navigation", "skip-link", "skip-main",
-        "mw-editsection", "mw-references-wrap", "siteSub", "jump-to-nav",
-        "catlinks", "printfooter", "mw-indicators",
-        // Document UI chrome patterns (MS Docs, GitHub, dev portals)
-        "content-header", "article-header", "page-header", "doc-header",
-        "feedback", "edit-this-page", "share", "suggest-change",
-        // AI widgets, auth banners, and metadata bars inside article bodies
-        "ai-summary", "article-metadata", "notification-info",
-        // E-commerce widget patterns (WCXB diagnostic surfaced 55 product pages emitting
-        // 30-90x too much content from product-page widgets bleeding into MainContent).
-        // Most-leaked snippets across product/collection pages: "add to cart" (11 pages),
-        // "related products" (3), "you may also like" (2), "sort and filter" (3 collection
-        // pages), "quick shop"/"add to bag"/"add to wishlist"/"pick up in store" / "shop now".
-        "add-to-cart", "add-to-bag", "add-to-wishlist", "add-to-list",
-        "wishlist", "quick-shop", "quick-view", "shop-now", "buy-now", "buy-button",
-        "related-products", "related-items", "related-articles",
-        "you-may-also-like", "ymal", "recently-viewed", "recommended-for-you",
-        "people-also-bought", "people-also-viewed", "customers-also-bought",
-        "customers-also-viewed", "recommendations", "recommended-products",
-        "product-card", "product-grid", "product-list", "product-tile",
-        "filter-bar", "filter-and-sort", "sort-and-filter", "sort-bar",
-        "pickup-in-store", "pick-up-in-store", "store-locator",
-        "newsletter-signup", "newsletter-form", "subscribe-form",
-        "merch-rcmd", "vi-merch", "cross-sell", "upsell",
-        "smart-navigator",
-    };
+        var assembly = typeof(IntraBlockCleaner).Assembly;
+        var resName = assembly.GetManifestResourceNames()
+            .Single(n => n.EndsWith("intra-block-contamination-hints.json", StringComparison.Ordinal));
+        using var stream = assembly.GetManifestResourceStream(resName)!;
+        var dto = JsonSerializer.Deserialize(stream, HeuristicsJsonContext.Default.HintList)!;
+        return new HashSet<string>(dto.Hints, StringComparer.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// Mutates the given content-role element by removing nav/toc/toolbar descendants

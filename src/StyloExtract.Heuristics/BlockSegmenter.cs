@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AngleSharp.Dom;
 using StyloExtract.Abstractions;
 
@@ -5,10 +6,19 @@ namespace StyloExtract.Heuristics;
 
 public sealed class BlockSegmenter : IBlockSegmenter
 {
-    private static readonly HashSet<string> SemanticTags = new(StringComparer.OrdinalIgnoreCase)
+    // Semantic HTML5 block tags always promoted to segmentation candidates. Data lives
+    // in Definitions/block-segmenter-tags.json so adding tags does not require a recompile.
+    private static readonly HashSet<string> SemanticTags = LoadSemanticTags();
+
+    private static HashSet<string> LoadSemanticTags()
     {
-        "header", "footer", "nav", "main", "article", "section", "aside", "form", "table"
-    };
+        var assembly = typeof(BlockSegmenter).Assembly;
+        var resName = assembly.GetManifestResourceNames()
+            .Single(n => n.EndsWith("block-segmenter-tags.json", StringComparison.Ordinal));
+        using var stream = assembly.GetManifestResourceStream(resName)!;
+        var dto = JsonSerializer.Deserialize(stream, HeuristicsJsonContext.Default.HintList)!;
+        return new HashSet<string>(dto.Hints, StringComparer.OrdinalIgnoreCase);
+    }
 
     private const int BlockyDivMinTextLength = 80;
     private const int BlockyDivMinChildCount = 3;
