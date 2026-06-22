@@ -217,22 +217,31 @@ internal static class RepeatedItemDetector
         return (double)linkText / totalText;
     }
 
+    // Semantically self-typed tags: when items share one of these tags AND have no class
+    // signal, the tag itself indicates a typed group (forum posts often use bare <article>
+    // or <li> without classes). Generic containers (div/span) require a class signal.
+    private static readonly HashSet<string> SelfTypedTags = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "article", "section", "li",
+    };
+
     private static bool HaveSimilarClassSignatures(IReadOnlyList<IElement> items)
     {
         // All items already share the same tag name (group key).
         // Require that at least MinClassOverlap fraction of class tokens are shared
-        // across all items.
-        // Items where ALL elements have empty class sets are treated as heterogeneous:
-        // style-only containers (e.g., div[style="max-width:Npx"]) carry no semantic
-        // class signal and should not be treated as "uniformly typed" repeated items.
+        // across all items. Items with no class tokens pass only when the shared tag is
+        // semantically self-typed (article/section/li). Generic containers (div/span)
+        // with no class signal are most often style-only wrappers, not typed items.
         var classSets = items
             .Select(i => (i.ClassName ?? string.Empty)
                 .Split(' ', StringSplitOptions.RemoveEmptyEntries)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase))
             .ToList();
 
-        // All items have empty class lists: no shared type signal. Do not fire.
-        if (classSets.All(s => s.Count == 0)) return false;
+        if (classSets.All(s => s.Count == 0))
+        {
+            return SelfTypedTags.Contains(items[0].TagName);
+        }
 
         // Intersection of all class sets.
         var intersect = new HashSet<string>(classSets[0], StringComparer.OrdinalIgnoreCase);
@@ -240,7 +249,10 @@ internal static class RepeatedItemDetector
             intersect.IntersectWith(classSets[i]);
 
         var avgSize = classSets.Average(s => s.Count);
-        if (avgSize == 0) return false;
+        if (avgSize == 0)
+        {
+            return SelfTypedTags.Contains(items[0].TagName);
+        }
 
         return (double)intersect.Count / avgSize >= MinClassOverlap;
     }

@@ -225,6 +225,22 @@ public class RepeatedItemDetectorTests
     }
 
     [Fact]
+    public void Detects_BareArticleSiblings_WithoutClassSignal()
+    {
+        // Forum/blog platforms that use plain <article> per post with no class still get
+        // detected: the tag itself indicates a self-typed group.
+        var posts = string.Concat(Enumerable.Range(1, 4).Select(i =>
+            $"<article><h2>Post {i}</h2><p>{LongText(160)}</p></article>"));
+        var html = $"<html><body><div id=\"thread\">{posts}</div></body></html>";
+
+        var body = ParseBody(html);
+        var groups = RepeatedItemDetector.Detect(body);
+
+        groups.Should().HaveCount(1, "bare <article> siblings are self-typed by tag");
+        groups[0].Items.Should().HaveCount(4);
+    }
+
+    [Fact]
     public void Article_Page_Not_Degraded_By_RepeatedItemDetector()
     {
         // A standard article page must NOT be changed: single MainContent block.
