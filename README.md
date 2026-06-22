@@ -2,6 +2,8 @@
 
 Layout-fingerprint matching with template-keyed extractor reuse for .NET 10.
 
+> **Package moved:** `Mostlylucid.StyloExtract.StyloBot` (the StyloBot action-policy bridge) has moved to the [stylobot repo](https://github.com/scottgal/stylobot) as `Mostlylucid.BotDetection.StyloExtract`. The 1.6.1 NuGet package is deprecated; use `Mostlylucid.BotDetection.StyloExtract` instead. It takes `Mostlylucid.BotDetection` via ProjectReference/sibling source, eliminating the assembly-version mismatch that caused the `FileNotFoundException` at runtime.
+
 [![NuGet](https://img.shields.io/nuget/v/Mostlylucid.StyloExtract.Core)](https://www.nuget.org/packages/Mostlylucid.StyloExtract.Core)
 [![License: Unlicense](https://img.shields.io/badge/license-Unlicense-blue.svg)](https://unlicense.org)
 [![CI](https://github.com/scottgal/styloextract/actions/workflows/ci.yml/badge.svg)](https://github.com/scottgal/styloextract/actions/workflows/ci.yml)
