@@ -251,20 +251,18 @@ public sealed class LayoutExtractorBugOutTests
 
     // ---------------------------------------------------------------------------
     // JSON-LD fallback wiring
-    // BUG NOTE: As of v1.6 the JSON-LD fallback is broken because DomCleaner strips
-    // all <script> tags (including application/ld+json) at line 68 of LayoutExtractor.cs,
-    // BEFORE JsonLdContentExtractor.ExtractMainContent is called at line 288. The fix is
-    // to extract the JSON-LD text before cleaning. The tests below document the CURRENT
-    // (buggy) behaviour so a future fix will cause them to fail and prompt an update.
+    // DomCleaner uses `script:not([type='application/ld+json'])` so schema.org metadata
+    // blocks survive the strip pass. JsonLdContentExtractor then reads them after the
+    // heuristic produced little or no content.
     // ---------------------------------------------------------------------------
 
     [Fact]
-    public async Task ExtractAsync_HeuristicEmitsLittle_JsonLdFallbackIsCurrentlyBroken()
+    public async Task ExtractAsync_HeuristicEmitsLittle_JsonLdFallbackFires()
     {
-        // BUG: DomCleaner strips <script type="application/ld+json"> tags before
-        // JsonLdContentExtractor is called. This test documents the broken behaviour.
-        // When the bug is fixed, this test should be updated (or replaced) to assert
-        // that the JSON-LD content DOES appear in the markdown.
+        // SPA / paywall-teaser shape: visible markup is empty (<div id="app">), all the
+        // content lives in a schema.org Article blob. The heuristic returns < 200 chars
+        // of trimmed text so the fallback synthesises a MainContent block from the
+        // articleBody field.
         var (e, conn) = Build();
         try
         {
@@ -278,14 +276,15 @@ public sealed class LayoutExtractorBugOutTests
                 "<html><head><script type=\"application/ld+json\">" + json +
                 "</script></head><body><div id=\"app\"><!-- hydrated by JS --></div></body></html>";
 
-            var result = await e.ExtractAsync(html, new Uri("https://example.com/jsonld-fallback-broken"));
+            var result = await e.ExtractAsync(html, new Uri("https://example.com/jsonld-fallback-fires"));
 
-            // Current (broken) behaviour: JSON-LD scripts are stripped by DomCleaner
-            // before JsonLdContentExtractor runs, so no json-ld block is synthesised.
             var fallbackBlock = result.Blocks.FirstOrDefault(b => b.Id == "json-ld");
-            fallbackBlock.Should().BeNull(
-                "BUG: DomCleaner strips script tags before JsonLdContentExtractor runs; " +
-                "fix requires extracting JSON-LD text before cleaning");
+            fallbackBlock.Should().NotBeNull(
+                "fallback must synthesise a MainContent block from schema.org Article when heuristic emits < 200 chars");
+            fallbackBlock!.Role.Should().Be(BlockRole.MainContent);
+            fallbackBlock.Text.Should().Contain(articleBody);
+            result.Markdown.Should().Contain(articleBody,
+                "the synthetic JSON-LD block must reach the rendered Markdown");
         }
         finally { conn.Dispose(); }
     }

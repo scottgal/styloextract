@@ -10,6 +10,9 @@ public sealed class DomCleaner : IDomCleaner
     // a full tree scan. Bench 0496369 measured DomCleaner at 715 us / 522 KB on Medium
     // (~50 KB DOM); the combined selector roughly halves both numbers because the
     // dominant cost is tree traversal, not matching.
+    //
+    // Note: <script type="application/ld+json"> blobs are stripped too. The JSON-LD
+    // fallback in LayoutExtractor must read those scripts BEFORE this method runs.
     private const string CombinedStripSelector = "script,style,template,noscript,svg";
 
     public void Clean(IDocument document)

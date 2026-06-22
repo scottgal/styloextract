@@ -65,6 +65,15 @@ public sealed class LayoutExtractor : ILayoutExtractor
 
         var parseTimer = Stopwatch.StartNew();
         var doc = _parser.Parse(html, sourceUri);
+        // Capture schema.org JSON-LD text BEFORE DomCleaner strips the <script> blobs.
+        // The fallback later (post-Classify) uses it when the heuristic emits less than
+        // FallbackMinTextLength chars. Reading from the cleaned document would always
+        // find zero blobs because DomCleaner's combined selector removes all <script>
+        // tags including application/ld+json. Keeping JSON-LD scripts in the DOM through
+        // Clean would leak their text into the classifier's content blocks (mostlylucid
+        // jumps from 635 to 666 lines because the JSON blob's TextContent appears inside
+        // <main>); the right shape is "lift out, then strip".
+        var preCleanJsonLdText = JsonLdContentExtractor.ExtractMainContent(doc);
         _cleaner.Clean(doc);
         parseTimer.Stop();
         _signals?.Raise(StyloExtractSignals.ParseDone, default);
@@ -285,7 +294,8 @@ public sealed class LayoutExtractor : ILayoutExtractor
         var combinedText = blocks.Sum(b => b.Text.Length);
         if (combinedText < FallbackMinTextLength)
         {
-            var jsonLdText = JsonLdContentExtractor.ExtractMainContent(doc);
+            // Use the text we captured before Clean stripped the JSON-LD blobs.
+            var jsonLdText = preCleanJsonLdText;
             if (!string.IsNullOrWhiteSpace(jsonLdText) && jsonLdText.Length >= FallbackMinTextLength)
             {
                 var fallbackBlock = new ExtractedBlock
