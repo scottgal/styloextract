@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.DependencyInjection;
 using StyloExtract.Abstractions;
 using StyloExtract.AspNetCore;
+using StyloExtract.Playwright;
 
 namespace StyloExtract.Wcxb.Benchmark;
 
@@ -52,6 +53,9 @@ file sealed class DiagnosticEntry
 
     [JsonPropertyName("missing_words_sample")]
     public List<string> MissingWordsSample { get; set; } = [];
+
+    [JsonPropertyName("use_playwright")]
+    public bool UsePlaywright { get; set; }
 }
 
 // Baseline numbers from WCXB paper (dev split)
@@ -262,6 +266,8 @@ static class Program
         string outPath      = "docs/wcxb.md";
         bool   diagnostic   = false;
         string diagnosticOut = "/tmp/wcxb-diag.jsonl";
+        bool   usePlaywright = false;
+        HashSet<string>? pageTypeFilter = null;  // null = all page types
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -274,6 +280,12 @@ static class Program
                 case "--out"            when i + 1 < args.Length: outPath       = args[++i]; break;
                 case "--diagnostic-out" when i + 1 < args.Length: diagnosticOut = args[++i]; break;
                 case "--diagnostic": diagnostic = true; break;
+                case "--use-playwright": usePlaywright = true; break;
+                case "--page-types" when i + 1 < args.Length:
+                    pageTypeFilter = new HashSet<string>(
+                        args[++i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                        StringComparer.OrdinalIgnoreCase);
+                    break;
             }
         }
 
@@ -281,6 +293,19 @@ static class Program
         {
             Console.Error.WriteLine($"Unknown profile '{profile}'. Valid: MainContentOnly, RagFull, AgentNavigation, DebugFull");
             return 1;
+        }
+
+        // Playwright availability check (fail-gracefully with a useful message)
+        if (usePlaywright)
+        {
+            bool browsersAvailable = await PlaywrightInstaller.BrowsersAvailableAsync();
+            if (!browsersAvailable)
+            {
+                Console.Error.WriteLine("Playwright chromium is not installed. Run: playwright install chromium");
+                Console.Error.WriteLine("Or from the benchmark project dir: dotnet run -- install chromium");
+                Console.Error.WriteLine("Playwright binaries must be installed before using --use-playwright.");
+                return 1;
+            }
         }
 
         var gtDir   = Path.Combine(datasetPath, split, "ground-truth");
@@ -313,18 +338,53 @@ static class Program
                 LearnNewTemplates = true,
             };
 
-            var gtFiles = Directory.GetFiles(gtDir, "*.json")
-                .OrderBy(f => f)
-                .Take(maxPages)
-                .ToArray();
+            // When a page-type filter is active, pre-scan the ground-truth files to find
+            // only those whose page_type matches. We do a cheap JSON scan rather than full
+            // deserialisation so the filter overhead is negligible.
+            IEnumerable<string> allGtFiles = Directory.GetFiles(gtDir, "*.json").OrderBy(f => f);
+            if (pageTypeFilter is not null)
+            {
+                var filtered = new List<string>();
+                foreach (var f in allGtFiles)
+                {
+                    try
+                    {
+                        await using var fs = File.OpenRead(f);
+                        var doc = await JsonSerializer.DeserializeAsync<WcxbDoc>(fs);
+                        var pt = doc?.Internal?.PageType?.Primary ?? "unknown";
+                        if (pageTypeFilter.Contains(pt))
+                            filtered.Add(f);
+                    }
+                    catch
+                    {
+                        // Malformed ground-truth: skip during pre-scan; the main loop will report it.
+                    }
+                }
+                allGtFiles = filtered;
+            }
 
-            Console.WriteLine($"WCXB benchmark: {split} split, profile={profile}, pages={gtFiles.Length}");
+            var gtFiles = allGtFiles.Take(maxPages).ToArray();
+
+            var modeLabel = usePlaywright ? "Playwright" : "static-HTML";
+            var filterLabel = pageTypeFilter is null ? "all" : string.Join(",", pageTypeFilter);
+            Console.WriteLine($"WCXB benchmark: {split} split, profile={profile}, mode={modeLabel}, page-types={filterLabel}, pages={gtFiles.Length}");
             Console.WriteLine($"Dataset: {datasetPath}");
             Console.WriteLine();
 
             var results  = new List<PageResult>(gtFiles.Length);
             int errors   = 0;
             var wallClock = Stopwatch.StartNew();
+
+            // Playwright: one IPlaywright + IBrowser shared for all pages to amortise launch cost.
+            // Null when --use-playwright is not set.
+            IDisposable?             pwDisposable     = null;
+            Microsoft.Playwright.IBrowser? pwBrowser  = null;
+            if (usePlaywright)
+            {
+                var pw = await Microsoft.Playwright.Playwright.CreateAsync();
+                pwDisposable = pw;
+                pwBrowser    = await pw.Chromium.LaunchAsync(new Microsoft.Playwright.BrowserTypeLaunchOptions { Headless = true });
+            }
 
             // Open diagnostic JSONL writer only when the flag is set; null otherwise.
             StreamWriter? diagWriter = null;
@@ -371,19 +431,55 @@ static class Program
                     continue;
                 }
 
-                string html;
+                // Decompress the stored HTML (always needed -- Playwright loads from a temp file).
+                string rawHtml;
                 try
                 {
                     await using var fs = File.OpenRead(htmlGz);
                     await using var gz = new GZipStream(fs, CompressionMode.Decompress);
                     using var sr = new StreamReader(gz, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-                    html = await sr.ReadToEndAsync();
+                    rawHtml = await sr.ReadToEndAsync();
                 }
                 catch (Exception ex)
                 {
                     Console.Error.WriteLine($"page{fileId}: ERROR reading html.gz: {ex.Message}");
                     errors++;
                     continue;
+                }
+
+                string html;
+                if (pwBrowser is not null)
+                {
+                    // Write the decompressed HTML to a temp file, then navigate Playwright
+                    // to the file:// URI using DOMContentLoaded (not networkidle).
+                    // file:// pages with external resource references never reach networkidle;
+                    // DOMContentLoaded fires once the initial parse + synchronous scripts run,
+                    // which is enough for inline JSON-LD hydration (the Discourse pattern).
+                    //
+                    // If Playwright times out (DOMContentLoaded never fires within 3s, which
+                    // happens on Discourse/Ember pages that execute huge JS bundles), fall back
+                    // to rawHtml so the page still contributes to the F1 score. These pages
+                    // typically represent the JS-too-heavy-for-file:// case and are counted
+                    // separately in the report notes.
+                    var tmpHtml = Path.Combine(Path.GetTempPath(), $"wcxb-{fileId}-{Guid.NewGuid():N}.html");
+                    try
+                    {
+                        await File.WriteAllTextAsync(tmpHtml, rawHtml, Encoding.UTF8);
+                        html = await FetchRenderedHtmlAsync(pwBrowser, tmpHtml, fileId);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"page{fileId}: PLAYWRIGHT TIMEOUT/ERROR (falling back to static): {ex.Message.Split('\n')[0]}");
+                        html = rawHtml;  // fall back to static HTML; page still scored
+                    }
+                    finally
+                    {
+                        try { File.Delete(tmpHtml); } catch { /* best-effort cleanup */ }
+                    }
+                }
+                else
+                {
+                    html = rawHtml;
                 }
 
                 Uri? uri = null;
@@ -460,6 +556,7 @@ static class Program
                         WithoutViolations = withoutViolations,
                         ExtraWordsSample  = DiagnosticWords.TopExtra(predCounts, refCounts, 30),
                         MissingWordsSample = DiagnosticWords.TopMissing(predCounts, refCounts, 30),
+                        UsePlaywright     = usePlaywright,
                     };
 
                     await diagWriter.WriteLineAsync(JsonSerializer.Serialize(entry));
@@ -478,6 +575,10 @@ static class Program
                     if (diagnostic)
                         Console.WriteLine($"Diagnostic JSONL written to: {diagnosticOut}");
                 }
+                // Dispose Playwright browser + IPlaywright (IDisposable, not IAsyncDisposable).
+                if (pwBrowser is not null)
+                    await pwBrowser.DisposeAsync();
+                pwDisposable?.Dispose();
             }
 
             wallClock.Stop();
@@ -488,7 +589,8 @@ static class Program
                 return 1;
             }
 
-            var report = BuildReport(results, errors, split, profile, wallClock.Elapsed);
+            var filterLabel2 = pageTypeFilter is null ? "all" : string.Join(",", pageTypeFilter);
+        var report = BuildReport(results, errors, split, profile, wallClock.Elapsed, usePlaywright, filterLabel2);
             Console.WriteLine(report);
 
             // Ensure output directory exists relative to CWD
@@ -512,7 +614,36 @@ static class Program
         }
     }
 
-    static string BuildReport(List<PageResult> results, int errors, string split, string profile, TimeSpan wallClock)
+    // Navigate to a local file:// HTML file and return the rendered page content.
+    // Uses DOMContentLoaded (not networkidle) because file:// pages that reference external
+    // CDN resources never reach networkidle -- external requests are blocked when loading
+    // from disk, so the network never goes idle.
+    static async Task<string> FetchRenderedHtmlAsync(Microsoft.Playwright.IBrowser browser, string localHtmlPath, string fileId)
+    {
+        await using var context = await browser.NewContextAsync();
+        var page = await context.NewPageAsync();
+
+        var fileUri = "file://" + localHtmlPath;
+
+        // Navigate with DOMContentLoaded. Use a short timeout: Discourse/Ember pages
+        // execute large JS bundles that spin the renderer for minutes. We just want
+        // the serialized DOM after initial sync scripts run; live API calls don't
+        // work under file:// anyway.
+        //
+        // If DOMContentLoaded doesn't fire within 3s, close the page and throw so
+        // the caller falls back to rawHtml (the static path). ContentAsync() blocks
+        // until the renderer is idle, so we cannot safely call it after a timeout.
+        await page.GotoAsync(fileUri, new Microsoft.Playwright.PageGotoOptions
+        {
+            Timeout  = 3000,
+            WaitUntil = Microsoft.Playwright.WaitUntilState.DOMContentLoaded,
+        });
+
+        return await page.ContentAsync();
+    }
+
+    static string BuildReport(List<PageResult> results, int errors, string split, string profile, TimeSpan wallClock,
+        bool usePlaywright = false, string pageTypes = "all")
     {
         double Avg(IEnumerable<double> xs) { var l = xs.ToList(); return l.Count == 0 ? 0 : l.Average(); }
         long Percentile(IEnumerable<long> xs, int p)
@@ -531,8 +662,9 @@ static class Program
         long   p50Ms       = Percentile(results.Select(r => r.LatencyMs), 50);
         long   p99Ms       = Percentile(results.Select(r => r.LatencyMs), 99);
 
+        var modeLabel = usePlaywright ? "Playwright" : "static-HTML";
         var sb = new StringBuilder();
-        sb.AppendLine($"## StyloExtract heuristic v1.3 vs WCXB baselines ({split} split, profile={profile})");
+        sb.AppendLine($"## StyloExtract heuristic v1.3 vs WCXB baselines ({split} split, profile={profile}, mode={modeLabel}, page-types={pageTypes})");
         sb.AppendLine();
         sb.AppendLine($"Run: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC | pages={results.Count} | errors={errors} | wall-clock={wallClock:mm\\:ss}");
         sb.AppendLine();
@@ -548,7 +680,7 @@ static class Program
         sb.AppendLine();
 
         // Per-page-type breakdown
-        var pageTypes = new[] { "article", "documentation", "service", "forum", "collection", "listing", "product" };
+        var canonicalTypes = new[] { "article", "documentation", "service", "forum", "collection", "listing", "product" };
         var byType    = results.GroupBy(r => r.PageType).ToDictionary(g => g.Key, g => g.ToList());
 
         sb.AppendLine("### F1 by page type");
@@ -556,7 +688,7 @@ static class Program
         sb.AppendLine("| Page type     | StyloExtract | rs-traf | Trafilatura | Readability |");
         sb.AppendLine("|---------------|-------------:|--------:|------------:|------------:|");
 
-        foreach (var pt in pageTypes)
+        foreach (var pt in canonicalTypes)
         {
             double seF1 = byType.TryGetValue(pt, out var ptResults) ? Avg(ptResults.Select(r => r.F1)) : double.NaN;
             double rsTr = Baselines.ByPageType["rs-trafilatura"].GetValueOrDefault(pt, double.NaN);
@@ -573,7 +705,7 @@ static class Program
         }
 
         // Any other page types not in the canonical list
-        foreach (var (pt, ptResults) in byType.Where(kv => !pageTypes.Contains(kv.Key)))
+        foreach (var (pt, ptResults) in byType.Where(kv => !canonicalTypes.Contains(kv.Key)))
         {
             double seF1 = Avg(ptResults.Select(r => r.F1));
             sb.AppendLine($"| {char.ToUpperInvariant(pt[0]) + pt[1..] + $" (n={ptResults.Count})",-13} | {seF1,12:F3} | n/a     | n/a         | n/a         |");

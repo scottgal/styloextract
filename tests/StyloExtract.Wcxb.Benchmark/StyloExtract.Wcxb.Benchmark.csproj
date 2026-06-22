@@ -13,5 +13,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\StyloExtract.AspNetCore\StyloExtract.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Playwright\StyloExtract.Playwright.csproj" />
   </ItemGroup>
 </Project>
