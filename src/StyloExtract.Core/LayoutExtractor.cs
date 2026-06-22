@@ -82,6 +82,27 @@ public sealed class LayoutExtractor : ILayoutExtractor
         int observationCount = 0;
         IReadOnlyList<ExtractedBlock> blocks;
 
+        // Bug-out signal: when the cached extractor's selectors produce essentially no
+        // content (combined text < MinViableExtractText), or the rule miss ratio is high
+        // enough to indicate signal loss, the cached template is broken on THIS page.
+        // Re-classify with the heuristic and force a refit so the next request gets a
+        // fresh extractor. Without this, broken applicators keep returning 1-byte garbage
+        // until EWMA drift accumulates over many observations.
+        const int MinViableExtractText = 200;
+        const double SignalLossMissRatio = 0.7;
+        const int SignalLossMinRules = 3;
+        static bool IsApplicatorBroken(ApplicatorResult applied)
+        {
+            var combinedText = applied.Blocks.Sum(b => b.Text.Length);
+            if (combinedText < MinViableExtractText) return true;
+            var ruleCount = applied.RulesApplied + applied.RulesMissed;
+            if (ruleCount >= SignalLossMinRules
+                && (double)applied.RulesMissed / ruleCount >= SignalLossMissRatio)
+                return true;
+            return false;
+        }
+
+        bool applicatorBugOut = false;
         var matchTimer = Stopwatch.StartNew();
         var fastHit = await _index.ProbeFastPathAsync(hostHash, fp, _fastPathThreshold, cancellationToken);
         if (fastHit is not null)
@@ -89,7 +110,15 @@ public sealed class LayoutExtractor : ILayoutExtractor
             var ex = await _index.GetExtractorAsync(fastHit.Value, cancellationToken);
             if (ex is not null)
             {
-                blocks = _applicator.Apply(doc, ex);
+                var applied = _applicator.Apply(doc, ex);
+                blocks = applied.Blocks;
+                if (IsApplicatorBroken(applied))
+                {
+                    _logger?.LogInformation("Fast-path applicator broken (text={Text}, ruleMisses={Miss}/{Total}) on template {TemplateId} v{Version}; bugging out.",
+                        applied.Blocks.Sum(b => b.Text.Length), applied.RulesMissed, applied.RulesApplied + applied.RulesMissed, fastHit.Value, ex.Version);
+                    blocks = _classifier.Classify(_segmenter.Segment(doc));
+                    applicatorBugOut = true;
+                }
                 templateId = fastHit;
                 templateVersion = ex.Version;
                 similarity = 1.0;
@@ -132,7 +161,15 @@ public sealed class LayoutExtractor : ILayoutExtractor
                 var ex = await _index.GetExtractorAsync(slow.Value.TemplateId, cancellationToken);
                 if (ex is not null)
                 {
-                    blocks = _applicator.Apply(doc, ex);
+                    var applied = _applicator.Apply(doc, ex);
+                    blocks = applied.Blocks;
+                    if (IsApplicatorBroken(applied))
+                    {
+                        _logger?.LogInformation("Slow-path applicator broken (text={Text}, ruleMisses={Miss}/{Total}) on template {TemplateId} v{Version}; bugging out.",
+                            applied.Blocks.Sum(b => b.Text.Length), applied.RulesMissed, applied.RulesApplied + applied.RulesMissed, slow.Value.TemplateId, ex.Version);
+                        blocks = _classifier.Classify(_segmenter.Segment(doc));
+                        applicatorBugOut = true;
+                    }
                     templateId = slow.Value.TemplateId;
                     templateVersion = ex.Version;
                     similarity = slow.Value.Cosine;
@@ -180,13 +217,18 @@ public sealed class LayoutExtractor : ILayoutExtractor
             // re-classifying every hit when no refit is imminent (M9).
             // The gate predicate is cheap (one cached extractor read) and skips the
             // O(N) heuristic segmentation + classification for stable templates.
+            //
+            // When applicatorBugOut is set, we already re-classified above. Pass the
+            // bug-out flag through to force MaybeRefit irrespective of accumulated drift -
+            // the cached extractor is known to be broken on THIS page, no point waiting
+            // for EWMA accumulation.
             var gateExtractor = await _index.GetExtractorAsync(templateId.Value, cancellationToken);
             var driftGateThreshold = _refit.DriftRefitThreshold * 0.7;
             var accumulatedDrift = gateExtractor?.Centroid.OverallDriftScore ?? 0.0;
-            var freshBlocks = accumulatedDrift >= driftGateThreshold
-                ? _classifier.Classify(_segmenter.Segment(doc))
+            var freshBlocks = (applicatorBugOut || accumulatedDrift >= driftGateThreshold)
+                ? (applicatorBugOut ? blocks : _classifier.Classify(_segmenter.Segment(doc)))
                 : blocks; // reuse existing classified blocks from the applicator path
-            var refit = await _refit.MaybeRefitAsync(templateId.Value, fp, freshBlocks, cancellationToken);
+            var refit = await _refit.MaybeRefitAsync(templateId.Value, fp, freshBlocks, applicatorBugOut, cancellationToken);
             if (refit.Refitted)
             {
                 status = MatchStatus.Refit;

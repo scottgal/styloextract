@@ -148,4 +148,57 @@ public class LayoutExtractorOrchestrationTests
         }
         finally { conn.Dispose(); }
     }
+
+    [Fact]
+    public async Task ExtractAsync_FastPathApplicatorBroken_BugsOutAndRefits()
+    {
+        // Simulates a cached template that becomes broken on a structurally similar
+        // but contentually-emptied page: same fingerprint shape but the article body
+        // is now missing/gutted. The bug-out path should:
+        //  1. Re-classify with the heuristic and return the heuristic's blocks (not the
+        //     broken applicator output).
+        //  2. Force a refit (version bump) on the same call without waiting for EWMA.
+        //  3. Emit a "signal-loss" version event distinguishable from drift.
+        var sink = new CapturingSink();
+        var (e, conn) = BuildWithSink(sink);
+        try
+        {
+            // Register a template by extracting a rich version of the page first.
+            var richHtml =
+                "<html><body><header><nav class='main-menu'><a href='/'>H</a><a href='/a'>A</a></nav></header>" +
+                "<main><article><h1>Title</h1><p>" +
+                "This is a substantial article body with enough text that the heuristic classifier will " +
+                "recognise it as MainContent. The paragraph is padded out so total text length comfortably " +
+                "exceeds two hundred characters and the link density stays below ten percent throughout. " +
+                new string('x', 400) +
+                "</p></article></main></body></html>";
+            var uri = new Uri("https://example.com/bugout-target");
+
+            // Observe the template enough times that the post-stable gate would otherwise
+            // block a refit, so we can prove forceRefit bypasses the observation floor.
+            for (int i = 0; i < 6; i++)
+            {
+                await e.ExtractAsync(richHtml, uri);
+            }
+            sink.VersionEvents.Should().BeEmpty("no drift has accumulated yet across identical pages");
+
+            // Now feed a page with the SAME fingerprint shape (same structural tags)
+            // but the <article> body is replaced with a near-empty div: the cached
+            // applicator's selectors will still match the <article> root, but the
+            // text content harvested through it is essentially empty. This trips the
+            // MinViableExtractText guard inside the bug-out check.
+            const string brokenHtml =
+                "<html><body><header><nav class='main-menu'><a href='/'>H</a><a href='/a'>A</a></nav></header>" +
+                "<main><article><h1>.</h1><p>.</p></article></main></body></html>";
+
+            var bugOutResult = await e.ExtractAsync(brokenHtml, uri);
+
+            sink.VersionEvents.Should().ContainSingle(
+                "the broken applicator must force a refit on the same call without EWMA accumulation");
+            bugOutResult.Match.Status.Should().Be(MatchStatus.Refit);
+            bugOutResult.Match.TemplateVersion.Should().Be(2,
+                "refit must bump the version on the same call without waiting for EWMA");
+        }
+        finally { conn.Dispose(); }
+    }
 }

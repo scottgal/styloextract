@@ -26,14 +26,31 @@ public sealed class RefitOrchestrator
         _versionHistoryDepth = versionHistoryDepth;
     }
 
+    /// <summary>
+    /// Convenience overload that defaults forceRefit to false (preserves the original
+    /// behaviour for callers that have not opted into bug-out detection).
+    /// </summary>
+    public Task<RefitResult> MaybeRefitAsync(Guid templateId, StructuralFingerprint currentFp,
+        IReadOnlyList<ExtractedBlock> freshHeuristicBlocks, CancellationToken cancellationToken) =>
+        MaybeRefitAsync(templateId, currentFp, freshHeuristicBlocks, forceRefit: false, cancellationToken);
+
+    /// <summary>
+    /// Evaluate accumulated drift against the refit threshold and refit if exceeded.
+    /// When forceRefit is true, bypass the EWMA threshold AND the observations-before-
+    /// stable gate. Used by LayoutExtractor's bug-out path when the cached applicator's
+    /// output is broken (sub-MinViableExtractText or high rule-miss ratio): the cached
+    /// extractor is known wrong on THIS page, no point waiting for EWMA accumulation.
+    /// The version-change event reason is tagged "signal-loss" so monitoring can
+    /// distinguish "site redesigned" from "site evolves".
+    /// </summary>
     public async Task<RefitResult> MaybeRefitAsync(Guid templateId, StructuralFingerprint currentFp,
-        IReadOnlyList<ExtractedBlock> freshHeuristicBlocks, CancellationToken cancellationToken)
+        IReadOnlyList<ExtractedBlock> freshHeuristicBlocks, bool forceRefit, CancellationToken cancellationToken)
     {
         var existing = await _index.GetExtractorAsync(templateId, cancellationToken);
         if (existing is null) return new RefitResult(false, 0, 0, null, null);
 
         var obs = await _index.GetObservationCountAsync(templateId, cancellationToken);
-        if (obs < _observationsBeforeStable) return new RefitResult(false, existing.Version, existing.Version, existing, null);
+        if (!forceRefit && obs < _observationsBeforeStable) return new RefitResult(false, existing.Version, existing.Version, existing, null);
 
         var drift = DriftScorer.ScoreApplication(existing, freshHeuristicBlocks);
 
@@ -51,8 +68,9 @@ public sealed class RefitOrchestrator
             existing = updatedExtractor;
         }
 
-        // Threshold on accumulated score, not the single-call value.
-        if (newAccumulated < _driftThreshold)
+        // Threshold on accumulated score, not the single-call value. forceRefit bypasses
+        // the threshold so a known-broken cached extractor is replaced immediately.
+        if (!forceRefit && newAccumulated < _driftThreshold)
         {
             return new RefitResult(false, existing.Version, existing.Version, existing, null);
         }
@@ -62,7 +80,8 @@ public sealed class RefitOrchestrator
         var refitCentroid = freshExtractor.Centroid with { OverallDriftScore = 0 };
         freshExtractor = freshExtractor with { Centroid = refitCentroid };
 
-        var (oldV, newV, oldFp) = await _index.BumpVersionAsync(templateId, freshExtractor, currentFp, "drift", _versionHistoryDepth, cancellationToken);
+        var reason = forceRefit ? "signal-loss" : "drift";
+        var (oldV, newV, oldFp) = await _index.BumpVersionAsync(templateId, freshExtractor, currentFp, reason, _versionHistoryDepth, cancellationToken);
         return new RefitResult(true, oldV, newV, existing, freshExtractor, oldFp);
     }
 }

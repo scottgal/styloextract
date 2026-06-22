@@ -13,12 +13,20 @@ public sealed class ExtractorApplicator : IExtractorApplicator
         _logger = logger;
     }
 
-    public IReadOnlyList<ExtractedBlock> Apply(IDocument document, LearnedExtractor extractor)
+    public ApplicatorResult Apply(IDocument document, LearnedExtractor extractor)
     {
         var result = new List<ExtractedBlock>();
         int i = 0;
+        int rulesApplied = 0;
+        int rulesMissed = 0;
         foreach (var rule in extractor.Rules)
         {
+            // A rule "matched" when at least one of its selectors produced an element.
+            // The aggregate miss count is the bug-out signal: when a CMS theme changes
+            // and most selectors point at DOM paths that no longer exist, the missed
+            // count approaches the rule count and LayoutExtractor can drop the cached
+            // extractor for THIS request, re-classify with the heuristic, and refit.
+            bool ruleMatched = false;
             foreach (var selector in rule.CssSelectors)
             {
                 IElement[] matches;
@@ -31,6 +39,7 @@ public sealed class ExtractorApplicator : IExtractorApplicator
                     _logger?.LogWarning(ex, "ExtractorApplicator: bad CSS selector {Selector} on rule {RuleId}; skipping", selector, rule.RuleId);
                     continue;
                 }
+                if (matches.Length > 0) ruleMatched = true;
                 foreach (var element in matches)
                 {
                     result.Add(new ExtractedBlock
@@ -54,8 +63,9 @@ public sealed class ExtractorApplicator : IExtractorApplicator
                     });
                 }
             }
+            if (ruleMatched) rulesApplied++; else rulesMissed++;
         }
-        return result;
+        return new ApplicatorResult(result, rulesApplied, rulesMissed);
     }
 
     private static double LinkDensityOf(IElement element)

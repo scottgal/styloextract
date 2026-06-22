@@ -25,10 +25,12 @@ public class ExtractorApplicatorTests
         };
         var doc = new AngleSharpHtmlDomParser().Parse("<html><body><main><article>x</article></main><footer>©</footer></body></html>");
 
-        var blocks = applicator.Apply(doc, extractor);
+        var result = applicator.Apply(doc, extractor);
 
-        blocks.Should().HaveCount(2);
-        blocks.Should().Contain(b => b.Role == BlockRole.MainContent && b.Confidence == 0.92);
-        blocks.Should().Contain(b => b.Role == BlockRole.Footer && b.Confidence == 0.88);
+        result.Blocks.Should().HaveCount(2);
+        result.Blocks.Should().Contain(b => b.Role == BlockRole.MainContent && b.Confidence == 0.92);
+        result.Blocks.Should().Contain(b => b.Role == BlockRole.Footer && b.Confidence == 0.88);
+        result.RulesApplied.Should().Be(2);
+        result.RulesMissed.Should().Be(0);
     }
 }
