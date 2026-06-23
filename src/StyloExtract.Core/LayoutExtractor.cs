@@ -97,6 +97,15 @@ public sealed class LayoutExtractor : ILayoutExtractor
             var synthetic = OperatorTemplateAdapter.ToLearnedExtractor(operatorTemplate);
             var appliedOverride = _applicator.Apply(doc, synthetic);
             overrideMatchTimer.Stop();
+            // The override path skips fingerprint + index + classify entirely.
+            // Without raising a signal here, ephemeral consumers (the gateway
+            // dashboard, the operator metrics surface, the WCXB diagnostic
+            // harness) see ParseDone followed by silence and treat the
+            // request as a hung extraction. The MatchOperatorOverride signal
+            // is the equivalent of MatchFastPathHit for the operator-template
+            // branch: it's how downstream surfaces know an override fired.
+            _signals?.Raise(StyloExtractSignals.MatchOperatorOverride,
+                new StyloExtractSignal(TemplateId: synthetic.TemplateId));
             var overrideRenderTimer = Stopwatch.StartNew();
             var overrideMarkdown = _renderer.Render(appliedOverride.Blocks, options.Profile);
             overrideRenderTimer.Stop();
