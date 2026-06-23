@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using FluentAssertions;
+using IPAddress = System.Net.IPAddress;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
@@ -189,6 +190,103 @@ public sealed class OperatorTemplateEndpointsTests : IDisposable
         body!.status.Should().Be("OperatorOverride");
         body.blockCount.Should().BeGreaterThan(0);
         body.markdown.Should().Contain("# Override target heading");
+    }
+
+    // ----- Security regression tests -----
+
+    [Theory]
+    [InlineData("..%2fetc%2fpasswd")]
+    [InlineData("..")]
+    [InlineData("..%2f..%2fetc%2fpasswd")]
+    [InlineData("foo%2fbar")]
+    [InlineData("foo%5cbar")]
+    [InlineData("a..b")]
+    [InlineData("FOO.com")]      // mixed case — strict hostname is lowercase
+    [InlineData("space domain")]
+    public async Task Put_Rejects_Path_Traversal_And_Invalid_Host(string maliciousHost)
+    {
+        const string yaml = """
+            host: foo.example
+            rules:
+              - role: MainContent
+                selectors:
+                  - main
+            """;
+        var resp = await _client.PutAsync(
+            "/api/styloextract/templates/" + maliciousHost,
+            new StringContent(yaml, Encoding.UTF8, "text/yaml"));
+        // Must be a 4xx, never a 2xx — and the file system MUST NOT have grown
+        // a file at the resolved bad path.
+        ((int)resp.StatusCode).Should().BeInRange(400, 499);
+    }
+
+    [Theory]
+    [InlineData("..")]
+    [InlineData("..%2fetc%2fpasswd")]
+    [InlineData("foo%2fbar")]
+    [InlineData("FOO.com")]
+    public async Task Delete_Rejects_Path_Traversal_And_Invalid_Host(string maliciousHost)
+    {
+        var resp = await _client.DeleteAsync("/api/styloextract/templates/" + maliciousHost);
+        ((int)resp.StatusCode).Should().BeInRange(400, 499);
+    }
+
+    [Theory]
+    [InlineData("http://127.0.0.1/")]
+    [InlineData("http://localhost/")]
+    [InlineData("http://10.0.0.1/")]
+    [InlineData("http://172.17.0.1/")]              // Docker bridge
+    [InlineData("http://192.168.1.1/")]
+    [InlineData("http://169.254.169.254/latest/")]  // AWS / GCP metadata
+    [InlineData("http://0.0.0.0/")]
+    [InlineData("ftp://example.com/")]
+    [InlineData("file:///etc/passwd")]
+    [InlineData("gopher://example.com/")]
+    [InlineData("http://[::1]/")]
+    public async Task Test_Endpoint_Rejects_Non_Public_Or_Non_Http_Urls(string url)
+    {
+        // No template configured for this host; if SSRF guard fails first, we
+        // get a 400 before the extractor runs.
+        var resp = await _client.PostAsJsonAsync(
+            "/api/styloextract/templates/test.example/test",
+            new { url });
+        resp.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Test_Endpoint_Rejects_Numeric_Host_That_Resolves_To_Private_Space()
+    {
+        // Decimal-form IP: 2130706433 == 127.0.0.1. Past SSRF defences have
+        // missed this. Our validation runs on the parsed URI's HostNameType
+        // which the framework decodes to its canonical form first, so this
+        // either fails URI parsing or fails the IP check.
+        var resp = await _client.PostAsJsonAsync(
+            "/api/styloextract/templates/test.example/test",
+            new { url = "http://2130706433/" });
+        ((int)resp.StatusCode).Should().BeInRange(400, 499);
+    }
+
+    [Fact]
+    public void IsPublicUnicast_Accepts_Public_IPv4_Addresses()
+    {
+        // Sanity check the allowlist isn't broken by overly aggressive denylist.
+        OperatorTemplateEndpoints.IsPublicUnicast(IPAddress.Parse("8.8.8.8")).Should().BeTrue();
+        OperatorTemplateEndpoints.IsPublicUnicast(IPAddress.Parse("142.250.72.46")).Should().BeTrue();
+        OperatorTemplateEndpoints.IsPublicUnicast(IPAddress.Parse("1.1.1.1")).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsValidHostname_Accepts_Real_Hostnames_And_Rejects_Garbage()
+    {
+        OperatorTemplateEndpoints.IsValidHostname("example.com").Should().BeTrue();
+        OperatorTemplateEndpoints.IsValidHostname("docs.example.com").Should().BeTrue();
+        OperatorTemplateEndpoints.IsValidHostname("a-b-c.example.io").Should().BeTrue();
+        OperatorTemplateEndpoints.IsValidHostname("").Should().BeFalse();
+        OperatorTemplateEndpoints.IsValidHostname("..").Should().BeFalse();
+        OperatorTemplateEndpoints.IsValidHostname("foo/bar").Should().BeFalse();
+        OperatorTemplateEndpoints.IsValidHostname("foo\\bar").Should().BeFalse();
+        OperatorTemplateEndpoints.IsValidHostname("foo.com.").Should().BeFalse(); // trailing dot
+        OperatorTemplateEndpoints.IsValidHostname(new string('a', 254)).Should().BeFalse();
     }
 
     [Fact]
