@@ -30,30 +30,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-# Label set MUST match BlockRole in the C# enum. Mismatched ordinals would
-# silently train a model whose class labels don't decode at inference time.
-LABELS = [
-    "Unknown",
-    "MainContent",
-    "Article",
-    "Heading",
-    "Summary",
-    "PrimaryNavigation",
-    "SecondaryNavigation",
-    "Breadcrumb",
-    "Sidebar",
-    "RelatedLinks",
-    "Footer",
-    "Header",
-    "Advertisement",
-    "CookieBanner",
-    "Form",
-    "Table",
-    "CodeBlock",
-    "Boilerplate",
-    "RepeatedItem",
-]
-LABEL_TO_ID = {label: i for i, label in enumerate(LABELS)}
+# Labels and feature dimension come from the shared module. See _labels.py
+# for the design rationale on why this is the single source of truth.
+from _labels import LABELS, LABEL_TO_ID, DIM  # noqa: E402
 
 
 @dataclass
@@ -177,7 +156,7 @@ def main():
     with open(out_path, "w", encoding="utf-8") as out:
         # TSV header line so downstream tooling has column names. Comment-
         # prefix the line with '#' so pandas can skip it on read if needed.
-        cols = ["xpath", "label_id", "label"] + [f"f{i}" for i in range(45)]
+        cols = ["xpath", "label_id", "label"] + [f"f{i}" for i in range(DIM)]
         out.write("#" + "\t".join(cols) + "\n")
 
         for page_idx, sample in enumerate(iter_wcxb(dataset, args.split)):
@@ -202,7 +181,7 @@ def main():
                 excerpt = rec.get("text", "")
                 label = project_label(xpath, tag, excerpt, gold)
                 features = rec["features"]
-                if len(features) != 45:
+                if len(features) != DIM:
                     continue
                 cols = [xpath, str(LABEL_TO_ID[label]), label] + [f"{v:.6f}" for v in features]
                 out.write("\t".join(cols) + "\n")

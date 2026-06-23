@@ -46,24 +46,5 @@ public class ExportImportRoundtripTests
     }
 
     private static (ILayoutExtractor, SqliteConnection) BuildExtractor()
-    {
-        var cs = $"Data Source=file:testdb-{Guid.NewGuid():N}?mode=memory&cache=shared&uri=true";
-        var conn = new SqliteConnection(cs);
-        conn.Open();
-        SqliteSchema.EnsureCreated(conn);
-        var index = new SqliteTemplateIndex(cs);
-        var noise = ClassNoiseFilter.LoadFromEmbeddedResource();
-        var sketcher = new MinHashSketcher(128);
-        var fp = new StructuralFingerprinter(
-            new ShingleGenerator(noise), sketcher, new LshBander(16, 8),
-            new AnchorPathFingerprinter(noise, sketcher), new PqGramExtractor());
-        var refit = new RefitOrchestrator(index, new ExtractorInducer(), 0.35, 5, 3);
-        return (new LayoutExtractor(
-            new AngleSharpHtmlDomParser(), new DomCleaner(), fp,
-            new BlockSegmenter(), HeuristicBlockClassifier.LoadFromEmbeddedResources(),
-            new TypedMarkdownRenderer(), index, new HostHasher(new byte[32]),
-            new ExtractorInducer(), new ExtractorApplicator(),
-            fastPathThreshold: 0.85, slowPathThreshold: 0.75,
-            refit, new DefaultNoopVersionEventSink()), conn);
-    }
+        => LayoutExtractorTestBuilder.Build();
 }

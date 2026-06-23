@@ -30,27 +30,7 @@ public class OperatorTemplateOverrideTests
     }
 
     private static (ILayoutExtractor, SqliteConnection) Build(IOperatorTemplateStore? store)
-    {
-        var cs = $"Data Source=file:opdb-{Guid.NewGuid():N}?mode=memory&cache=shared&uri=true";
-        var conn = new SqliteConnection(cs);
-        conn.Open();
-        SqliteSchema.EnsureCreated(conn);
-        var index = new SqliteTemplateIndex(cs);
-        var noise = ClassNoiseFilter.LoadFromEmbeddedResource();
-        var sketcher = new MinHashSketcher(128);
-        var fp = new StructuralFingerprinter(
-            new ShingleGenerator(noise), sketcher, new LshBander(16, 8),
-            new AnchorPathFingerprinter(noise, sketcher), new PqGramExtractor());
-        return (new LayoutExtractor(
-            new AngleSharpHtmlDomParser(), new DomCleaner(), fp,
-            new BlockSegmenter(), HeuristicBlockClassifier.LoadFromEmbeddedResources(),
-            new TypedMarkdownRenderer(), index, new HostHasher(new byte[32]),
-            new ExtractorInducer(), new ExtractorApplicator(),
-            fastPathThreshold: 0.85, slowPathThreshold: 0.75,
-            new RefitOrchestrator(index, new ExtractorInducer(), 0.35, 5, 3),
-            new DefaultNoopVersionEventSink(),
-            operatorTemplates: store), conn);
-    }
+        => LayoutExtractorTestBuilder.Build(operatorTemplates: store);
 
     private const string HtmlWithCustomWrapper = """
         <!DOCTYPE html>
@@ -161,28 +141,7 @@ public class OperatorTemplateOverrideTests
     private static (ILayoutExtractor, SqliteConnection) BuildWithSink(
         IOperatorTemplateStore store,
         Mostlylucid.Ephemeral.TypedSignalSink<StyloExtractSignal> sink)
-    {
-        var cs = $"Data Source=file:opdb-{Guid.NewGuid():N}?mode=memory&cache=shared&uri=true";
-        var conn = new SqliteConnection(cs);
-        conn.Open();
-        SqliteSchema.EnsureCreated(conn);
-        var index = new SqliteTemplateIndex(cs);
-        var noise = ClassNoiseFilter.LoadFromEmbeddedResource();
-        var sketcher = new MinHashSketcher(128);
-        var fp = new StructuralFingerprinter(
-            new ShingleGenerator(noise), sketcher, new LshBander(16, 8),
-            new AnchorPathFingerprinter(noise, sketcher), new PqGramExtractor());
-        return (new LayoutExtractor(
-            new AngleSharpHtmlDomParser(), new DomCleaner(), fp,
-            new BlockSegmenter(), HeuristicBlockClassifier.LoadFromEmbeddedResources(),
-            new TypedMarkdownRenderer(), index, new HostHasher(new byte[32]),
-            new ExtractorInducer(), new ExtractorApplicator(),
-            fastPathThreshold: 0.85, slowPathThreshold: 0.75,
-            new RefitOrchestrator(index, new ExtractorInducer(), 0.35, 5, 3),
-            new DefaultNoopVersionEventSink(),
-            signals: sink,
-            operatorTemplates: store), conn);
-    }
+        => LayoutExtractorTestBuilder.Build(operatorTemplates: store, signals: sink);
 
     [Fact]
     public async Task No_Store_Configured_Means_Existing_Pipeline_Behaviour_Unchanged()

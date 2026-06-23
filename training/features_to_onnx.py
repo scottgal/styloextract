@@ -25,14 +25,7 @@ import lightgbm as lgb
 from onnxmltools import convert_lightgbm
 from onnxmltools.convert.common.data_types import FloatTensorType
 
-# Must match wcxb_to_features.py and pipeline.py.
-LABELS = [
-    "Unknown", "MainContent", "Article", "Heading", "Summary",
-    "PrimaryNavigation", "SecondaryNavigation", "Breadcrumb", "Sidebar",
-    "RelatedLinks", "Footer", "Header", "Advertisement", "CookieBanner",
-    "Form", "Table", "CodeBlock", "Boilerplate", "RepeatedItem",
-]
-FEATURE_VERSION = 1
+from _labels import LABELS, DIM, FEATURE_VERSION
 
 
 def main():
@@ -54,7 +47,7 @@ def main():
         file=sys.stderr,
     )
 
-    initial_types = [("features", FloatTensorType([None, 45]))]
+    initial_types = [("features", FloatTensorType([None, DIM]))]
     onnx_model = convert_lightgbm(
         model,
         initial_types=initial_types,
@@ -88,7 +81,7 @@ def main():
         import onnxruntime as ort
         sess = ort.InferenceSession(str(out_path), providers=["CPUExecutionProvider"])
         rng = np.random.default_rng(0)
-        x = rng.standard_normal((3, 45)).astype(np.float32)
+        x = rng.standard_normal((3, DIM)).astype(np.float32)
         out_names = [o.name for o in sess.get_outputs()]
         ys = sess.run(out_names, {"features": x})
         for name, y in zip(out_names, ys):

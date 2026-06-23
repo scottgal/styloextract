@@ -36,20 +36,14 @@ except ImportError as ex:
         f"lightgbm import failed ({ex}); run `pip install -r requirements.txt`."
     )
 
-# Must match wcxb_to_features.py and the C# BlockRole enum.
-LABELS = [
-    "Unknown", "MainContent", "Article", "Heading", "Summary",
-    "PrimaryNavigation", "SecondaryNavigation", "Breadcrumb", "Sidebar",
-    "RelatedLinks", "Footer", "Header", "Advertisement", "CookieBanner",
-    "Form", "Table", "CodeBlock", "Boilerplate", "RepeatedItem",
-]
+from _labels import LABELS, DIM
 
 
 def load_features(path: Path) -> tuple[np.ndarray, np.ndarray, list[str]]:
     """Read the TSV produced by wcxb_to_features.py. Returns (X, y, feature_names)."""
     # The TSV header is prefixed with '#'. pandas treats it as a comment by
     # default if we pass `comment="#"`; we then provide column names manually.
-    feat_cols = [f"f{i}" for i in range(45)]
+    feat_cols = [f"f{i}" for i in range(DIM)]
     cols = ["xpath", "label_id", "label"] + feat_cols
     df = pd.read_csv(path, sep="\t", comment="#", names=cols, header=None)
     if df.empty:

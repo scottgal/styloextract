@@ -95,34 +95,13 @@ public class PlaywrightHtmlFetcherTests : IAsyncLifetime
         var addresses = server.Features.Get<Microsoft.AspNetCore.Hosting.Server.Features.IServerAddressesFeature>()!;
         _baseUrl = addresses.Addresses.First();
 
-        _chromiumAvailable = await IsChromiumInstalledAsync();
+        _chromiumAvailable = await ChromiumAvailability.CheckAsync();
     }
 
     public async Task DisposeAsync()
     {
         if (_host is not null) await _host.StopAsync();
         _host?.Dispose();
-    }
-
-    private static async Task<bool> IsChromiumInstalledAsync()
-    {
-        // The cheapest probe: launch a playwright session and try to launch
-        // Chromium. If the browser isn't on disk Playwright throws with a
-        // distinctive "Executable doesn't exist" message.
-        try
-        {
-            using var p = await Microsoft.Playwright.Playwright.CreateAsync();
-            await using var b = await p.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
-            return true;
-        }
-        catch (PlaywrightException ex) when (ex.Message.Contains("Executable doesn't exist", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-        catch
-        {
-            return false;
-        }
     }
 
     [SkippableFact]

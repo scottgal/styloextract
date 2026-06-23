@@ -82,13 +82,7 @@ public class PlaywrightToExtractorPipelineTests : IAsyncLifetime
         var addresses = server.Features.Get<Microsoft.AspNetCore.Hosting.Server.Features.IServerAddressesFeature>()!;
         _baseUrl = addresses.Addresses.First();
 
-        try
-        {
-            using var p = await Microsoft.Playwright.Playwright.CreateAsync();
-            await using var b = await p.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
-            _chromiumAvailable = true;
-        }
-        catch { _chromiumAvailable = false; }
+        _chromiumAvailable = await ChromiumAvailability.CheckAsync();
     }
 
     public async Task DisposeAsync()

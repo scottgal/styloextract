@@ -33,13 +33,7 @@ public class BbcNewsWorstCaseTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        try
-        {
-            using var p = await Microsoft.Playwright.Playwright.CreateAsync();
-            await using var b = await p.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
-            _chromiumAvailable = true;
-        }
-        catch { _chromiumAvailable = false; }
+        _chromiumAvailable = await ChromiumAvailability.CheckAsync();
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
