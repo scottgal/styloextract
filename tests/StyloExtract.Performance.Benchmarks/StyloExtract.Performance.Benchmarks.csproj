@@ -22,5 +22,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Fixtures\**\*.html" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Fixtures\realworld\**\*.html" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

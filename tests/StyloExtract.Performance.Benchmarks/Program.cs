@@ -11,6 +11,11 @@ public static class Program
             await SmokeRunner.RunAsync();
             return;
         }
+        if (args.Length > 0 && args[0] == "--realworld")
+        {
+            await SmokeRunner.RunAsync(realworld: true);
+            return;
+        }
         BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
     }
 }

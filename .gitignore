@@ -11,3 +11,8 @@ TestResults/
 *.db-wal
 *.db-shm
 BenchmarkDotNet.Artifacts/
+
+# Third-party HTML samples for smoke-running the extractor against real sites.
+# Each file is a curl of a live page at a point in time; not redistributable.
+# Operators fetch their own using the recipe in docs/realworld-fixtures.md.
+tests/StyloExtract.Performance.Benchmarks/Fixtures/realworld/*.html

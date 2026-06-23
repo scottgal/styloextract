@@ -15,9 +15,14 @@ namespace StyloExtract.Performance.Benchmarks;
 // Invoke via:  dotnet run --project tests/StyloExtract.Performance.Benchmarks -- --dump
 public static class SmokeRunner
 {
-    public static async Task RunAsync()
+    public static async Task RunAsync(bool realworld = false)
     {
-        var fixtures = new[] { "article-small.html", "article-medium.html", "article-large.html", "table-heavy.html" };
+        string[] fixtures = realworld
+            ? Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "Fixtures", "realworld"), "*.html")
+                .Select(p => Path.Combine("realworld", Path.GetFileName(p)))
+                .OrderBy(s => s)
+                .ToArray()
+            : new[] { "article-small.html", "article-medium.html", "article-large.html", "table-heavy.html" };
         var cs = $"Data Source=file:smoke-{Guid.NewGuid():N}?mode=memory&cache=shared&uri=true";
         using var conn = new SqliteConnection(cs);
         conn.Open();
@@ -45,7 +50,20 @@ public static class SmokeRunner
             Console.WriteLine("=================================================================");
             Console.WriteLine($"FIXTURE: {name}  (html: {html.Length} bytes  blocks: {result.Blocks.Count})");
             Console.WriteLine("=================================================================");
-            Console.WriteLine(result.Markdown);
+            // Block summary: role + confidence + xpath + first 80 chars of text.
+            // Useful for spotting "we emitted nothing meaningful" cases on real-world pages.
+            int i = 0;
+            foreach (var b in result.Blocks)
+            {
+                var preview = b.Text.Replace('\n', ' ');
+                if (preview.Length > 80) preview = preview[..80] + "...";
+                Console.WriteLine($"  [{i++:D2}] {b.Role,-18} conf={b.Confidence:F2}  text={preview}");
+            }
+            Console.WriteLine();
+            Console.WriteLine($"--- markdown ({result.Markdown.Length} chars) ---");
+            // Limit to first 1500 chars to keep the output skimmable.
+            var md = result.Markdown;
+            Console.WriteLine(md.Length > 1500 ? md[..1500] + "\n...[truncated]" : md);
             Console.WriteLine();
         }
     }
