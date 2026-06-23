@@ -4,6 +4,25 @@ All notable changes to StyloExtract are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] - 2026-06-23
+
+### Fixed
+
+- `DomMarkdownWalker.AppendEscapedInline` no longer preserves leading
+  whitespace at line-start. Previously, consecutive text-node visits in
+  heavily-indented source HTML (Tailwind / HTMX / framework-generated
+  markup) each emitted a single space and accumulated to 4+ spaces at
+  the head of the next paragraph or link. CommonMark's indented-code-block
+  rule then parsed the entire line as code, so `[text](href)` rendered
+  as raw bracket characters instead of a clickable link. The fix primes
+  the whitespace-collapse state to "already at whitespace" when
+  the output is at line-start, so leading source whitespace is skipped
+  entirely; inner-paragraph runs still collapse to a single space.
+- Live reproducer for the fix: lucidVIEW loading the mostlylucid.net
+  homepage (HTMX-driven blog index). Before 1.7.1 every blog-post card
+  after the first collapsed into a code block with raw `[title](/url)`
+  text; after 1.7.1 each card renders as a styled link.
+
 ## [1.7.0] - 2026-06-23
 
 Structured markdown output. Previously every classified block flattened

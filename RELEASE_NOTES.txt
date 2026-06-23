@@ -1,3 +1,28 @@
+StyloExtract 1.7.1 - 2026-06-23
+================================
+
+Patch release. One bug fix to DomMarkdownWalker so heavily-indented
+source HTML (typical of Tailwind / HTMX / framework-generated markup)
+stops producing markdown that CommonMark parses as indented code blocks.
+
+Bug
+---
+
+* DomMarkdownWalker.AppendEscapedInline preserved leading whitespace at
+  line-start, so consecutive text-node visits each emitted a single
+  space and accumulated to 4+ spaces ahead of links and paragraphs.
+  CommonMark then parsed those lines as indented code blocks and the
+  resulting markdown rendered as raw `[text](href)` text instead of
+  clickable links. Now skipped at line-start; inner-paragraph whitespace
+  still collapses to single spaces as before.
+
+Real-world repro: lucidVIEW loading mostlylucid.net (HTMX-driven blog
+index). Before 1.7.1 every blog-post card after the first collapsed into
+a code block; after 1.7.1 each card is a styled link with its summary
+as its own paragraph beneath.
+
+----
+
 StyloExtract 1.7.0 - 2026-06-23
 ================================
 
