@@ -10,5 +10,7 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <ProjectReference Include="..\StyloExtract.AspNetCore\StyloExtract.AspNetCore.csproj" />
     <ProjectReference Include="..\StyloExtract.Templates\StyloExtract.Templates.csproj" />
+    <ProjectReference Include="..\StyloExtract.Html\StyloExtract.Html.csproj" />
+    <ProjectReference Include="..\StyloExtract.Ml\StyloExtract.Ml.csproj" />
   </ItemGroup>
 </Project>

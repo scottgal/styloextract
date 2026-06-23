@@ -5,6 +5,7 @@ using SharedExport = StyloExtract.Cli.Shared.Commands.ExportCommand;
 using SharedImport = StyloExtract.Cli.Shared.Commands.ImportCommand;
 using SharedMonitor = StyloExtract.Cli.Shared.Commands.MonitorCommand;
 using SharedTemplate = StyloExtract.Cli.Shared.Commands.TemplateCommand;
+using SharedFeatures = StyloExtract.Cli.Shared.Commands.ExtractFeaturesCommand;
 
 // Bind the bundled native SQLite provider before any Microsoft.Data.Sqlite call. Required
 // for self-contained / single-file publish (especially on macOS) where the default dynamic
@@ -18,4 +19,5 @@ root.Add(SharedExport.Build());
 root.Add(SharedImport.Build());
 root.Add(SharedMonitor.Build());
 root.Add(SharedTemplate.Build());
+root.Add(SharedFeatures.Build());
 return await root.Parse(args).InvokeAsync();
