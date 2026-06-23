@@ -16,3 +16,10 @@ BenchmarkDotNet.Artifacts/
 # Each file is a curl of a live page at a point in time; not redistributable.
 # Operators fetch their own using the recipe in docs/realworld-fixtures.md.
 tests/StyloExtract.Performance.Benchmarks/Fixtures/realworld/*.html
+
+# Python training pipeline scratch.
+training/__pycache__/
+training/.venv/
+training/*.tsv
+training/*.txt
+!training/requirements.txt
