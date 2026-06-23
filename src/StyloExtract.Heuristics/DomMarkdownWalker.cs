@@ -683,7 +683,13 @@ internal sealed class DomMarkdownWalker
     private static void AppendEscapedInline(StringBuilder dest, string s)
     {
         if (s.Length == 0) return;
-        bool prevWs = false;
+        // At line-start, treat preceding context as already-whitespace so leading
+        // source whitespace is skipped entirely. Otherwise 4+ collapsed spaces at
+        // the head of a paragraph trigger CommonMark's indented-code-block rule
+        // and the entire line renders as code (e.g. card links from indented
+        // HTML "<div>\n    <a>...</a></div>" turn into raw bracket text).
+        bool atLineStart = dest.Length == 0 || dest[^1] == '\n';
+        bool prevWs = atLineStart;
         for (int i = 0; i < s.Length; i++)
         {
             var c = s[i];
