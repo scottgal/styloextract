@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>StyloExtract.Ml</RootNamespace>
+    <AssemblyName>StyloExtract.Ml</AssemblyName>
+    <PackageId>Mostlylucid.StyloExtract.Ml</PackageId>
+    <IsPackable>true</IsPackable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Per-element feature extraction and ONNX-runtime block classification for StyloExtract. Augments the heuristic classifier on novel layouts (custom CSS frameworks, e-commerce SPAs) where the framework-content-class-hints catalog has no entry. Phase 1: pure-C# AOT-clean feature extractor; phase 2+ adds the trained ONNX model.</Description>
+    <PackageTags>styloextract;ml;onnx;classifier;rag;aot</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

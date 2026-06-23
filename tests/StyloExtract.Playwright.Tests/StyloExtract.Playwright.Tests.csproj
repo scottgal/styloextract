@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>StyloExtract.Playwright.Tests</RootNamespace>
+    <AssemblyName>StyloExtract.Playwright.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Xunit.SkippableFact" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\StyloExtract.Playwright\StyloExtract.Playwright.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Core\StyloExtract.Core.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Heuristics\StyloExtract.Heuristics.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Html\StyloExtract.Html.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Fingerprint\StyloExtract.Fingerprint.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Markdown\StyloExtract.Markdown.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Templates\StyloExtract.Templates.csproj" />
+  </ItemGroup>
+</Project>
