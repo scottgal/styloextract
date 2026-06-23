@@ -1,0 +1,20 @@
+<Project>
+  <!-- Runs AFTER each project's csproj body, which means $(OutputType) is the
+       value the project set, not the SDK default that Directory.Build.props
+       would see. This is the right place to hang on properties that depend on
+       per-project values. -->
+
+  <!-- Executable projects (CLI, benchmarks) embed icon.ico as the Win32 application
+       icon so the binary displays with the same StyloExtract glyph as the NuGet
+       packages do on nuget.org. ApplicationIcon is honored on Windows PE builds;
+       on macOS / Linux the binary has no embedded icon slot, but the .ico file is
+       still copied next to the binary by the "ExecutableSiblingIcon" item below so
+       any downstream packaging (RPM, Debian .desktop, Squirrel installer, etc.)
+       that picks an .ico up from the publish directory finds it. -->
+  <PropertyGroup Condition="'$(OutputType)' == 'Exe' AND Exists('$(MSBuildThisFileDirectory)icon.ico')">
+    <ApplicationIcon>$(MSBuildThisFileDirectory)icon.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OutputType)' == 'Exe' AND Exists('$(MSBuildThisFileDirectory)icon.ico')">
+    <None Include="$(MSBuildThisFileDirectory)icon.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="icon.ico" Visible="false" />
+  </ItemGroup>
+</Project>

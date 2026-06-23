@@ -1,0 +1,62 @@
+StyloExtract 1.7.0 - 2026-06-23
+================================
+
+Structured markdown output. Previously every classified block flattened
+to element.TextContent.Trim() and the renderer emitted a wall of plain
+paragraphs with "# " collapsing all six heading levels. This release
+makes ExtractedBlock.Markdown carry a real GFM rendition produced by
+walking the block's DOM subtree.
+
+Highlights
+----------
+
+* Heading levels H1-H6 emit one-through-six "#" characters.
+* Inline content preserved: links, **bold**, *italic*, `code`, images,
+  hard breaks.
+* Lists, fenced code blocks (with language hint), blockquotes (single
+  and multi-paragraph following GFM convention), and figures all render
+  with their structure intact.
+* GFM tables built from a WHATWG slot grid: colspan/rowspan respected,
+  caption rendered above as bold paragraph, alignment markers derived
+  from align attribute or style="text-align" via majority-vote, pipes
+  escaped, newlines converted to <br>. Complex tables (multi-row thead,
+  nested tables, block content in a cell) fall back to raw HTML which
+  CommonMark passes through.
+* Sidebar and RelatedLinks now use the DOM walker. The classic "on this
+  page" TOC pattern renders as a proper markdown list with anchor links
+  instead of flattening to indented text.
+
+Performance
+-----------
+
+Walker on Apple M5 / .NET 10, full pipeline numbers in parentheses:
+
+  Small article: 1.3 us / 8 KB    (full pipeline:  370 us /  925 KB)
+  Medium doc  : 25.2 us / 72 KB   (full pipeline:  491 us /  823 KB)
+  Large doc   : 34.1 us / 114 KB  (full pipeline:  642 us /  843 KB)
+  Table-heavy : 69.2 us / 165 KB  (full pipeline:  641 us /  688 KB)
+
+Walker share of ExtractAsync total time fell from 25-55% to 5-11% across
+the four scenarios. ExtractAsync continues to sit well under the spec's
+15ms p99 budget on a cache hit.
+
+Compatibility
+-------------
+
+Backwards-compatible. ExtractedBlock.Text continues to project the
+flattened plain-text view unchanged; the new markdown rendition is read
+via ExtractedBlock.Markdown. Existing extraction profiles behave
+identically; the only observable change is that the markdown emitted by
+TypedMarkdownRenderer is now reader-grade rather than flat prose.
+
+Tests
+-----
+
+329 tests across 7 projects, all green. 51 unit tests on the new walker
+cover inline composition, list and code rendering, and the full GFM
+table reconstruction path including the complexity-detection fallback
+to raw HTML. Four end-to-end pipeline tests exercise the spec's headline
+gaps (heading levels, inline links, lists, GFM tables) through
+parse -> clean -> segment -> classify -> render -> SQLite.
+
+See CHANGELOG.md for the full record.

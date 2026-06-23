@@ -13,9 +13,17 @@
     <PackageProjectUrl>https://github.com/scottgal/styloextract</PackageProjectUrl>
     <RepositoryUrl>https://github.com/scottgal/styloextract</RepositoryUrl>
     <PackageIcon>icon.png</PackageIcon>
+    <!-- PackageReleaseNotes is read at pack time from the repo-root RELEASE_NOTES.txt.
+         Every NuGet package therefore ships the same notes block, visible on
+         nuget.org under the "Release notes" tab and surfaced by `dotnet add package`
+         tooling. Update RELEASE_NOTES.txt with each release; the file is also
+         packaged into the .nupkg so consumers offline can still read it. -->
+    <PackageReleaseNotes Condition="Exists('$(MSBuildThisFileDirectory)RELEASE_NOTES.txt')">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)RELEASE_NOTES.txt'))</PackageReleaseNotes>
   </PropertyGroup>
+
   <ItemGroup Condition="'$(IsPackable)' == 'true'">
     <None Include="$(MSBuildThisFileDirectory)icon.png" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)RELEASE_NOTES.txt" Condition="Exists('$(MSBuildThisFileDirectory)RELEASE_NOTES.txt')" Pack="true" PackagePath="\" Visible="false" />
     <None Include="README.md" Condition="Exists('README.md')" Pack="true" PackagePath="\" />
   </ItemGroup>
 </Project>
