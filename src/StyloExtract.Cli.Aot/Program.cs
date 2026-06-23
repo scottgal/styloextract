@@ -12,4 +12,5 @@ root.Add(ExtractCommand.Build());
 root.Add(ExportCommand.Build());
 root.Add(ImportCommand.Build());
 root.Add(MonitorCommand.Build());
+root.Add(TemplateCommand.Build());
 return await root.Parse(args).InvokeAsync();

@@ -82,7 +82,12 @@ public static class StyloExtractServiceCollectionExtensions
             sp.GetRequiredService<RefitOrchestrator>(),
             sp.GetRequiredService<ITemplateVersionEventSink>(),
             sp.GetRequiredService<TypedSignalSink<StyloExtractSignal>>(),
-            sp.GetService<ILogger<LayoutExtractor>>()));
+            sp.GetService<ILogger<LayoutExtractor>>(),
+            // Operator-template store is optional. When a consumer registers an
+            // IOperatorTemplateStore in DI, the LayoutExtractor consults it before
+            // every fingerprint and short-circuits to MatchStatus.OperatorOverride
+            // for any host with an authored template. See AddStyloExtractOperatorTemplates.
+            sp.GetService<IOperatorTemplateStore>()));
 
         // Register a default ResponsePolicyOptions so ResponsePolicyMiddleware is always resolvable.
         services.TryAddSingleton<ResponsePolicyOptions>();
