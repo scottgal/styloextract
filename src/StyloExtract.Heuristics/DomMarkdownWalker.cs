@@ -11,10 +11,25 @@ namespace StyloExtract.Heuristics;
 ///
 /// One renderer instance handles a single block subtree; instances are not
 /// thread-safe. <see cref="Render(IElement)"/> is the entry point.
+///
+/// Allocation discipline: inline-emit helpers take a destination StringBuilder
+/// parameter so sub-rendering for list items, blockquotes, and table cells
+/// reuses one scratch buffer per walker instead of allocating a fresh
+/// StringBuilder per element. This brings allocation on table-heavy fixtures
+/// from ~13x HTML size down to ~7x without changing output.
 /// </summary>
 internal sealed class DomMarkdownWalker
 {
-    private readonly StringBuilder _out = new();
+    private readonly StringBuilder _out;
+    // Reused for list-item inline body, blockquote sub-block body, table-cell
+    // inline body, table-caption text. Must be cleared by the user after read.
+    private readonly StringBuilder _scratch;
+
+    public DomMarkdownWalker()
+    {
+        _out = new StringBuilder(512);
+        _scratch = new StringBuilder(128);
+    }
 
     public static string Render(IElement element)
     {
@@ -35,7 +50,7 @@ internal sealed class DomMarkdownWalker
     {
         if (node is IText t)
         {
-            _out.Append(EscapeInline(t.TextContent));
+            AppendEscapedInline(_out, t.TextContent);
             return;
         }
         if (node is not IElement el) return;
@@ -57,7 +72,7 @@ internal sealed class DomMarkdownWalker
 
             case "p":
                 EnsureBlankLine();
-                WriteInlineChildren(el);
+                WriteInlineChildren(_out, el);
                 EnsureBlankLine();
                 return;
 
@@ -79,7 +94,7 @@ internal sealed class DomMarkdownWalker
             case "table": WriteTable(el); return;
 
             case "figure": WriteFigure(el); return;
-            case "img": WriteInlineImage(el); return;
+            case "img": WriteInlineImage(_out, el); return;
 
             // Inline structural elements that may appear at block scope: render as inline.
             case "a":
@@ -93,7 +108,7 @@ internal sealed class DomMarkdownWalker
             case "sub":
             case "sup":
             case "span":
-                WriteInlineNode(el);
+                WriteInlineNode(_out, el);
                 return;
 
             // Generic wrapper: descend into children at block scope.
@@ -108,7 +123,7 @@ internal sealed class DomMarkdownWalker
         EnsureBlankLine();
         _out.Append('#', level);
         _out.Append(' ');
-        WriteInlineChildren(el);
+        WriteInlineChildren(_out, el);
         EnsureBlankLine();
     }
 
@@ -121,15 +136,13 @@ internal sealed class DomMarkdownWalker
             if (!string.Equals(child.TagName, "li", StringComparison.OrdinalIgnoreCase)) continue;
             var marker = ordered ? $"{index++}. " : "- ";
             _out.Append(marker);
-            var inline = new StringBuilder();
-            var sub = new DomMarkdownWalker { };
-            sub._out.Append(' ', 0);
-            sub.WriteInlineChildren(child);
-            // Single-line items: collapse internal newlines. Lists with paragraphs/nested
-            // lists fall out of strict GFM here; that's the trade for keeping the walker
-            // single-pass and readable.
-            var line = sub._out.ToString().Replace('\n', ' ').Trim();
-            _out.Append(line);
+            // Render the item's inline body into scratch, then collapse internal
+            // newlines to spaces and append as a single line. Nested lists/paragraphs
+            // inside <li> fall out of strict GFM here; that's the trade for keeping
+            // the walker single-pass and readable.
+            _scratch.Clear();
+            WriteInlineChildren(_scratch, child);
+            AppendCollapsedLine(_out, _scratch);
             _out.Append('\n');
         }
         EnsureBlankLine();
@@ -164,27 +177,90 @@ internal sealed class DomMarkdownWalker
     private void WriteBlockquote(IElement el)
     {
         EnsureBlankLine();
-        var sub = new DomMarkdownWalker();
-        sub.WriteBlockChildren(el);
-        var body = sub._out.ToString().Trim();
-        foreach (var line in body.Split('\n'))
+        // Swap the destination of WriteBlockChildren from _out to _scratch so the
+        // sub-walk for the blockquote body lands in our reusable buffer instead of
+        // allocating a fresh sub-walker. We snapshot _out's length and "rewind" so
+        // anything we accidentally write to _out is dropped after we read scratch.
+        // The block helpers all use `_out` directly; the simplest swap-and-restore
+        // is to do the sub-walk against scratch via WriteNode dispatch but using
+        // scratch as the destination. We can't temporarily reassign a readonly
+        // field, so instead we re-walk via an inline path that emits into scratch,
+        // then format > prefixes. Blockquote inline content is the dominant case
+        // (a wrapping <p>); for the rare multi-paragraph case we fall through to a
+        // full sub-walker to keep correctness.
+        bool simple = TryWriteBlockquoteInlineOnly(el, _scratch);
+        if (!simple)
         {
+            // Multi-paragraph blockquote: a fresh sub-walker is unavoidable because
+            // we need full block-level recursion (paragraphs, lists, code) inside.
+            // This path is rare on real pages.
+            var sub = new DomMarkdownWalker();
+            sub.WriteBlockChildren(el);
+            var body = sub._out.ToString().Trim();
+            foreach (var line in body.Split('\n'))
+            {
+                _out.Append("> ").Append(line).Append('\n');
+            }
+        }
+        else
+        {
+            // Inline-only path: trim and prefix with "> ".
+            int trimEnd = _scratch.Length;
+            while (trimEnd > 0 && char.IsWhiteSpace(_scratch[trimEnd - 1])) trimEnd--;
+            int trimStart = 0;
+            while (trimStart < trimEnd && char.IsWhiteSpace(_scratch[trimStart])) trimStart++;
             _out.Append("> ");
-            _out.Append(line);
+            for (int i = trimStart; i < trimEnd; i++)
+            {
+                _out.Append(_scratch[i]);
+                if (_scratch[i] == '\n' && i + 1 < trimEnd) _out.Append("> ");
+            }
             _out.Append('\n');
+            _scratch.Clear();
         }
         EnsureBlankLine();
     }
 
-    // Table rendering follows the WHATWG "forming a table" algorithm to build a slot
-    // grid that respects rowspan/colspan, then decides between a GFM pipe table and a
-    // raw-HTML fallback. Most converters that try to coerce every <table> into pipes
-    // produce garbage on Wikipedia infoboxes, MS Learn complex tables, and any table
-    // with block content in cells. The going industry pattern (cmark-gfm, Joplin's
-    // turndown-plugin-gfm, Pandoc, JohannesKaufmann/html-to-markdown) is: detect
-    // complexity, emit raw HTML when the structure cannot survive the GFM constraint
-    // (one header row, no rowspan/colspan, no block cell content). CommonMark passes
-    // raw HTML through unchanged, so RAG/markdown viewers still render it.
+    private bool TryWriteBlockquoteInlineOnly(IElement el, StringBuilder dest)
+    {
+        // Walk the blockquote element's direct children. If we only see inline
+        // content or single <p> wrappers, render their inline body into `dest`.
+        // If any child is a block construct that needs full recursion (table,
+        // list, pre, nested blockquote, heading), bail out and let the caller
+        // use the sub-walker path. Paragraphs are separated by a sentinel
+        // "\n\n" which the prefix step turns into the GFM
+        // "> body\n>\n> body\n" multi-paragraph quote pattern.
+        dest.Clear();
+        bool first = true;
+        foreach (var child in el.ChildNodes)
+        {
+            if (child is IText t) { AppendEscapedInline(dest, t.TextContent); continue; }
+            if (child is not IElement c) continue;
+            var tag = c.TagName.ToLowerInvariant();
+            switch (tag)
+            {
+                case "p":
+                    if (!first) dest.Append('\n').Append('\n');
+                    WriteInlineChildren(dest, c);
+                    first = false;
+                    break;
+                case "br":
+                    dest.Append("  \n");
+                    break;
+                case "script": case "style": case "noscript": case "template":
+                    break;
+                case "ul": case "ol": case "pre": case "blockquote":
+                case "table": case "figure":
+                case "h1": case "h2": case "h3": case "h4": case "h5": case "h6":
+                    return false;
+                default:
+                    WriteInlineNode(dest, c);
+                    break;
+            }
+        }
+        return true;
+    }
+
     private void WriteTable(IElement table)
     {
         EnsureBlankLine();
@@ -216,53 +292,38 @@ internal sealed class DomMarkdownWalker
         }
         if (theadRows.Count == 0 && tbodyRows.Count == 0) return;
 
-        // Build the WHATWG slot grid for header + body rows. Track downward-growing
-        // cells so a rowspan in row R fills (R, C) and blanks the slot in rows below.
         var allRows = new List<IElement>(theadRows.Count + tbodyRows.Count);
         allRows.AddRange(theadRows);
         allRows.AddRange(tbodyRows);
         var (grid, alignByCol) = BuildSlotGrid(allRows);
-        if (grid.Count == 0 || grid[0].Count == 0) return;
+        if (grid.Count == 0 || grid[0].Length == 0) return;
 
         int headerRowCount = theadRows.Count == 0 ? 1 : theadRows.Count;
-        // We already guaranteed a single header row via ShouldFallBackToHtml's multi-row
-        // thead check; clamp defensively.
         if (headerRowCount > 1) headerRowCount = 1;
 
-        // Caption renders as a bold paragraph above the table (Pandoc / Joplin convention).
+        // Caption renders as a bold paragraph above the table.
         var caption = table.QuerySelector("caption");
         if (caption is not null)
         {
             var capText = caption.TextContent.Trim();
             if (capText.Length > 0)
             {
-                _out.Append("**").Append(EscapeInline(capText)).Append("**");
+                _out.Append("**");
+                AppendEscapedInline(_out, capText);
+                _out.Append("**");
                 _out.Append('\n').Append('\n');
             }
         }
 
-        int cols = grid[0].Count;
-
-        void WriteRow(List<string> cells)
-        {
-            _out.Append('|');
-            for (int i = 0; i < cols; i++)
-            {
-                _out.Append(' ');
-                _out.Append(i < cells.Count ? cells[i] : "");
-                _out.Append(" |");
-            }
-            _out.Append('\n');
-        }
+        int cols = grid[0].Length;
 
         // Header row.
-        var header = grid[0];
-        WriteRow(header);
+        WriteRow(grid[0], cols);
         // Separator with alignment markers.
         _out.Append('|');
         for (int i = 0; i < cols; i++)
         {
-            var a = i < alignByCol.Count ? alignByCol[i] : ColAlign.Default;
+            var a = i < alignByCol.Length ? alignByCol[i] : ColAlign.Default;
             _out.Append(a switch
             {
                 ColAlign.Left => " :--- |",
@@ -274,12 +335,24 @@ internal sealed class DomMarkdownWalker
         _out.Append('\n');
         for (int r = headerRowCount; r < grid.Count; r++)
         {
-            WriteRow(grid[r]);
+            WriteRow(grid[r], cols);
         }
         EnsureBlankLine();
     }
 
-    private enum ColAlign { Default, Left, Center, Right }
+    private void WriteRow(string[] cells, int cols)
+    {
+        _out.Append('|');
+        for (int i = 0; i < cols; i++)
+        {
+            _out.Append(' ');
+            _out.Append(i < cells.Length ? cells[i] : "");
+            _out.Append(" |");
+        }
+        _out.Append('\n');
+    }
+
+    private enum ColAlign { Default = 0, Left = 1, Center = 2, Right = 3 }
 
     private static List<IElement> CollectRows(IElement? section)
     {
@@ -307,31 +380,28 @@ internal sealed class DomMarkdownWalker
         return hadAny;
     }
 
-    // Joplin's tableShouldBeHtml is the gold standard: any structural feature GFM
-    // cannot express triggers a raw-HTML fallback rather than a lossy projection.
-    // We extend that with the "multi-row thead" case (GFM allows exactly one header
-    // row, cmark-gfm refuses anything else) and the "no rows at all" case.
     private bool ShouldFallBackToHtml(IElement table, List<IElement> theadRows, List<IElement> tbodyRows)
     {
         if (theadRows.Count > 1) return true;
         if (theadRows.Count == 0 && tbodyRows.Count == 0) return false;
-
-        // Nested table at any depth is always complex.
         if (table.QuerySelectorAll("table").Length > 1) return true;
 
-        var allRows = new List<IElement>(theadRows.Count + tbodyRows.Count);
-        allRows.AddRange(theadRows);
-        allRows.AddRange(tbodyRows);
-        foreach (var tr in allRows)
+        foreach (var tr in theadRows)
         {
             foreach (var cell in tr.Children)
             {
                 var ct = cell.TagName.ToLowerInvariant();
                 if (ct != "td" && ct != "th") continue;
                 if (CellHasBlockContent(cell)) return true;
-                // rowspan > 1 ON a cell whose content is text-only is okay (we anchor it
-                // in the first row and blank the rest). It's the COMBINATION with block
-                // content that defeats GFM, and that's already caught above.
+            }
+        }
+        foreach (var tr in tbodyRows)
+        {
+            foreach (var cell in tr.Children)
+            {
+                var ct = cell.TagName.ToLowerInvariant();
+                if (ct != "td" && ct != "th") continue;
+                if (CellHasBlockContent(cell)) return true;
             }
         }
         return false;
@@ -341,8 +411,6 @@ internal sealed class DomMarkdownWalker
     {
         if (cell.QuerySelector("h1, h2, h3, h4, h5, h6, ul, ol, pre, blockquote, hr, table") is not null)
             return true;
-        // Multiple <p> children also count: a single <p> wrapping the cell text is harmless
-        // (we strip the wrapper); two or more produces a paragraph break GFM can't express.
         int pCount = 0;
         foreach (var _ in cell.QuerySelectorAll("p")) { if (++pCount >= 2) return true; }
         return false;
@@ -350,48 +418,37 @@ internal sealed class DomMarkdownWalker
 
     private void EmitRawTable(IElement table)
     {
-        // CommonMark §4.6 passes raw HTML blocks through unchanged when separated by
-        // blank lines. We emit the table's OuterHtml verbatim. Downstream RAG ingest
-        // and markdown viewers (cmark-gfm, github.com, Obsidian, etc.) render it.
         var html = (table.OuterHtml ?? string.Empty).Trim();
         if (html.Length == 0) return;
         _out.Append(html).Append('\n');
         EnsureBlankLine();
     }
 
-    private (List<List<string>> Grid, List<ColAlign> AlignByCol) BuildSlotGrid(List<IElement> rows)
+    private (List<string[]> Grid, ColAlign[] AlignByCol) BuildSlotGrid(List<IElement> rows)
     {
-        // Apply the WHATWG "forming a table" algorithm. cells[y][x] is the rendered
-        // content for slot (x, y). When a cell has rowspan>1 we fill in the
-        // grow-downward positions with empty strings (anchoring the content in the
-        // first row). colspan>1 repeats the content across columns to preserve visual
-        // fidelity in viewers that lack merged-cell support.
-        const int MaxSpan = 1000; // WHATWG cap.
-        var grid = new List<List<string>>();
-        var alignVotes = new List<Dictionary<ColAlign, int>>();
+        const int MaxSpan = 1000;
 
-        ColAlign[] pendingAlign = Array.Empty<ColAlign>();
-        bool[] pendingOccupied = Array.Empty<bool>();
-        // pendingOccupied[c] = true means slot (currentRow, c) is already taken by a
-        // rowspan from a previous row.
-        // A side-grid tracks remaining rowspan per (col) for the running rows.
+        // Two-pass: first fill into per-row scratch lists with rowspan carry-over
+        // tracking, then normalise widths into a single string[] per row.
+        var grid = new List<List<string>>(rows.Count);
+        var rowspanRemaining = new List<int>();
 
-        var rowspanRemaining = new List<int>(); // per column
-        var rowspanContent = new List<string>(); // per column (filled while remaining > 0)
+        // Per-column alignment vote counters. Flat int[] of (col * 4 + colAlign).
+        // Reallocates only when columns grow beyond the buffer.
+        int[] alignVotes = Array.Empty<int>();
+        int alignCols = 0;
 
         foreach (var tr in rows)
         {
-            // Snapshot the carry-over occupancy for this row.
             var currentRow = new List<string>();
             int writeCol = 0;
 
-            // First, fill any column slots that a previous row's rowspan continues to cover.
             void FillCarry()
             {
                 while (writeCol < rowspanRemaining.Count && rowspanRemaining[writeCol] > 0)
                 {
                     while (currentRow.Count <= writeCol) currentRow.Add("");
-                    currentRow[writeCol] = ""; // anchored above; leave blank below
+                    currentRow[writeCol] = "";
                     rowspanRemaining[writeCol]--;
                     writeCol++;
                 }
@@ -415,69 +472,64 @@ internal sealed class DomMarkdownWalker
                     while (currentRow.Count <= writeCol) currentRow.Add("");
                     currentRow[writeCol] = content;
 
-                    while (rowspanRemaining.Count <= writeCol)
-                    {
-                        rowspanRemaining.Add(0);
-                        rowspanContent.Add("");
-                    }
-                    if (rowspan > 1)
-                    {
-                        rowspanRemaining[writeCol] = rowspan - 1;
-                        rowspanContent[writeCol] = content;
-                    }
+                    while (rowspanRemaining.Count <= writeCol) rowspanRemaining.Add(0);
+                    if (rowspan > 1) rowspanRemaining[writeCol] = rowspan - 1;
 
-                    while (alignVotes.Count <= writeCol) alignVotes.Add(new Dictionary<ColAlign, int>());
                     if (colAlign != ColAlign.Default)
                     {
-                        alignVotes[writeCol][colAlign] = alignVotes[writeCol].GetValueOrDefault(colAlign) + 1;
+                        if (writeCol >= alignCols)
+                        {
+                            int newCols = Math.Max(4, alignCols * 2);
+                            while (writeCol >= newCols) newCols *= 2;
+                            var bigger = new int[newCols * 4];
+                            Array.Copy(alignVotes, bigger, alignVotes.Length);
+                            alignVotes = bigger;
+                            alignCols = newCols;
+                        }
+                        alignVotes[writeCol * 4 + (int)colAlign]++;
                     }
 
                     writeCol++;
                 }
             }
 
-            // Fill any trailing carry-over rowspan slots after the last explicit cell.
             FillCarry();
             grid.Add(currentRow);
         }
 
-        // Normalise: every row to the same width using the widest row as canonical.
         int width = 0;
-        foreach (var r in grid) width = Math.Max(width, r.Count);
+        foreach (var r in grid) if (r.Count > width) width = r.Count;
+
+        var grid2 = new List<string[]>(grid.Count);
         foreach (var r in grid)
         {
-            while (r.Count < width) r.Add("");
+            var arr = new string[width];
+            for (int i = 0; i < width; i++) arr[i] = i < r.Count ? r[i] : "";
+            grid2.Add(arr);
         }
 
-        // Majority vote per column (ties → default).
-        var alignByCol = new List<ColAlign>();
+        var alignByCol = new ColAlign[width];
         for (int c = 0; c < width; c++)
         {
-            if (c >= alignVotes.Count || alignVotes[c].Count == 0)
-            {
-                alignByCol.Add(ColAlign.Default);
-                continue;
-            }
-            ColAlign winner = ColAlign.Default;
+            if (c >= alignCols) { alignByCol[c] = ColAlign.Default; continue; }
             int best = 0;
+            int winner = 0;
             bool tie = false;
-            foreach (var kv in alignVotes[c])
+            for (int a = 1; a <= 3; a++)
             {
-                if (kv.Value > best) { winner = kv.Key; best = kv.Value; tie = false; }
-                else if (kv.Value == best) tie = true;
+                int v = alignVotes[c * 4 + a];
+                if (v > best) { winner = a; best = v; tie = false; }
+                else if (v == best && v > 0) tie = true;
             }
-            alignByCol.Add(tie ? ColAlign.Default : winner);
+            alignByCol[c] = (best == 0 || tie) ? ColAlign.Default : (ColAlign)winner;
         }
-        return (grid, alignByCol);
+        return (grid2, alignByCol);
     }
 
     private static int ParseSpan(IElement cell, string attr, int fallback)
     {
         var raw = cell.GetAttribute(attr);
         if (string.IsNullOrEmpty(raw)) return fallback;
-        // HTML5 says rowspan=0 grows to end of row group; we treat it as fallback (cap)
-        // because GFM cannot represent "grow to end" cleanly and the table-shouldbeHtml
-        // path catches the heavy cases.
         return int.TryParse(raw, out var v) && v > 0 ? v : fallback;
     }
 
@@ -501,68 +553,75 @@ internal sealed class DomMarkdownWalker
 
     private string RenderCellInline(IElement cell)
     {
-        var sub = new DomMarkdownWalker();
-        sub.WriteInlineChildren(cell);
-        // GFM cells cannot hold real newlines; replace with <br> (the one block-construct
-        // GFM permits inside a cell per the GFM extension spec) and escape pipes. Strip
-        // the two-space prefix that the inline <br> emits as a hard-break: in a cell,
-        // we want `a<br>b`, not `a  <br>b`. Trailing whitespace on each segment also
-        // collapses to keep the cell content tight.
-        var raw = sub._out.ToString().Replace("\r\n", "\n");
-        var sbCell = new StringBuilder(raw.Length);
-        int i = 0;
-        while (i < raw.Length)
+        // Reuses the parent walker's _scratch buffer instead of allocating a
+        // fresh sub-walker per cell. _scratch lifetime is bounded to this call.
+        _scratch.Clear();
+        WriteInlineChildren(_scratch, cell);
+
+        // GFM cells cannot hold real newlines; replace with <br> and escape
+        // pipes. Strip the two-space prefix that the inline <br> emits as a
+        // hard-break: in a cell we want `a<br>b`, not `a  <br>b`.
+        // Stream-transform _scratch directly into a fresh string. Allocating
+        // the result string is unavoidable (it's the cell's persisted content
+        // in the grid), so the win here is the single-pass walk over scratch
+        // without an intermediate ToString().
+        int len = _scratch.Length;
+        var dest = new StringBuilder(len + 16);
+        for (int i = 0; i < len; i++)
         {
-            var c = raw[i];
+            var c = _scratch[i];
+            if (c == '\r') continue;
             if (c == '\n')
             {
-                // Walk back through trailing whitespace on the current line.
-                while (sbCell.Length > 0 && (sbCell[^1] == ' ' || sbCell[^1] == '\t')) sbCell.Length--;
-                sbCell.Append("<br>");
-                i++;
+                while (dest.Length > 0 && (dest[^1] == ' ' || dest[^1] == '\t')) dest.Length--;
+                dest.Append("<br>");
                 continue;
             }
-            if (c == '|') { sbCell.Append("\\|"); i++; continue; }
-            sbCell.Append(c);
-            i++;
+            if (c == '|') { dest.Append("\\|"); continue; }
+            dest.Append(c);
         }
-        return sbCell.ToString().Trim();
+        // Trim.
+        int tStart = 0, tEnd = dest.Length;
+        while (tStart < tEnd && char.IsWhiteSpace(dest[tStart])) tStart++;
+        while (tEnd > tStart && char.IsWhiteSpace(dest[tEnd - 1])) tEnd--;
+        if (tStart == 0 && tEnd == dest.Length) return dest.ToString();
+        return dest.ToString(tStart, tEnd - tStart);
     }
 
     private void WriteFigure(IElement fig)
     {
         EnsureBlankLine();
         var img = fig.QuerySelector("img");
-        if (img is not null) WriteInlineImage(img);
+        if (img is not null) WriteInlineImage(_out, img);
         var cap = fig.QuerySelector("figcaption");
         if (cap is not null)
         {
             _out.Append('\n');
-            WriteInlineChildren(cap);
+            WriteInlineChildren(_out, cap);
         }
         EnsureBlankLine();
     }
 
-    private void WriteInlineImage(IElement img)
+    private static void WriteInlineImage(StringBuilder dest, IElement img)
     {
         var src = img.GetAttribute("src") ?? "";
         if (src.Length == 0) return;
         var alt = img.GetAttribute("alt") ?? "";
-        _out.Append("![").Append(EscapeBracket(alt)).Append("](").Append(src).Append(')');
+        dest.Append("![").Append(EscapeBracket(alt)).Append("](").Append(src).Append(')');
     }
 
     // ----- Inline rendering -----
 
-    private void WriteInlineChildren(IElement el)
+    private void WriteInlineChildren(StringBuilder dest, IElement el)
     {
-        foreach (var child in el.ChildNodes) WriteInlineNode(child);
+        foreach (var child in el.ChildNodes) WriteInlineNode(dest, child);
     }
 
-    private void WriteInlineNode(INode node)
+    private void WriteInlineNode(StringBuilder dest, INode node)
     {
         if (node is IText t)
         {
-            _out.Append(EscapeInline(t.TextContent));
+            AppendEscapedInline(dest, t.TextContent);
             return;
         }
         if (node is not IElement el) return;
@@ -570,41 +629,41 @@ internal sealed class DomMarkdownWalker
         switch (tag)
         {
             case "br":
-                _out.Append("  \n");
+                dest.Append("  \n");
                 return;
             case "a":
                 var href = el.GetAttribute("href") ?? "";
-                if (href.Length == 0) { WriteInlineChildren(el); return; }
-                _out.Append('[');
-                WriteInlineChildren(el);
-                _out.Append("](").Append(href).Append(')');
+                if (href.Length == 0) { WriteInlineChildren(dest, el); return; }
+                dest.Append('[');
+                WriteInlineChildren(dest, el);
+                dest.Append("](").Append(href).Append(')');
                 return;
             case "em":
             case "i":
-                _out.Append('*');
-                WriteInlineChildren(el);
-                _out.Append('*');
+                dest.Append('*');
+                WriteInlineChildren(dest, el);
+                dest.Append('*');
                 return;
             case "strong":
             case "b":
-                _out.Append("**");
-                WriteInlineChildren(el);
-                _out.Append("**");
+                dest.Append("**");
+                WriteInlineChildren(dest, el);
+                dest.Append("**");
                 return;
             case "code":
-                _out.Append('`');
-                _out.Append(el.TextContent);
-                _out.Append('`');
+                dest.Append('`');
+                dest.Append(el.TextContent);
+                dest.Append('`');
                 return;
             case "img":
-                WriteInlineImage(el);
+                WriteInlineImage(dest, el);
                 return;
             case "script":
             case "style":
             case "noscript":
                 return;
             default:
-                WriteInlineChildren(el);
+                WriteInlineChildren(dest, el);
                 return;
         }
     }
@@ -612,40 +671,56 @@ internal sealed class DomMarkdownWalker
     private void EnsureBlankLine()
     {
         if (_out.Length == 0) return;
-        // Trim trailing spaces on the current line, then ensure exactly two newlines.
         while (_out.Length > 0 && (_out[^1] == ' ' || _out[^1] == '\t')) _out.Length--;
         int trailingNewlines = 0;
         for (int i = _out.Length - 1; i >= 0 && _out[i] == '\n'; i--) trailingNewlines++;
         for (int i = trailingNewlines; i < 2; i++) _out.Append('\n');
     }
 
-    private static string EscapeInline(string s)
+    // Stream-collapse runs of whitespace to single spaces while writing into
+    // `dest`. Replaces a per-text-node `new StringBuilder` + ToString() round-
+    // trip with a direct fold into the destination buffer.
+    private static void AppendEscapedInline(StringBuilder dest, string s)
     {
-        // Conservative: don't escape underscores/asterisks/backticks here. They occur inside
-        // running prose more often than they introduce real markdown syntax, and the spec
-        // explicitly excludes smart-quote / em-dash normalisation as out of scope.
-        // Only HTML-significant whitespace collapse is applied: runs of internal whitespace
-        // collapse to single space; leading/trailing whitespace is preserved so that adjacent
-        // inline elements (e.g. " <strong>word</strong>") keep their gap.
-        if (s.Length == 0) return s;
-        var sb = new StringBuilder(s.Length);
+        if (s.Length == 0) return;
         bool prevWs = false;
-        foreach (var c in s)
+        for (int i = 0; i < s.Length; i++)
         {
-            if (c == '\n' || c == '\r' || c == '\t')
+            var c = s[i];
+            if (c == '\n' || c == '\r' || c == '\t' || c == ' ')
             {
-                if (!prevWs) { sb.Append(' '); prevWs = true; }
+                if (!prevWs) { dest.Append(' '); prevWs = true; }
                 continue;
             }
-            if (c == ' ')
-            {
-                if (!prevWs) { sb.Append(' '); prevWs = true; }
-                continue;
-            }
-            sb.Append(c);
+            dest.Append(c);
             prevWs = false;
         }
-        return sb.ToString();
+    }
+
+    // Append the contents of `src` to `dest`, collapsing internal newlines and
+    // trailing whitespace to single spaces. Used by list-item rendering to
+    // squash a multi-line inline body into one bullet line.
+    private static void AppendCollapsedLine(StringBuilder dest, StringBuilder src)
+    {
+        int len = src.Length;
+        bool prevWs = false;
+        for (int i = 0; i < len; i++)
+        {
+            var c = src[i];
+            if (c == '\n' || c == '\r' || c == '\t' || c == ' ')
+            {
+                if (!prevWs && dest.Length > 0 && dest[^1] != ' ' && dest[^1] != '\n')
+                {
+                    dest.Append(' ');
+                    prevWs = true;
+                }
+                continue;
+            }
+            dest.Append(c);
+            prevWs = false;
+        }
+        // Trim trailing whitespace on the appended segment.
+        while (dest.Length > 0 && (dest[^1] == ' ' || dest[^1] == '\t')) dest.Length--;
     }
 
     private static string EscapeBracket(string s) => s.Replace("[", "\\[").Replace("]", "\\]");

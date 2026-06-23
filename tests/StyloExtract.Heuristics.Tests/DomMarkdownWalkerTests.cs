@@ -101,6 +101,16 @@ public class DomMarkdownWalkerTests
     }
 
     [Fact]
+    public void Multi_Paragraph_Blockquote_Uses_Gfm_Blank_Line_Convention()
+    {
+        var md = Render("<blockquote><p>first paragraph</p><p>second paragraph</p></blockquote>");
+        // GFM convention: "> body\n>\n> body" — blank quote-line between paragraphs.
+        md.Should().Contain("> first paragraph");
+        md.Should().Contain("> second paragraph");
+        md.Should().MatchRegex(@"> first paragraph\s*\r?\n> \s*\r?\n> second paragraph");
+    }
+
+    [Fact]
     public void Hr_Becomes_Horizontal_Rule()
     {
         Render("<p>before</p><hr><p>after</p>")

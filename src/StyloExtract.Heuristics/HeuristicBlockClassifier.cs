@@ -538,10 +538,13 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         return result;
     }
 
-    // Markdown is only walked for content-bearing roles. Navigation, footer, breadcrumb,
-    // form, etc. are still handled by BlockRoleRenderers' role-specific paths which read
-    // from .Text and .Links. Walking the DOM for those wastes work and produces output
-    // that the role-specific renderer already supersedes.
+    // Markdown is walked for any role whose content has structure worth preserving:
+    // body content (MainContent / Article / RepeatedItem / Summary / Heading), tables
+    // and code, and the auxiliary content surfaces (Sidebar, RelatedLinks). Sidebars
+    // and related-links blocks routinely host TOCs and on-this-page lists that read
+    // as plain-text noise without the DOM walker. Navigation, breadcrumb, form, and
+    // footer keep their role-specific projections in BlockRoleRenderers which beat a
+    // generic walk on link-list shapes.
     private static bool ShouldRenderMarkdown(BlockRole role) => role
         is BlockRole.MainContent
         or BlockRole.Article
@@ -549,7 +552,9 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         or BlockRole.Summary
         or BlockRole.Heading
         or BlockRole.Table
-        or BlockRole.CodeBlock;
+        or BlockRole.CodeBlock
+        or BlockRole.Sidebar
+        or BlockRole.RelatedLinks;
 
     private double ComputeScore(IElement element, BlockRole role)
     {

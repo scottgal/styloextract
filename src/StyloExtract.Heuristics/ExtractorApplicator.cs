@@ -75,7 +75,9 @@ public sealed class ExtractorApplicator : IExtractorApplicator
         or BlockRole.Summary
         or BlockRole.Heading
         or BlockRole.Table
-        or BlockRole.CodeBlock;
+        or BlockRole.CodeBlock
+        or BlockRole.Sidebar
+        or BlockRole.RelatedLinks;
 
     private static double LinkDensityOf(IElement element)
     {

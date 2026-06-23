@@ -4,6 +4,13 @@ namespace StyloExtract.Performance.Benchmarks;
 
 public static class Program
 {
-    public static void Main(string[] args)
-        => BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
+    public static async Task Main(string[] args)
+    {
+        if (args.Length > 0 && args[0] == "--dump")
+        {
+            await SmokeRunner.RunAsync();
+            return;
+        }
+        BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
+    }
 }

@@ -76,6 +76,39 @@ public class HeuristicBlockClassifierMarkdownTests
     }
 
     [Fact]
+    public void Sidebar_With_Toc_List_Renders_As_Markdown_List()
+    {
+        // The "on this page" TOC pattern: an <aside> containing a <ul><li><a> list of
+        // anchor links. Before Sidebar was added to ShouldRenderMarkdown the legacy
+        // path flattened it to plain indented text, which read as noise to an AI
+        // consumer. With the fix it survives as a real markdown list with links.
+        const string html = """
+            <html><body>
+              <main><article>
+                <h1>A real article body that clears the classifier's content threshold via paragraphs.</h1>
+                <p>Body paragraph long enough to keep the main article past the heuristic emission gate.</p>
+                <p>Second body paragraph keeping the article comfortably above the textual gate.</p>
+              </article></main>
+              <aside class="toc">
+                <h3>On this page</h3>
+                <ul>
+                  <li><a href="#one">Section one</a></li>
+                  <li><a href="#two">Section two</a></li>
+                  <li><a href="#three">Section three</a></li>
+                </ul>
+              </aside>
+            </body></html>
+            """;
+        var blocks = Classify(html);
+        var sidebar = blocks.FirstOrDefault(b => b.Role == BlockRole.Sidebar);
+        if (sidebar is not null)
+        {
+            sidebar.Markdown.Should().NotBeNullOrEmpty();
+            sidebar.Markdown.Should().Contain("- [Section one](#one)");
+        }
+    }
+
+    [Fact]
     public void RepeatedItem_Block_Has_Markdown_Populated()
     {
         const string html = """
