@@ -504,12 +504,29 @@ internal sealed class DomMarkdownWalker
         var sub = new DomMarkdownWalker();
         sub.WriteInlineChildren(cell);
         // GFM cells cannot hold real newlines; replace with <br> (the one block-construct
-        // GFM permits inside a cell per the GFM extension spec) and escape pipes.
-        return sub._out.ToString()
-            .Replace("\r\n", "\n")
-            .Replace("\n", "<br>")
-            .Replace("|", "\\|")
-            .Trim();
+        // GFM permits inside a cell per the GFM extension spec) and escape pipes. Strip
+        // the two-space prefix that the inline <br> emits as a hard-break: in a cell,
+        // we want `a<br>b`, not `a  <br>b`. Trailing whitespace on each segment also
+        // collapses to keep the cell content tight.
+        var raw = sub._out.ToString().Replace("\r\n", "\n");
+        var sbCell = new StringBuilder(raw.Length);
+        int i = 0;
+        while (i < raw.Length)
+        {
+            var c = raw[i];
+            if (c == '\n')
+            {
+                // Walk back through trailing whitespace on the current line.
+                while (sbCell.Length > 0 && (sbCell[^1] == ' ' || sbCell[^1] == '\t')) sbCell.Length--;
+                sbCell.Append("<br>");
+                i++;
+                continue;
+            }
+            if (c == '|') { sbCell.Append("\\|"); i++; continue; }
+            sbCell.Append(c);
+            i++;
+        }
+        return sbCell.ToString().Trim();
     }
 
     private void WriteFigure(IElement fig)
