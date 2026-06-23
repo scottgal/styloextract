@@ -54,7 +54,7 @@ internal sealed class DomMarkdownWalker
             return;
         }
         if (node is not IElement el) return;
-        var tag = el.TagName.ToLowerInvariant();
+        var tag = el.LocalName;
         switch (tag)
         {
             case "script":
@@ -236,7 +236,7 @@ internal sealed class DomMarkdownWalker
         {
             if (child is IText t) { AppendEscapedInline(dest, t.TextContent); continue; }
             if (child is not IElement c) continue;
-            var tag = c.TagName.ToLowerInvariant();
+            var tag = c.LocalName;
             switch (tag)
             {
                 case "p":
@@ -373,7 +373,7 @@ internal sealed class DomMarkdownWalker
         bool hadAny = false;
         foreach (var c in tr.Children)
         {
-            var tag = c.TagName.ToLowerInvariant();
+            var tag = c.LocalName;
             if (tag == "td") return false;
             if (tag == "th") hadAny = true;
         }
@@ -390,7 +390,7 @@ internal sealed class DomMarkdownWalker
         {
             foreach (var cell in tr.Children)
             {
-                var ct = cell.TagName.ToLowerInvariant();
+                var ct = cell.LocalName;
                 if (ct != "td" && ct != "th") continue;
                 if (CellHasBlockContent(cell)) return true;
             }
@@ -399,7 +399,7 @@ internal sealed class DomMarkdownWalker
         {
             foreach (var cell in tr.Children)
             {
-                var ct = cell.TagName.ToLowerInvariant();
+                var ct = cell.LocalName;
                 if (ct != "td" && ct != "th") continue;
                 if (CellHasBlockContent(cell)) return true;
             }
@@ -456,7 +456,7 @@ internal sealed class DomMarkdownWalker
 
             foreach (var cell in tr.Children)
             {
-                var ct = cell.TagName.ToLowerInvariant();
+                var ct = cell.LocalName;
                 if (ct != "td" && ct != "th") continue;
 
                 FillCarry();
@@ -625,7 +625,7 @@ internal sealed class DomMarkdownWalker
             return;
         }
         if (node is not IElement el) return;
-        var tag = el.TagName.ToLowerInvariant();
+        var tag = el.LocalName;
         switch (tag)
         {
             case "br":

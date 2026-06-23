@@ -25,7 +25,7 @@ public static class XPathBuilder
                 if (sibling.TagName == current.TagName) idx++;
                 sibling = sibling.PreviousElementSibling;
             }
-            parts.Push($"{current.TagName.ToLowerInvariant()}[{idx}]");
+            parts.Push($"{current.LocalName}[{idx}]");
             current = current.ParentElement;
         }
         return parts.Count > 0 ? "/" + string.Join("/", parts) : "";

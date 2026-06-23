@@ -26,7 +26,7 @@ public sealed class ShingleGenerator
 
     private void Walk(IElement element, ulong ancestorPathHash, List<ulong> sink)
     {
-        var tag = element.TagName.ToLowerInvariant();
+        var tag = element.LocalName;
         var nthBucket = BucketSiblingIndex(element);
         var rawClasses = (element.GetAttribute("class") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var filtered = _classNoise.Filter(rawClasses);

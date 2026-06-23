@@ -141,7 +141,7 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         var semanticElements = new List<IElement>();
         for (int i = 0; i < candidates.Count; i++)
         {
-            var t = candidates[i].Element.TagName.ToLowerInvariant();
+            var t = candidates[i].Element.LocalName;
             if (t != "main" && t != "article") continue;
             var el = candidates[i].Element;
             if (el.TextContent.Trim().Length < SubstantialSemanticTextThreshold) continue;
@@ -153,7 +153,7 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
             for (int i = 0; i < candidates.Count; i++)
             {
                 var c = candidates[i];
-                var ctag = c.Element.TagName.ToLowerInvariant();
+                var ctag = c.Element.LocalName;
                 if (ctag != "div" && ctag != "section") continue;
                 foreach (var sem in semanticElements)
                 {
@@ -402,7 +402,7 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         bool IsSemanticTagCandidate(IElement el, double conf)
         {
             if (conf < SemanticTagConfidenceFloor) return false;
-            var tag = el.TagName.ToLowerInvariant();
+            var tag = el.LocalName;
             return tag is "main" or "article" or "header" or "nav" or "aside" or "footer";
         }
 
@@ -591,7 +591,7 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         // Tag-based nudge: prefer semantically specific tags over generic wrappers
         // when both are classified as the same role. Only <div> and <section> get a
         // mild penalty; named semantic tags are already captured in roleBonus.
-        var tag = element.TagName.ToLowerInvariant();
+        var tag = element.LocalName;
         var tagNudge = tag is "div" ? -50.0 : 0.0;
 
         // Class/id hint bonus: only applies when role is MainContent (wrapper divs with
@@ -602,43 +602,60 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         double classHintBonus = 0.0;
         if (role is BlockRole.MainContent or BlockRole.Boilerplate)
         {
-            var classTokens = (element.GetAttribute("class") ?? "")
-                .Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            var idAttr = element.GetAttribute("id") ?? "";
-            // Combine class tokens and id as one pool of tokens to check.
-            var allHintTokens = idAttr.Length > 0
-                ? classTokens.Append(idAttr)
-                : classTokens;
-            foreach (var token in allHintTokens)
-            {
-                var t = token.ToLowerInvariant();
-                if (t.Contains("content") || t.Contains("article") || t.Contains("post")
-                    || t.Contains("main") || t.Contains("entry"))
-                {
-                    classHintBonus += 300.0;
-                    break;
-                }
-            }
-            foreach (var token in allHintTokens)
-            {
-                var t = token.ToLowerInvariant();
-                if (t.Contains("ad") || t.Contains("advertisement") || t.Contains("sidebar")
-                    || t.Contains("nav") || t.Contains("menu") || t.Contains("footer")
-                    || t.Contains("header") || t.Contains("widget") || t.Contains("comments"))
-                {
-                    classHintBonus -= 300.0;
-                    break;
-                }
-            }
+            // ContentTokenAny / ChromeTokenAny avoid the prior path's three allocations
+            // per token: a Split() string[] for the class attribute, a ToLowerInvariant
+            // string per token, and a LINQ Append wrapper for the id pool. Both checks
+            // now walk the class span without copying, then check id once.
+            if (HasAnyHintToken(element, ContentHints)) classHintBonus += 300.0;
+            if (HasAnyHintToken(element, ChromeHints)) classHintBonus -= 300.0;
         }
 
         return baseScore + roleBonus + tagNudge + classHintBonus;
     }
 
+    private static readonly string[] ContentHints =
+        { "content", "article", "post", "main", "entry" };
+
+    private static readonly string[] ChromeHints =
+        { "ad", "advertisement", "sidebar", "nav", "menu", "footer",
+          "header", "widget", "comments" };
+
+    // Returns true if any class token OR the id contains any hint as a substring
+    // (case-insensitive). Same semantics as the prior Split() + ToLowerInvariant()
+    // + Contains() chain, with zero allocation on the typical path.
+    private static bool HasAnyHintToken(IElement element, string[] hints)
+    {
+        var classAttr = element.GetAttribute("class");
+        if (!string.IsNullOrEmpty(classAttr))
+        {
+            ReadOnlySpan<char> remaining = classAttr.AsSpan();
+            while (remaining.Length > 0)
+            {
+                int spaceIdx = remaining.IndexOf(' ');
+                ReadOnlySpan<char> token = spaceIdx < 0 ? remaining : remaining[..spaceIdx];
+                if (token.Length > 0 && AnyHintMatchesSpan(token, hints)) return true;
+                if (spaceIdx < 0) break;
+                remaining = remaining[(spaceIdx + 1)..];
+            }
+        }
+        var id = element.GetAttribute("id");
+        if (!string.IsNullOrEmpty(id) && AnyHintMatchesSpan(id.AsSpan(), hints))
+            return true;
+        return false;
+    }
+
+    private static bool AnyHintMatchesSpan(ReadOnlySpan<char> token, string[] hints)
+    {
+        foreach (var hint in hints)
+        {
+            if (token.Contains(hint.AsSpan(), StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
     private (BlockRole Role, double Confidence) ClassifyOne(IElement element)
     {
-        var tag = element.TagName.ToLowerInvariant();
-        var classTokens = (element.GetAttribute("class") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var tag = element.LocalName;
         var text = element.TextContent;
         var linkDensity = ComputeLinkDensity(element);
 
@@ -665,7 +682,7 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
             }
         }
 
-        if (tag == "footer" || classTokens.Any(c => c.Contains("footer", StringComparison.OrdinalIgnoreCase)))
+        if (tag == "footer" || ClassAttrContains(element, "footer"))
         {
             if (TextContainsAny(_footerPhrases) || TextMatchesAny(_copyrightPatterns))
             {
@@ -765,8 +782,46 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
     {
         var totalText = element.TextContent.Length;
         if (totalText == 0) return 0;
-        var linkText = element.QuerySelectorAll("a").Sum(a => a.TextContent.Length);
+        // Manual descendant walk instead of QuerySelectorAll("a").Sum(...) — that path
+        // allocates an IElementCollection wrapper + a LINQ enumerator iterator on every
+        // call. ComputeLinkDensity runs at least twice per candidate (once on the
+        // semantic-element scan, once inside ComputeScore) so a 50-candidate page paid
+        // ~100 allocations for what's a single tree walk. SumLinkText is iterative to
+        // avoid recursion blow-up on Wikipedia-shaped trees.
+        var linkText = SumLinkText(element);
         return (double)linkText / totalText;
+    }
+
+    // Case-insensitive contains check against any class token, no allocation.
+    private static bool ClassAttrContains(IElement element, string needle)
+    {
+        var classAttr = element.GetAttribute("class");
+        if (string.IsNullOrEmpty(classAttr)) return false;
+        ReadOnlySpan<char> remaining = classAttr.AsSpan();
+        while (remaining.Length > 0)
+        {
+            int spaceIdx = remaining.IndexOf(' ');
+            ReadOnlySpan<char> token = spaceIdx < 0 ? remaining : remaining[..spaceIdx];
+            if (token.Length > 0 && token.Contains(needle.AsSpan(), StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (spaceIdx < 0) break;
+            remaining = remaining[(spaceIdx + 1)..];
+        }
+        return false;
+    }
+
+    private static int SumLinkText(IElement root)
+    {
+        int total = 0;
+        var stack = new Stack<IElement>();
+        stack.Push(root);
+        while (stack.Count > 0)
+        {
+            var cur = stack.Pop();
+            if (cur.LocalName == "a") total += cur.TextContent.Length;
+            foreach (var child in cur.Children) stack.Push(child);
+        }
+        return total;
     }
 
     private static IReadOnlyList<ExtractedLink> ExtractLinks(IElement element)
@@ -807,14 +862,42 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
     /// </summary>
     private static bool IdOrClassMatches(IElement element, HashSet<string> hints)
     {
-        var classTokens = (element.GetAttribute("class") ?? "")
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (classTokens.Any(c => hints.Any(h => c.Contains(h, StringComparison.OrdinalIgnoreCase))))
-            return true;
+        // Tokenise the class attribute without allocating a string[]. We walk the span
+        // looking for whitespace separators, then check each token slice against every
+        // hint via case-insensitive Contains over spans. Same semantics as the prior
+        // Split + LINQ chain (any token contains any hint as a substring), with zero
+        // allocation on the typical path.
+        var classAttr = element.GetAttribute("class");
+        if (!string.IsNullOrEmpty(classAttr))
+        {
+            ReadOnlySpan<char> remaining = classAttr.AsSpan();
+            while (remaining.Length > 0)
+            {
+                int spaceIdx = remaining.IndexOf(' ');
+                ReadOnlySpan<char> token = spaceIdx < 0 ? remaining : remaining[..spaceIdx];
+                if (token.Length > 0)
+                {
+                    foreach (var hint in hints)
+                    {
+                        if (token.Contains(hint.AsSpan(), StringComparison.OrdinalIgnoreCase))
+                            return true;
+                    }
+                }
+                if (spaceIdx < 0) break;
+                remaining = remaining[(spaceIdx + 1)..];
+            }
+        }
 
         var id = element.GetAttribute("id");
-        if (!string.IsNullOrEmpty(id) && hints.Any(h => id.Contains(h, StringComparison.OrdinalIgnoreCase)))
-            return true;
+        if (!string.IsNullOrEmpty(id))
+        {
+            ReadOnlySpan<char> idSpan = id.AsSpan();
+            foreach (var hint in hints)
+            {
+                if (idSpan.Contains(hint.AsSpan(), StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
 
         return false;
     }

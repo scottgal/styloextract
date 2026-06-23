@@ -45,7 +45,7 @@ public sealed class AnchorPathFingerprinter
         var current = element.ParentElement;
         while (current is not null)
         {
-            sb.Append(current.TagName.ToLowerInvariant());
+            sb.Append(current.LocalName);
             sb.Append('/');
             current = current.ParentElement;
         }

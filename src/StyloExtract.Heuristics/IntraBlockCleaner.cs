@@ -83,7 +83,7 @@ internal static class IntraBlockCleaner
 
     private static bool LooksLikeContamination(IElement el)
     {
-        var tag = el.TagName.ToLowerInvariant();
+        var tag = el.LocalName;
 
         // A) Any <nav> descendant is contamination.
         if (tag == "nav") return true;
@@ -120,7 +120,7 @@ internal static class IntraBlockCleaner
             var interactiveCount = 0;
             foreach (var child in children)
             {
-                var childTag = child.TagName.ToLowerInvariant();
+                var childTag = child.LocalName;
                 if (childTag == "button" || childTag == "a")
                     interactiveCount++;
             }

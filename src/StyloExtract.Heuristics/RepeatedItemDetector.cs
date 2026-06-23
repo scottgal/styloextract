@@ -110,8 +110,8 @@ internal static class RepeatedItemDetector
             // Exclude prose/inline-flow child tags (p, li, etc.) — they are content flow
             // inside a single block, not structural repeated items.
             var byTag = substantialChildren
-                .Where(c => !SkipChildTags.Contains(c.TagName.ToLowerInvariant()))
-                .GroupBy(c => c.TagName.ToLowerInvariant());
+                .Where(c => !SkipChildTags.Contains(c.LocalName))
+                .GroupBy(c => c.LocalName);
 
             foreach (var tagGroup in byTag)
             {

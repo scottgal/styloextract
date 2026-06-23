@@ -52,7 +52,7 @@ public sealed class PqGramExtractor
     private void Walk(IElement element, string[] stem, int stemHead, string[] window,
         Dictionary<string, int> counts, StringBuilder sb)
     {
-        var label = element.TagName.ToLowerInvariant();
+        var label = element.LocalName;
         // Push label at stemHead (which is the index of the OLDEST entry — overwriting it
         // is equivalent to Dequeue + Enqueue), then advance stemHead by one so the next
         // recursion writes into the next slot.
@@ -68,7 +68,7 @@ public sealed class PqGramExtractor
         // Emit pq-grams over this node's children with the _q-wide sliding window.
         foreach (var child in element.Children)
         {
-            window[windowHead] = child.TagName.ToLowerInvariant();
+            window[windowHead] = child.LocalName;
             windowHead = (windowHead + 1) % _q;
             EmitPqGram(stem, nextHead, window, windowHead, counts, sb);
         }
