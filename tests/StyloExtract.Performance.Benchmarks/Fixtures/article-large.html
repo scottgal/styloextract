@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html><head><title>Article: Large mixed-content reference page</title></head>
+<body>
+  <header>
+    <nav class="main-menu">
+      <a href="/">Home</a> <a href="/docs">Docs</a> <a href="/api">API</a> <a href="/blog">Blog</a> <a href="/about">About</a> <a href="/contact">Contact</a>
+    </nav>
+    <nav class="breadcrumb">
+      <a href="/">Home</a> / <a href="/docs">Docs</a> / <a href="/docs/reference">Reference</a> / Configuration
+    </nav>
+  </header>
+  <main>
+    <article>
+      <h1>The Complete Configuration Reference</h1>
+      <p>This is the longest single page in the documentation set. It exists to exercise the structured walker under realistic load — many headings, prose paragraphs, fenced code blocks, lists, and tables — without falling off into the synthetic-corner-case territory that microbenchmarks reward.</p>
+
+      <h2>Section one: lifecycle</h2>
+      <p>The extraction lifecycle is the same on every request, regardless of which template path is taken. The parser produces a DOM, the cleaner removes scripts and tracking blobs, the fingerprinter computes a structural signature, and the segmenter / classifier produce the block list that the renderer turns into markdown.</p>
+      <p>The interesting question is how much of that work is amortised across requests with the same template signature. The answer is "most of it", which is why the fast-path threshold defaults to 0.85: tighter and you miss too many real matches; looser and you accept too many false ones.</p>
+      <ul>
+        <li>Parse: AngleSharp DOM construction, dominated by tokeniser cost on large pages.</li>
+        <li>Clean: a single CSS selector pass removes a small fixed set of element kinds.</li>
+        <li>Fingerprint: MinHash over shingles plus an anchor-path sketch plus a pq-gram sample.</li>
+        <li>Segment: walk the body once, emit semantic tags and "blocky" divs as candidates.</li>
+        <li>Classify: score each candidate, prune overlapping subtrees, demote chrome.</li>
+        <li>Render: walk each block element subtree, emit structured markdown.</li>
+      </ul>
+
+      <h2>Section two: knobs</h2>
+      <p>Most of the knobs you can turn live in the orchestration layer. The classifier itself is intentionally not configurable — its scoring constants are baked in and proven against the WCXB corpus.</p>
+      <table>
+        <thead><tr><th>Knob</th><th>Default</th><th>Range</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>FastPathThreshold</td><td>0.85</td><td>0.70 - 0.95</td><td>MinHash Jaccard cosine similarity for fast-path hits.</td></tr>
+          <tr><td>SlowPathThreshold</td><td>0.75</td><td>0.60 - 0.85</td><td>Slow-path; should always be &lt; fast-path.</td></tr>
+          <tr><td>RefitMissRatio</td><td>0.35</td><td>0.15 - 0.50</td><td>EWMA bug-out threshold for cached extractors.</td></tr>
+          <tr><td>RefitMinObservations</td><td>5</td><td>3 - 20</td><td>Stability window before refit eligibility.</td></tr>
+          <tr><td>RefitMinRules</td><td>3</td><td>1 - 10</td><td>Minimum rule population for refit.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Section three: code</h2>
+      <p>The default service registration looks like this in C#:</p>
+      <pre><code class="language-csharp">var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddStyloExtract(opts =&gt; {
+    opts.FastPathThreshold = 0.85;
+    opts.SlowPathThreshold = 0.75;
+    opts.Refit.MissRatio = 0.35;
+    opts.Refit.MinObservations = 5;
+    opts.Refit.MinRules = 3;
+});
+
+var app = builder.Build();
+app.UseStyloExtract();
+app.Run();</code></pre>
+      <p>And the equivalent in Python via the cross-language binding:</p>
+      <pre><code class="language-python">from styloextract import Extractor
+
+ex = Extractor(
+    fast_path_threshold=0.85,
+    slow_path_threshold=0.75,
+    refit_miss_ratio=0.35,
+)
+
+result = ex.extract(html, source_uri="https://example.com/page")
+print(result.markdown)</code></pre>
+
+      <h2>Section four: more prose</h2>
+      <p>Real documentation pages have far more prose than knobs. They exist to teach the reader how the system thinks, not just what each setting does. This section is where we add that prose so the benchmark page resembles a real reference page rather than a synthetic one.</p>
+      <p>Block extraction is fundamentally a structural problem. The classifier reads tag, class, id, link density, and text length. It does not read words. The proof is the WCXB F1 score: matching the rs-trafilatura baseline on English-language pages while running on any well-formed HTML document with no language-specific dependencies.</p>
+      <p>This generalises to multilingual pages, machine-generated SPA bodies, and the long tail of CMS templates that produce structurally-recognisable shapes even when their content is unique. The cost is that pages with no semantic structure — image-only carousels, table-only catalogues — are not great candidates for prose extraction. They are great candidates for shape-of-page fingerprinting, which is a different question entirely.</p>
+      <p>If you find yourself wishing the classifier read words, the right move is usually to add a deterministic post-filter on top of the block list rather than baking word-level logic into the classifier itself. The block list is your stable abstraction. Don't fight it.</p>
+
+      <h2>Section five: links and inline</h2>
+      <p>For completeness, this section exercises every inline run kind. <a href="/docs/profiles">Links to another doc</a>, <strong>bold text inside a sentence</strong>, <em>italic text inside a sentence</em>, and <code>inline.code()</code> in the same sentence. <br>A line break here too.</p>
+      <p>The walker emits each of these as its own GitHub Flavored Markdown construct. Bold becomes <code>**bold**</code>. Italic becomes <code>*italic*</code>. Code spans become backticked. Links become bracket-and-parenthesis. Line breaks become two-space-newline hard breaks.</p>
+      <blockquote>
+        <p>A quoted aside, included to exercise the <code>&lt;blockquote&gt;</code> path. The walker prefixes each line of quoted content with <code>&gt; </code>, including empty lines inside multi-paragraph quotes.</p>
+        <p>A second paragraph inside the same quote, to make sure the per-line prefix logic does the right thing on multi-paragraph input.</p>
+      </blockquote>
+
+      <h2>Section six: conclusion</h2>
+      <p>That is the configuration reference. See also the <a href="/docs/operations">operations guide</a>, the <a href="/docs/refit">refit guide</a>, and the <a href="/docs/troubleshooting">troubleshooting guide</a> for runtime questions.</p>
+    </article>
+  </main>
+  <aside class="toc">
+    <h3>On this page</h3>
+    <ul>
+      <li><a href="#lifecycle">Lifecycle</a></li>
+      <li><a href="#knobs">Knobs</a></li>
+      <li><a href="#code">Code</a></li>
+      <li><a href="#prose">More prose</a></li>
+      <li><a href="#links">Links</a></li>
+      <li><a href="#conclusion">Conclusion</a></li>
+    </ul>
+  </aside>
+  <footer>
+    &copy; 2026 StyloExtract project. Reference revision 12. Generated by the documentation pipeline.
+  </footer>
+</body></html>

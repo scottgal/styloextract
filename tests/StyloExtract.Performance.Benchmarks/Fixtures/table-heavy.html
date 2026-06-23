@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html><head><title>Table-heavy reference</title></head>
+<body>
+  <main>
+    <article>
+      <h1>Table-Heavy Reference</h1>
+      <p>This page exercises the GFM table emit path with a mix of simple, colspan, rowspan, mid-vote alignment, escaped pipes, and an HTML-fallback case (nested table). Designed to put the slot-grid algorithm under repeated load so allocation patterns surface.</p>
+
+      <h2>Simple table</h2>
+      <table>
+        <thead><tr><th>Name</th><th>Age</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td>Ada</td><td>36</td><td>Engineer</td></tr>
+          <tr><td>Bob</td><td>40</td><td>Manager</td></tr>
+          <tr><td>Cao</td><td>28</td><td>Designer</td></tr>
+          <tr><td>Diana</td><td>33</td><td>Engineer</td></tr>
+          <tr><td>Edgar</td><td>45</td><td>VP</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Aligned table</h2>
+      <table>
+        <thead><tr><th>Left</th><th>Center</th><th>Right</th></tr></thead>
+        <tbody>
+          <tr><td align="left">a</td><td align="center">b</td><td align="right">c</td></tr>
+          <tr><td align="left">aa</td><td align="center">bb</td><td align="right">cc</td></tr>
+          <tr><td align="left">aaa</td><td align="center">bbb</td><td align="right">ccc</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Colspan table</h2>
+      <table>
+        <thead><tr><th>A</th><th>B</th><th>C</th><th>D</th></tr></thead>
+        <tbody>
+          <tr><td colspan="2">spans two</td><td>x</td><td>y</td></tr>
+          <tr><td>1</td><td>2</td><td>3</td><td>4</td></tr>
+          <tr><td>5</td><td>6</td><td colspan="2">spans two end</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Rowspan table</h2>
+      <table>
+        <thead><tr><th>Group</th><th>Name</th></tr></thead>
+        <tbody>
+          <tr><td rowspan="3">Team A</td><td>Ada</td></tr>
+          <tr><td>Bob</td></tr>
+          <tr><td>Cao</td></tr>
+          <tr><td rowspan="2">Team B</td><td>Diana</td></tr>
+          <tr><td>Edgar</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Escaped pipes</h2>
+      <table>
+        <thead><tr><th>Glob</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>a | b</td><td>matches a or b</td></tr>
+          <tr><td>(c | d)</td><td>matches c or d in a group</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Nested-table fallback</h2>
+      <table>
+        <thead><tr><th>Outer</th></tr></thead>
+        <tbody>
+          <tr><td>
+            <table>
+              <thead><tr><th>Inner A</th><th>Inner B</th></tr></thead>
+              <tbody><tr><td>1</td><td>2</td></tr></tbody>
+            </table>
+          </td></tr>
+        </tbody>
+      </table>
+    </article>
+  </main>
+</body></html>

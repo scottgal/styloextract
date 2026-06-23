@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>StyloExtract.Performance.Benchmarks</RootNamespace>
+    <AssemblyName>StyloExtract.Performance.Benchmarks</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Core\StyloExtract.Core.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Fingerprint\StyloExtract.Fingerprint.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Heuristics\StyloExtract.Heuristics.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Html\StyloExtract.Html.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Markdown\StyloExtract.Markdown.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Templates\StyloExtract.Templates.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Fixtures\**\*.html" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

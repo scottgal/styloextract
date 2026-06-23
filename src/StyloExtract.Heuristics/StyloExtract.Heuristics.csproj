@@ -12,6 +12,7 @@
   <ItemGroup>
     <!-- InternalsVisibleTo via csproj avoids a separate AssemblyInfo.cs file. -->
     <InternalsVisibleTo Include="StyloExtract.Heuristics.Tests" />
+    <InternalsVisibleTo Include="StyloExtract.Performance.Benchmarks" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />

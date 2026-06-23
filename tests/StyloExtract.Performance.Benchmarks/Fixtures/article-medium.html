@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html><head><title>Article: Medium documentation page</title></head>
+<body>
+  <header>
+    <nav class="main-menu">
+      <a href="/">Home</a> <a href="/docs">Docs</a> <a href="/blog">Blog</a> <a href="/about">About</a> <a href="/contact">Contact</a>
+    </nav>
+  </header>
+  <main>
+    <article>
+      <h1>Configuration Reference</h1>
+      <p>This page documents every option understood by the extraction pipeline. It is the longest single page in the documentation and exists to keep the formatting pipeline honest under mixed-content load — prose, fenced code, inline links, ordered and unordered lists, plus a couple of small tables.</p>
+      <h2>Service registration</h2>
+      <p>Register the extraction service in your <code>Program.cs</code> using one of the helper extensions. The recommended path is <strong>full pipeline with SQLite-backed template store</strong> because it ships with the dependencies you already have, and the only knob worth changing in production is the fast-path threshold.</p>
+      <pre><code class="language-csharp">var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddStyloExtract(opts =&gt; {
+    opts.FastPathThreshold = 0.85;
+    opts.SlowPathThreshold = 0.75;
+});
+
+var app = builder.Build();
+app.UseStyloExtract();
+app.Run();</code></pre>
+      <p>Each helper composes a set of defaults that suit a different deployment posture. See the table below for the deltas.</p>
+      <table>
+        <thead><tr><th>Helper</th><th>Persistence</th><th>Fast-path threshold</th><th>Slow-path threshold</th></tr></thead>
+        <tbody>
+          <tr><td><code>AddStyloExtract</code></td><td>SQLite</td><td>0.85</td><td>0.75</td></tr>
+          <tr><td><code>AddStyloExtractInMemory</code></td><td>InMemory</td><td>0.85</td><td>0.75</td></tr>
+          <tr><td><code>AddStyloExtractEphemeral</code></td><td>None</td><td>0.95</td><td>0.85</td></tr>
+        </tbody>
+      </table>
+      <h2>Profiles</h2>
+      <p>Pass an <code>ExtractionProfile</code> per request to control what the renderer emits. The profile is orthogonal to detection — it controls projection, not classification.</p>
+      <ul>
+        <li><strong>MainContentOnly:</strong> emits MainContent, Article, Heading, Summary, Table, CodeBlock, and RepeatedItem roles. Drops navigation, chrome, ads.</li>
+        <li><strong>RagFull:</strong> emits everything except footers, headers, ads, cookie banners, boilerplate, and the navigation roles.</li>
+        <li><strong>AgentNavigation:</strong> the inverse of <em>MainContentOnly</em>: emits navigation, breadcrumb, and form roles for an agent that needs to walk the site.</li>
+        <li><strong>DebugFull:</strong> emits everything with diagnostic comments above each block.</li>
+      </ul>
+      <h2>Thresholds</h2>
+      <p>Two thresholds control the match path each request takes.</p>
+      <ol>
+        <li>The fast-path threshold gates whether a previously-seen layout signature counts as a hit.</li>
+        <li>The slow-path threshold gates whether a similar-but-not-identical layout counts as a same-template observation for refit purposes.</li>
+        <li>When neither threshold is met the request enters the novel-ephemeral path and induces a fresh extractor for the next observation.</li>
+      </ol>
+      <h2>Drift and refit</h2>
+      <p>When the rule miss-ratio for a cached extractor exceeds the configured ratio, the orchestrator bug-outs and refits. See <a href="/docs/refit">the refit guide</a> for the math behind the EWMA decision.</p>
+      <blockquote>
+        <p>If your <code>RulesMissed</code> divided by <code>RulesApplied + RulesMissed</code> exceeds 0.7 for three consecutive observations, the cached extractor is replaced.</p>
+      </blockquote>
+      <p>This concludes the configuration tour. Continue to <a href="/docs/operations">operations</a> for runtime tuning.</p>
+    </article>
+  </main>
+  <aside>
+    <h3>On this page</h3>
+    <ul>
+      <li><a href="#service-registration">Service registration</a></li>
+      <li><a href="#profiles">Profiles</a></li>
+      <li><a href="#thresholds">Thresholds</a></li>
+      <li><a href="#drift-and-refit">Drift and refit</a></li>
+    </ul>
+  </aside>
+  <footer>&copy; 2026 StyloExtract. Configuration reference rev. 7.</footer>
+</body></html>
