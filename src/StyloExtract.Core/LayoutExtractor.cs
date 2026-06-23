@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Mostlylucid.Ephemeral;
 using StyloExtract.Abstractions;
+using StyloExtract.Core.OperatorTemplates;
 using StyloExtract.Heuristics;
 using StyloExtract.Templates;
 
@@ -26,6 +27,8 @@ public sealed class LayoutExtractor : ILayoutExtractor
     private readonly TypedSignalSink<StyloExtractSignal>? _signals;
     private readonly ILogger<LayoutExtractor>? _logger;
 
+    private readonly IOperatorTemplateStore? _operatorTemplates;
+
     public LayoutExtractor(
         IHtmlDomParser parser,
         IDomCleaner cleaner,
@@ -42,7 +45,8 @@ public sealed class LayoutExtractor : ILayoutExtractor
         RefitOrchestrator refit,
         ITemplateVersionEventSink eventSink,
         TypedSignalSink<StyloExtractSignal>? signals = null,
-        ILogger<LayoutExtractor>? logger = null)
+        ILogger<LayoutExtractor>? logger = null,
+        IOperatorTemplateStore? operatorTemplates = null)
     {
         _parser = parser; _cleaner = cleaner; _fingerprinter = fingerprinter;
         _segmenter = segmenter; _classifier = classifier; _renderer = renderer;
@@ -52,6 +56,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
         _eventSink = eventSink;
         _signals = signals;
         _logger = logger;
+        _operatorTemplates = operatorTemplates;
     }
 
     public async Task<ExtractionResult> ExtractAsync(
@@ -78,12 +83,59 @@ public sealed class LayoutExtractor : ILayoutExtractor
         parseTimer.Stop();
         _signals?.Raise(StyloExtractSignals.ParseDone, default);
 
+        // Operator-template override path. When a host has an operator-authored
+        // template the entire induction pipeline (fingerprint, index probe, classify,
+        // induce/refit) is skipped — we synthesise a LearnedExtractor from the
+        // operator rules and apply it directly. The "hard override" semantics are
+        // documented in docs/operator-templates-design.md.
+        var resolvedHost = options.HostOverride ?? sourceUri?.Host ?? "";
+        if (_operatorTemplates is not null
+            && !string.IsNullOrEmpty(resolvedHost)
+            && _operatorTemplates.TryGet(resolvedHost, out var operatorTemplate))
+        {
+            var overrideMatchTimer = Stopwatch.StartNew();
+            var synthetic = OperatorTemplateAdapter.ToLearnedExtractor(operatorTemplate);
+            var appliedOverride = _applicator.Apply(doc, synthetic);
+            overrideMatchTimer.Stop();
+            var overrideRenderTimer = Stopwatch.StartNew();
+            var overrideMarkdown = _renderer.Render(appliedOverride.Blocks, options.Profile);
+            overrideRenderTimer.Stop();
+            total.Stop();
+            return new ExtractionResult
+            {
+                SourceUri = sourceUri,
+                Title = null,
+                Match = new LayoutMatch
+                {
+                    Status = MatchStatus.OperatorOverride,
+                    TemplateId = synthetic.TemplateId,
+                    TemplateVersion = synthetic.Version,
+                    FingerprintHex = "",
+                    Similarity = 1.0,
+                    ObservationCount = 0,
+                    LatencyMatch = overrideMatchTimer.Elapsed,
+                    LatencyTotal = total.Elapsed,
+                },
+                Markdown = overrideMarkdown,
+                Blocks = appliedOverride.Blocks,
+                Stats = new ExtractionStats
+                {
+                    BlockCount = appliedOverride.Blocks.Count,
+                    FingerprintShingleCount = 0,
+                    ParseTime = parseTimer.Elapsed,
+                    FingerprintTime = TimeSpan.Zero,
+                    MatchTime = overrideMatchTimer.Elapsed,
+                    RenderTime = overrideRenderTimer.Elapsed,
+                },
+            };
+        }
+
         var fpTimer = Stopwatch.StartNew();
         var fp = _fingerprinter.Compute(doc);
         fpTimer.Stop();
         _signals?.Raise(StyloExtractSignals.FingerprintComputed, new StyloExtractSignal(FingerprintHex: fp.Hex));
 
-        var hostHash = _hostHasher.Hash(options.HostOverride ?? sourceUri?.Host ?? "");
+        var hostHash = _hostHasher.Hash(resolvedHost);
         var status = MatchStatus.NovelEphemeral;
         Guid? templateId = null;
         int templateVersion = 0;
