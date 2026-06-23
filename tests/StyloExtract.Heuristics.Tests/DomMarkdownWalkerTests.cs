@@ -295,6 +295,97 @@ public class DomMarkdownWalkerTests
             .Should().NotContain("alert");
     }
 
+    // ----- Indented-HTML / CommonMark indented-code-block regression -----
+
+    [Fact]
+    public void Heavily_Indented_Anchor_Does_Not_Get_Four_Space_Prefix()
+    {
+        // Regression for the lucidVIEW / mostlylucid.net bug (1.7.1). Source HTML
+        // emitted by Tailwind/HTMX/templating layers commonly indents inline content
+        // by four or more spaces. AppendEscapedInline used to fold each successive
+        // text-node visit into a single space, accumulating leading whitespace until
+        // CommonMark's indented-code-block rule (4+ spaces at line-start) ate the
+        // entire line. The link then rendered as raw bracket text instead of clicking.
+        var md = Render("""
+            <div class="card">
+                <a href="/blog/post-one">Post title one</a>
+                <div>Summary text for post one.</div>
+            </div>
+            <div class="card">
+                <a href="/blog/post-two">Post title two</a>
+            </div>
+            """);
+        // No line in the output may start with four or more spaces — that's the
+        // CommonMark indented-code-block trigger.
+        foreach (var line in md.Split('\n'))
+        {
+            int leadingSpaces = 0;
+            while (leadingSpaces < line.Length && line[leadingSpaces] == ' ') leadingSpaces++;
+            leadingSpaces.Should().BeLessThan(4,
+                because: $"line '{line}' begins with {leadingSpaces} spaces, which CommonMark treats as an indented code block");
+        }
+        md.Should().Contain("[Post title one](/blog/post-one)");
+        md.Should().Contain("[Post title two](/blog/post-two)");
+    }
+
+    [Fact]
+    public void Indented_Paragraph_Renders_Without_Leading_Whitespace()
+    {
+        var md = Render("""
+            <section>
+                <p>
+                    First paragraph with indented source markup.
+                </p>
+                <p>
+                    Second paragraph here.
+                </p>
+            </section>
+            """);
+        md.Should().Contain("First paragraph with indented source markup.");
+        md.Should().NotMatchRegex(@"\n {4,}First");
+        md.Should().NotMatchRegex(@"\n {4,}Second");
+    }
+
+    [Fact]
+    public void Indented_List_Items_Render_With_Markers_Not_Code_Blocks()
+    {
+        var md = Render("""
+            <ul class="space-y-4">
+                <li>
+                    <a href="/a">first</a>
+                </li>
+                <li>
+                    <a href="/b">second</a>
+                </li>
+            </ul>
+            """);
+        md.Should().Contain("- [first](/a)");
+        md.Should().Contain("- [second](/b)");
+        // Belt-and-braces: no line begins with 4+ spaces.
+        foreach (var line in md.Split('\n'))
+        {
+            int spaces = 0;
+            while (spaces < line.Length && line[spaces] == ' ') spaces++;
+            spaces.Should().BeLessThan(4);
+        }
+    }
+
+    [Fact]
+    public void Indented_Heading_Has_No_Leading_Space_Before_The_Hash()
+    {
+        var md = Render("""
+            <section>
+                <h2>
+                    Title with indented source
+                </h2>
+                <p>Body.</p>
+            </section>
+            """);
+        // The line that contains the heading should start with "##" not "  ##".
+        var headingLine = md.Split('\n').First(l => l.Contains("##"));
+        headingLine.Should().StartWith("## ");
+    }
+
     // ----- Inline composition edge cases -----
 
     [Fact]
