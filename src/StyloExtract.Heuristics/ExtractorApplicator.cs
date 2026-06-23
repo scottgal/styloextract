@@ -48,7 +48,7 @@ public sealed class ExtractorApplicator : IExtractorApplicator
                         Role = rule.Role,
                         Confidence = rule.MeanConfidence,
                         Text = element.TextContent.Trim(),
-                        Markdown = "", // downstream renderer fills this
+                        Markdown = ShouldRenderMarkdown(rule.Role) ? DomMarkdownWalker.Render(element) : "",
                         XPath = XPathBuilder.ComputeXPath(element),
                         CssSelector = selector,
                         TextLength = element.TextContent.Length,
@@ -67,6 +67,15 @@ public sealed class ExtractorApplicator : IExtractorApplicator
         }
         return new ApplicatorResult(result, rulesApplied, rulesMissed);
     }
+
+    private static bool ShouldRenderMarkdown(BlockRole role) => role
+        is BlockRole.MainContent
+        or BlockRole.Article
+        or BlockRole.RepeatedItem
+        or BlockRole.Summary
+        or BlockRole.Heading
+        or BlockRole.Table
+        or BlockRole.CodeBlock;
 
     private static double LinkDensityOf(IElement element)
     {

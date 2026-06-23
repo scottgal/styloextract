@@ -526,7 +526,7 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
                 Role = role,
                 Confidence = confidence,
                 Text = element.TextContent.Trim(),
-                Markdown = "",
+                Markdown = ShouldRenderMarkdown(role) ? DomMarkdownWalker.Render(element) : "",
                 XPath = XPathBuilder.ComputeXPath(element),
                 CssSelector = null,
                 TextLength = element.TextContent.Length,
@@ -537,6 +537,19 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         }
         return result;
     }
+
+    // Markdown is only walked for content-bearing roles. Navigation, footer, breadcrumb,
+    // form, etc. are still handled by BlockRoleRenderers' role-specific paths which read
+    // from .Text and .Links. Walking the DOM for those wastes work and produces output
+    // that the role-specific renderer already supersedes.
+    private static bool ShouldRenderMarkdown(BlockRole role) => role
+        is BlockRole.MainContent
+        or BlockRole.Article
+        or BlockRole.RepeatedItem
+        or BlockRole.Summary
+        or BlockRole.Heading
+        or BlockRole.Table
+        or BlockRole.CodeBlock;
 
     private double ComputeScore(IElement element, BlockRole role)
     {

@@ -1,0 +1,287 @@
+using AngleSharp;
+using AngleSharp.Dom;
+using FluentAssertions;
+using StyloExtract.Heuristics;
+using Xunit;
+
+namespace StyloExtract.Heuristics.Tests;
+
+public class DomMarkdownWalkerTests
+{
+    private static IElement Parse(string html)
+    {
+        var ctx = BrowsingContext.New(Configuration.Default);
+        var doc = ctx.OpenAsync(req => req.Content($"<html><body>{html}</body></html>"))
+            .GetAwaiter().GetResult();
+        return doc.Body!;
+    }
+
+    private static string Render(string html) => DomMarkdownWalker.Render(Parse(html));
+
+    [Fact]
+    public void Heading_Level_Is_Preserved_Per_Tag()
+    {
+        var md = Render("<h1>One</h1><h2>Two</h2><h3>Three</h3><h4>Four</h4><h5>Five</h5><h6>Six</h6>");
+        md.Should().Contain("# One");
+        md.Should().Contain("## Two");
+        md.Should().Contain("### Three");
+        md.Should().Contain("#### Four");
+        md.Should().Contain("##### Five");
+        md.Should().Contain("###### Six");
+    }
+
+    [Fact]
+    public void Inline_Link_Is_Preserved()
+    {
+        Render("<p>See <a href=\"/docs\">the docs</a> for more.</p>")
+            .Should().Contain("[the docs](/docs)");
+    }
+
+    [Fact]
+    public void Strong_And_Em_Map_To_Bold_And_Italic()
+    {
+        var md = Render("<p>An <em>italic</em> and <strong>bold</strong> word.</p>");
+        md.Should().Contain("*italic*");
+        md.Should().Contain("**bold**");
+    }
+
+    [Fact]
+    public void Inline_Code_Is_Backticked()
+    {
+        Render("<p>The <code>foo()</code> function.</p>")
+            .Should().Contain("`foo()`");
+    }
+
+    [Fact]
+    public void Inline_Image_Becomes_Markdown_Image()
+    {
+        Render("<p>See <img src=\"/cat.png\" alt=\"cat\"> here.</p>")
+            .Should().Contain("![cat](/cat.png)");
+    }
+
+    [Fact]
+    public void Unordered_List_Renders_As_Bullets()
+    {
+        var md = Render("<ul><li>first</li><li>second</li></ul>");
+        md.Should().Contain("- first");
+        md.Should().Contain("- second");
+    }
+
+    [Fact]
+    public void Ordered_List_Renders_With_Numbers()
+    {
+        var md = Render("<ol><li>one</li><li>two</li><li>three</li></ol>");
+        md.Should().Contain("1. one");
+        md.Should().Contain("2. two");
+        md.Should().Contain("3. three");
+    }
+
+    [Fact]
+    public void Fenced_Code_Block_Has_Language_Hint()
+    {
+        var md = Render("<pre><code class=\"language-csharp\">var x = 1;</code></pre>");
+        md.Should().Contain("```csharp");
+        md.Should().Contain("var x = 1;");
+        md.Should().Contain("```\n");
+    }
+
+    [Fact]
+    public void Fenced_Code_Block_Without_Language_Still_Fences()
+    {
+        var md = Render("<pre>raw code</pre>");
+        md.Should().Contain("```\n");
+        md.Should().Contain("raw code");
+    }
+
+    [Fact]
+    public void Blockquote_Prefixes_Each_Line()
+    {
+        Render("<blockquote><p>quoted</p></blockquote>")
+            .Should().Contain("> quoted");
+    }
+
+    [Fact]
+    public void Hr_Becomes_Horizontal_Rule()
+    {
+        Render("<p>before</p><hr><p>after</p>")
+            .Should().Contain("---");
+    }
+
+    [Fact]
+    public void Simple_Table_Renders_GFM_Pipes()
+    {
+        var md = Render("""
+            <table>
+              <thead><tr><th>Name</th><th>Age</th></tr></thead>
+              <tbody>
+                <tr><td>Ada</td><td>36</td></tr>
+                <tr><td>Bob</td><td>40</td></tr>
+              </tbody>
+            </table>
+            """);
+        md.Should().Contain("| Name | Age |");
+        md.Should().Contain("| --- | --- |");
+        md.Should().Contain("| Ada | 36 |");
+        md.Should().Contain("| Bob | 40 |");
+    }
+
+    [Fact]
+    public void Table_With_Caption_Emits_Bold_Caption_Above()
+    {
+        var md = Render("""
+            <table>
+              <caption>Crew manifest</caption>
+              <thead><tr><th>Name</th></tr></thead>
+              <tbody><tr><td>Ada</td></tr></tbody>
+            </table>
+            """);
+        var captionIdx = md.IndexOf("**Crew manifest**");
+        var headerIdx = md.IndexOf("| Name |");
+        captionIdx.Should().BeGreaterThan(-1);
+        headerIdx.Should().BeGreaterThan(captionIdx);
+    }
+
+    [Fact]
+    public void Table_With_Colspan_Repeats_Content_Across_Spanned_Columns()
+    {
+        var md = Render("""
+            <table>
+              <thead><tr><th>A</th><th>B</th><th>C</th></tr></thead>
+              <tbody>
+                <tr><td colspan="2">merged</td><td>x</td></tr>
+                <tr><td>1</td><td>2</td><td>3</td></tr>
+              </tbody>
+            </table>
+            """);
+        md.Should().Contain("| merged | merged | x |");
+        md.Should().Contain("| 1 | 2 | 3 |");
+    }
+
+    [Fact]
+    public void Table_With_Rowspan_Anchors_Content_In_First_Row_And_Blanks_Below()
+    {
+        var md = Render("""
+            <table>
+              <thead><tr><th>Group</th><th>Name</th></tr></thead>
+              <tbody>
+                <tr><td rowspan="2">Team A</td><td>Ada</td></tr>
+                <tr><td>Bob</td></tr>
+              </tbody>
+            </table>
+            """);
+        // First row keeps the rowspan content; second row's first column is blank,
+        // and the explicit cell for "Bob" lands in the second column.
+        md.Should().Contain("| Team A | Ada |");
+        md.Should().Contain("|  | Bob |");
+    }
+
+    [Fact]
+    public void Table_With_Th_First_Row_Without_Thead_Treats_It_As_Header()
+    {
+        var md = Render("""
+            <table>
+              <tr><th>A</th><th>B</th></tr>
+              <tr><td>1</td><td>2</td></tr>
+            </table>
+            """);
+        md.Should().Contain("| A | B |");
+        md.Should().Contain("| --- | --- |");
+        md.Should().Contain("| 1 | 2 |");
+    }
+
+    [Fact]
+    public void Table_With_Cell_Containing_Block_Content_Falls_Back_To_Raw_Html()
+    {
+        var md = Render("""
+            <table>
+              <thead><tr><th>A</th></tr></thead>
+              <tbody>
+                <tr><td><ul><li>x</li><li>y</li></ul></td></tr>
+              </tbody>
+            </table>
+            """);
+        // Block content in a cell → raw HTML fallback.
+        md.Should().Contain("<table");
+        md.Should().Contain("<li>x</li>");
+        md.Should().NotContain("| --- |");
+    }
+
+    [Fact]
+    public void Table_With_Nested_Table_Falls_Back_To_Raw_Html()
+    {
+        var md = Render("""
+            <table>
+              <thead><tr><th>A</th></tr></thead>
+              <tbody>
+                <tr><td><table><tr><td>nested</td></tr></table></td></tr>
+              </tbody>
+            </table>
+            """);
+        md.Should().Contain("<table");
+        md.Should().Contain("nested");
+        md.Should().NotContain("| A |\n| --- |");
+    }
+
+    [Fact]
+    public void Table_With_Multi_Row_Thead_Falls_Back_To_Raw_Html()
+    {
+        var md = Render("""
+            <table>
+              <thead>
+                <tr><th>Group</th><th>Sub</th></tr>
+                <tr><th>g</th><th>s</th></tr>
+              </thead>
+              <tbody><tr><td>1</td><td>2</td></tr></tbody>
+            </table>
+            """);
+        md.Should().Contain("<table");
+        md.Should().NotContain("| --- |");
+    }
+
+    [Fact]
+    public void Table_Alignment_Reads_Align_Attribute_With_Column_Consensus()
+    {
+        var md = Render("""
+            <table>
+              <thead><tr><th>L</th><th>C</th><th>R</th></tr></thead>
+              <tbody>
+                <tr><td align="left">a</td><td align="center">b</td><td align="right">c</td></tr>
+                <tr><td align="left">d</td><td align="center">e</td><td align="right">f</td></tr>
+              </tbody>
+            </table>
+            """);
+        md.Should().Contain("| :--- | :---: | ---: |");
+    }
+
+    [Fact]
+    public void Table_Cell_With_Pipe_Character_Gets_Escaped()
+    {
+        var md = Render("""
+            <table>
+              <thead><tr><th>k</th></tr></thead>
+              <tbody><tr><td>a | b</td></tr></tbody>
+            </table>
+            """);
+        md.Should().Contain(@"| a \| b |");
+    }
+
+    [Fact]
+    public void Figure_With_Image_And_Caption_Renders_Image_And_Caption_Text()
+    {
+        var md = Render("""
+            <figure>
+              <img src="/hero.jpg" alt="hero image">
+              <figcaption>The hero shot</figcaption>
+            </figure>
+            """);
+        md.Should().Contain("![hero image](/hero.jpg)");
+        md.Should().Contain("The hero shot");
+    }
+
+    [Fact]
+    public void Scripts_And_Styles_Are_Dropped()
+    {
+        Render("<p>keep me</p><script>alert(1)</script><style>p{}</style>")
+            .Should().NotContain("alert");
+    }
+}
