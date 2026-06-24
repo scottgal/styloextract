@@ -4,6 +4,120 @@ All notable changes to StyloExtract are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-06-24
+
+The ML release. Closes the arbitrary-site coverage gap for hosts whose
+HTML the heuristic classifier can't induce a clean template from
+(Shopify themes, custom-CSS marketing pages, anything with class names
+absent from `framework-content-class-hints.json`). The mechanism is
+LLM-driven template induction in a background coordinator: novel
+templates enqueue an enrichment job, the coordinator drains it,
+calls an LLM with a slim DOM skeleton, and persists the induced YAML
+into the operator-template root for the file-watching store to pick up.
+**Runtime hot path is unchanged. The LLM never blocks a request.**
+
+Per the design (`docs/ml-classifier-v2-design.md`) the pivot from a
+per-element ONNX classifier to LLM-driven wrapper induction is the
+2026 state of the art: Co-Scraper, AXE, XPath Agent all converge on
+this shape. ONNX runtime + Gemma 4 are documented future work pending
+upstream `onnxruntime-genai` support; the inducer is shipped today
+over Ollama.
+
+### Added
+
+- **`ILlmTextProvider`** (Abstractions) — minimal LLM-completion
+  contract reused across the response-parser family (template
+  induction now; PII redaction, content-safety verify, regulatory
+  disclosure injection later).
+- **`DomSkeletonRenderer`** (Core, AOT-clean) — composes the cleaned
+  DOM into a 1–4 KB / ~1.5K-token tree-with-exemplars representation:
+  per-line `tag.class#id children=N textLen=N linkDensity=0.NN —
+  "excerpt"`. Repeated sibling runs collapse to "N repeated tag
+  children (3 exemplars below)". Hash-shaped class tokens (Tailwind
+  JIT / CSS-modules) filtered. Tunable via `SkeletonRenderOptions`.
+- **`LlmTemplateInducer`** (Core) — skeleton + system/user prompts
+  + LLM call + YAML parse via the existing
+  `YamlOperatorTemplateLoader`. Output shape is exactly the
+  operator-template schema (v1.7); a successful induction is a
+  hand-editable operator template the hard-override path picks up.
+- **`ITemplateEnrichmentQueue`** (Abstractions) +
+  **`InMemoryTemplateEnrichmentQueue`** (Core) — bounded channel
+  + per-host cooldown dedup + age-out on dequeue. DropNewest on
+  capacity; silent drop on cooldown.
+- **`TemplateEnrichmentCoordinator`** (Core, `BackgroundService`) —
+  drains the queue, calls the inducer, validates the result has
+  at least one MainContent rule, writes through
+  `OperatorTemplateYamlEmitter` to the operator-template root.
+  Skips hosts that already have a hand-authored template (operator
+  wins, always). Global QPS throttle via
+  `EnrichmentCoordinatorOptions.MinInterCallInterval`.
+- **`OperatorTemplateYamlEmitter`** (Core) — canonical YAML emitter
+  for `OperatorTemplate`. Inverse of `YamlOperatorTemplateLoader`.
+  Lifted from two prior private copies in `TemplateCommand` and
+  `OperatorTemplateEndpoints`; closes the "EmitYaml duplicated"
+  drift finding from the v1.7.1 architectural review.
+- **`StyloExtract.Llm.Ollama`** (new package, opt-in) —
+  `OllamaTextProvider` over `/api/chat` (streaming disabled,
+  AOT-clean JSON via source generator) + `AddOllamaTextProvider`
+  DI helper. Default model `gemma4:e4b-it-qat` per design.
+- **`AddStyloExtractLlmInducer`** (AspNetCore) — single DI call wires
+  the entire background stack: renderer + queue + coordinator
+  HostedService + inducer. Decoupled from the LLM backend (operators
+  wire any `ILlmTextProvider` separately).
+- **CLI**: `stylo-extract template dump-skeleton --url … | --file …`
+  prints the slim representation the LLM would see;
+  `stylo-extract template induce --url … --ollama-url … --model …
+  [--write]` runs the LLM and prints/persists the YAML.
+- **REST**: `POST /api/styloextract/templates/{host}/induce` body
+  `{html, url?}` returns `text/yaml`. Same SSRF guard the existing
+  `/test` endpoint shipped with (hostname validation, scheme
+  allowlist, IP-range denylist, no auto-redirect).
+- **Phase 1 + 2 ML training pipeline** (out-of-band Python under
+  `training/`) — kept on the shelf for a future ONNX rerank path
+  if/when the LLM inducer doesn't suffice. `stylo-extract
+  extract-features` CLI command emits the 45-dim feature vector
+  per element as JSONL for offline analysis.
+- **`MatchStatus.OperatorOverride`** raises a new ephemeral signal
+  `StyloExtractSignals.MatchOperatorOverride` (architectural review
+  finding from the 2026-06-23 pass — the override branch was
+  previously invisible to ephemeral consumers).
+- **Real-Ollama integration test** with locally-installed Gemma 4 E2B
+  verifies the full chain end-to-end:
+  DomCleaner → DomSkeletonRenderer → OllamaTextProvider (HTTP) →
+  LlmTemplateInducer YAML extraction → YamlOperatorTemplateLoader.
+  On the Acme product fixture the model produces a clean 4-role
+  template in ~10 s on M5 CPU. SkippableFact-gated for CI without
+  Ollama.
+
+### Operator install (4 DI calls)
+
+```csharp
+services.AddStyloExtract();
+services.AddStyloExtractOperatorTemplates("config/templates");
+services.AddOllamaTextProvider(o => o.Model = "gemma4:12b-it-qat");
+services.AddStyloExtractLlmInducer("config/templates");
+```
+
+### Changed
+
+- `LayoutExtractor` constructor takes two new OPTIONAL parameters
+  (`ITemplateEnrichmentQueue`, `DomSkeletonRenderer`). Consumers
+  that don't wire the LLM stack see no behavioural change; the
+  skeleton renderer is lazily allocated only when a queue is present.
+
+### Compatibility
+
+Backwards-compatible. Operators who don't add the LLM helper see
+v1.7.1 behaviour exactly: heuristic classifier + induced templates +
+hand-authored operator templates. The Ollama package is opt-in.
+
+### Suite
+
+475 tests across 10 projects, all green. Includes the new
+`StyloExtract.Ml.Tests` (20), `StyloExtract.Llm.Ollama` provider
+tests (5), DI-composition tests (3), live-Ollama integration tests
+(2), and a SkippableFact end-to-end against actual Gemma 4 E2B.
+
 ## [1.7.1] - 2026-06-23
 
 ### Fixed

@@ -1,87 +1,110 @@
-StyloExtract 1.7.1 - 2026-06-23
+StyloExtract 1.8.0 - 2026-06-24
 ================================
 
-Patch release. One bug fix to DomMarkdownWalker so heavily-indented
-source HTML (typical of Tailwind / HTMX / framework-generated markup)
-stops producing markdown that CommonMark parses as indented code blocks.
+The ML release.
 
-Bug
----
+Closes the arbitrary-site coverage gap: hosts whose HTML the
+heuristic classifier can't induce a clean template from (Shopify
+themes, custom-CSS marketing pages, anything with class names
+absent from framework-content-class-hints.json) now get LLM-driven
+template induction in a background coordinator. The mechanism:
 
-* DomMarkdownWalker.AppendEscapedInline preserved leading whitespace at
-  line-start, so consecutive text-node visits each emitted a single
-  space and accumulated to 4+ spaces ahead of links and paragraphs.
-  CommonMark then parsed those lines as indented code blocks and the
-  resulting markdown rendered as raw `[text](href)` text instead of
-  clickable links. Now skipped at line-start; inner-paragraph whitespace
-  still collapses to single spaces as before.
+  * Novel template seen by LayoutExtractor → cache the heuristic-
+    induced version → enqueue an enrichment job.
+  * Background TemplateEnrichmentCoordinator drains the queue,
+    calls an LLM with a slim DOM skeleton (1-4 KB), gets back YAML
+    in the exact operator-template schema, writes it to the
+    operator-template root.
+  * The existing file-watching YamlFileOperatorTemplateStore picks
+    up the YAML; the next request for that host hits the hard-
+    override path with the LLM-induced template.
 
-Real-world repro: lucidVIEW loading mostlylucid.net (HTMX-driven blog
-index). Before 1.7.1 every blog-post card after the first collapsed into
-a code block; after 1.7.1 each card is a styled link with its summary
-as its own paragraph beneath.
+Runtime hot path is unchanged. The LLM never blocks a request.
+Per-host cooldown + bounded queue + age-out + MainContent quality
+gate. Hand-authored operator templates always win over induced ones.
 
-----
+Operator install (four DI calls):
 
-StyloExtract 1.7.0 - 2026-06-23
-================================
+    services.AddStyloExtract();
+    services.AddStyloExtractOperatorTemplates("config/templates");
+    services.AddOllamaTextProvider(o => o.Model = "gemma4:12b-it-qat");
+    services.AddStyloExtractLlmInducer("config/templates");
 
-Structured markdown output. Previously every classified block flattened
-to element.TextContent.Trim() and the renderer emitted a wall of plain
-paragraphs with "# " collapsing all six heading levels. This release
-makes ExtractedBlock.Markdown carry a real GFM rendition produced by
-walking the block's DOM subtree.
+New packages
+------------
 
-Highlights
-----------
+  Mostlylucid.StyloExtract.Ml — feature extractor + skeleton renderer
+                                (AOT-clean; reusable for the
+                                response-parser family).
+  Mostlylucid.StyloExtract.Llm.Ollama — OllamaTextProvider over
+                                /api/chat with streaming disabled.
+                                Default model gemma4:e4b-it-qat
+                                (Apache 2.0).
 
-* Heading levels H1-H6 emit one-through-six "#" characters.
-* Inline content preserved: links, **bold**, *italic*, `code`, images,
-  hard breaks.
-* Lists, fenced code blocks (with language hint), blockquotes (single
-  and multi-paragraph following GFM convention), and figures all render
-  with their structure intact.
-* GFM tables built from a WHATWG slot grid: colspan/rowspan respected,
-  caption rendered above as bold paragraph, alignment markers derived
-  from align attribute or style="text-align" via majority-vote, pipes
-  escaped, newlines converted to <br>. Complex tables (multi-row thead,
-  nested tables, block content in a cell) fall back to raw HTML which
-  CommonMark passes through.
-* Sidebar and RelatedLinks now use the DOM walker. The classic "on this
-  page" TOC pattern renders as a proper markdown list with anchor links
-  instead of flattening to indented text.
+Surfaces
+--------
 
-Performance
------------
+  CLI:
+    stylo-extract template dump-skeleton --url … | --file …
+        Prints the slim representation the LLM would see for a page.
+    stylo-extract template induce --url … --model gemma4:12b-it-qat
+                                  [--write] [--root config/templates]
+        Runs the LLM and prints (or persists) the resulting YAML.
 
-Walker on Apple M5 / .NET 10, full pipeline numbers in parentheses:
+  REST:
+    POST /api/styloextract/templates/{host}/induce
+        Body: { html, url? } → text/yaml on success. Same SSRF guard
+        the existing /test endpoint shipped with.
 
-  Small article: 1.3 us / 8 KB    (full pipeline:  370 us /  925 KB)
-  Medium doc  : 25.2 us / 72 KB   (full pipeline:  491 us /  823 KB)
-  Large doc   : 34.1 us / 114 KB  (full pipeline:  642 us /  843 KB)
-  Table-heavy : 69.2 us / 165 KB  (full pipeline:  641 us /  688 KB)
+Backend abstraction
+-------------------
 
-Walker share of ExtractAsync total time fell from 25-55% to 5-11% across
-the four scenarios. ExtractAsync continues to sit well under the spec's
-15ms p99 budget on a cache hit.
+ILlmTextProvider in Mostlylucid.StyloExtract.Abstractions is the
+backend contract. Default implementation is the Ollama provider in
+Mostlylucid.StyloExtract.Llm.Ollama; operators can wire any
+LLM client (cloud, local LlamaSharp, etc.) by implementing the
+same one-method interface. The same provider will serve future
+response parsers (PII redaction, content-safety verifier, etc.) per
+the response-parser-family direction in
+docs/ml-classifier-v2-design.md.
+
+Model recommendation
+--------------------
+
+Gemma 4 E4B (qat, 6.1 GB, Apache 2.0) is the design's default for
+the slow-path coordinator. Gemma 4 12B (qat, 7.2 GB) is the
+preferred choice when memory allows; stronger structured-output
+quality on the HTML-into-selectors task per Google's published
+benchmarks. ONNX deployment is documented future work pending
+onnxruntime-genai support for Gemma 4 (Microsoft tracking issue
+#2062).
+
+Real-world validation: ran the live-Ollama integration test against
+locally-installed gemma4:e2b on the Acme product fixture. Output:
+
+  host: acme.example
+  rules:
+    - role: MainContent
+      selectors: [main.product-detail-root]
+    - role: Header
+      selectors: [header]
+    - role: PrimaryNavigation
+      selectors: [nav.site-nav]
+    - role: Footer
+      selectors: [footer.site-footer]
+
+Four roles correctly identified in ~10 seconds on M5 CPU.
 
 Compatibility
 -------------
 
-Backwards-compatible. ExtractedBlock.Text continues to project the
-flattened plain-text view unchanged; the new markdown rendition is read
-via ExtractedBlock.Markdown. Existing extraction profiles behave
-identically; the only observable change is that the markdown emitted by
-TypedMarkdownRenderer is now reader-grade rather than flat prose.
+Backwards-compatible. Consumers who don't add the LLM helper see
+v1.7.1 behaviour exactly: heuristic classifier + induced templates +
+hand-authored operator templates. The Ollama package is opt-in.
 
-Tests
+Suite
 -----
 
-329 tests across 7 projects, all green. 51 unit tests on the new walker
-cover inline composition, list and code rendering, and the full GFM
-table reconstruction path including the complexity-detection fallback
-to raw HTML. Four end-to-end pipeline tests exercise the spec's headline
-gaps (heading levels, inline links, lists, GFM tables) through
-parse -> clean -> segment -> classify -> render -> SQLite.
-
-See CHANGELOG.md for the full record.
+475 tests across 10 projects, all green. The 1.8.0 release adds
+StyloExtract.Ml.Tests (20), Llm.Ollama provider tests (5), DI-
+composition tests (3), live-Ollama integration tests (2 SkippableFact).
