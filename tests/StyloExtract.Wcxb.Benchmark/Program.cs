@@ -268,6 +268,7 @@ static class Program
         string diagnosticOut = "/tmp/wcxb-diag.jsonl";
         bool   usePlaywright = false;
         HashSet<string>? pageTypeFilter = null;  // null = all page types
+        HashSet<string>? pageIdFilter = null;    // null = all page ids
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -283,6 +284,11 @@ static class Program
                 case "--use-playwright": usePlaywright = true; break;
                 case "--page-types" when i + 1 < args.Length:
                     pageTypeFilter = new HashSet<string>(
+                        args[++i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                        StringComparer.OrdinalIgnoreCase);
+                    break;
+                case "--page-ids" when i + 1 < args.Length:
+                    pageIdFilter = new HashSet<string>(
                         args[++i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
                         StringComparer.OrdinalIgnoreCase);
                     break;
@@ -342,6 +348,10 @@ static class Program
             // only those whose page_type matches. We do a cheap JSON scan rather than full
             // deserialisation so the filter overhead is negligible.
             IEnumerable<string> allGtFiles = Directory.GetFiles(gtDir, "*.json").OrderBy(f => f);
+            if (pageIdFilter is not null)
+            {
+                allGtFiles = allGtFiles.Where(f => pageIdFilter.Contains(Path.GetFileNameWithoutExtension(f)));
+            }
             if (pageTypeFilter is not null)
             {
                 var filtered = new List<string>();

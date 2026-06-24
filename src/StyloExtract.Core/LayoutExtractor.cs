@@ -168,13 +168,39 @@ public sealed class LayoutExtractor : ILayoutExtractor
         // Re-classify with the heuristic and force a refit so the next request gets a
         // fresh extractor. Without this, broken applicators keep returning 1-byte garbage
         // until EWMA drift accumulates over many observations.
+        //
+        // Two failure modes covered:
+        //   1) All blocks combined produced essentially nothing: the template's
+        //      selectors mostly missed the page. (Original check.)
+        //   2) The template produced PLENTY of text overall but almost none of
+        //      it is in content roles: a stale template applied to a wrong-shape
+        //      page can pick up substantial Header/Footer/Boilerplate text via
+        //      its chrome selectors while emitting ~zero MainContent — the
+        //      renderer filters to content roles only so the actual output is
+        //      1 char while the all-blocks sum looks healthy. WCXB diagnostic
+        //      2026-06-24: 22+ collection / listing pages on hosts whose
+        //      first-seen page was a product detail were stuck in this state
+        //      (esprit-barbecue.fr, nike.com, rei.com).
         const int MinViableExtractText = 200;
+        const int ChromeHeavyTotalThreshold = 1000;
+        const int MinViableContentText = 100;
         const double SignalLossMissRatio = 0.7;
         const int SignalLossMinRules = 3;
         static bool IsApplicatorBroken(ApplicatorResult applied)
         {
             var combinedText = applied.Blocks.Sum(b => b.Text.Length);
             if (combinedText < MinViableExtractText) return true;
+
+            var contentText = applied.Blocks
+                .Where(b => b.Role is BlockRole.MainContent or BlockRole.Article
+                    or BlockRole.Heading or BlockRole.Summary or BlockRole.Table
+                    or BlockRole.CodeBlock or BlockRole.RepeatedItem)
+                .Sum(b => b.Text.Length);
+            // Lots of total text, almost none of it in content roles: the
+            // template is harvesting chrome instead of content.
+            if (combinedText >= ChromeHeavyTotalThreshold && contentText < MinViableContentText)
+                return true;
+
             var ruleCount = applied.RulesApplied + applied.RulesMissed;
             if (ruleCount >= SignalLossMinRules
                 && (double)applied.RulesMissed / ruleCount >= SignalLossMissRatio)
