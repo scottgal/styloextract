@@ -16,5 +16,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\StyloExtract.AspNetCore\StyloExtract.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Llm.Ollama\StyloExtract.Llm.Ollama.csproj" />
   </ItemGroup>
 </Project>

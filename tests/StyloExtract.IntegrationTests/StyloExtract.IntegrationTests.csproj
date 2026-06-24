@@ -20,6 +20,7 @@
     <ProjectReference Include="..\..\src\StyloExtract.Html\StyloExtract.Html.csproj" />
     <ProjectReference Include="..\..\src\StyloExtract.Fingerprint\StyloExtract.Fingerprint.csproj" />
     <ProjectReference Include="..\..\src\StyloExtract.Markdown\StyloExtract.Markdown.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Llm.Ollama\StyloExtract.Llm.Ollama.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Update="Fixtures\**\*.html">

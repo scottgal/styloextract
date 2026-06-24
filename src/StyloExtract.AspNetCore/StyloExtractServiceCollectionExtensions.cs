@@ -87,7 +87,14 @@ public static class StyloExtractServiceCollectionExtensions
             // IOperatorTemplateStore in DI, the LayoutExtractor consults it before
             // every fingerprint and short-circuits to MatchStatus.OperatorOverride
             // for any host with an authored template. See AddStyloExtractOperatorTemplates.
-            sp.GetService<IOperatorTemplateStore>()));
+            sp.GetService<IOperatorTemplateStore>(),
+            // Template-enrichment queue is optional. When a consumer registers
+            // ITemplateEnrichmentQueue + TemplateEnrichmentCoordinator via
+            // AddStyloExtractLlmInducer, novel templates seen here enqueue an
+            // LLM enrichment job; the background coordinator drains and writes
+            // the induced template into the operator-template root.
+            sp.GetService<StyloExtract.Abstractions.TemplateEnrichment.ITemplateEnrichmentQueue>(),
+            sp.GetService<StyloExtract.Core.Skeleton.DomSkeletonRenderer>()));
 
         // Register a default ResponsePolicyOptions so ResponsePolicyMiddleware is always resolvable.
         services.TryAddSingleton<ResponsePolicyOptions>();

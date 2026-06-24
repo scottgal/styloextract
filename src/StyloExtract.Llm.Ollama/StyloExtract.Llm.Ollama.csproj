@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>StyloExtract.Llm.Ollama</RootNamespace>
+    <AssemblyName>StyloExtract.Llm.Ollama</AssemblyName>
+    <PackageId>Mostlylucid.StyloExtract.Llm.Ollama</PackageId>
+    <IsPackable>true</IsPackable>
+    <!--
+      Ollama provider is pure HTTP/JSON over System.Net.Http +
+      System.Text.Json source generator. AOT-clean. The full ML stack
+      (provider + queue + coordinator) is opt-in: consumers wire it
+      via AddStyloExtractLlmInducer in StyloExtract.AspNetCore.
+    -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Ollama-backed ILlmTextProvider for StyloExtract template induction. Talks to a local (or remote) Ollama server via HTTP/JSON; default model is gemma4:e4b-it-qat per the ml-classifier-v2 design.</Description>
+    <PackageTags>styloextract;llm;ollama;template-induction;gemma</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+  </ItemGroup>
+</Project>
