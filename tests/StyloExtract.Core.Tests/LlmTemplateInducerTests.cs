@@ -221,4 +221,107 @@ public class LlmTemplateInducerTests
         var act = () => inducer.InduceAsync(Doc(SimpleArticleHtml), "");
         act.Should().ThrowAsync<ArgumentException>();
     }
+
+    private const string FailingTemplateYaml = """
+        host: example.com
+        description: Original (failing) template - MainContent points at footer.
+        version: 1
+        rules:
+          - role: MainContent
+            selectors:
+              - footer
+            confidence: 0.9
+        """;
+
+    [Fact]
+    public async Task Repair_Returns_Parsed_Template_When_Llm_Returns_Valid_Yaml_Block()
+    {
+        var llm = new StubLlm
+        {
+            Response = """
+                ```yaml
+                host: example.com
+                description: repaired
+                version: 2
+                rules:
+                  - role: MainContent
+                    selectors:
+                      - main article
+                    confidence: 0.95
+                ```
+                """,
+        };
+        var inducer = new LlmTemplateInducer(llm);
+        var template = await inducer.RepairFromSkeletonAsync(
+            "TEST_SKELETON", "example.com", FailingTemplateYaml, "extracted: footer text only");
+
+        template.Should().NotBeNull();
+        template!.Host.Should().Be("example.com");
+        template.Rules.Should().HaveCount(1);
+        template.Rules[0].Role.Should().Be(BlockRole.MainContent);
+        template.Rules[0].Selectors[0].Should().Be("main article");
+    }
+
+    [Fact]
+    public async Task Repair_Sends_Existing_Template_Yaml_And_Bad_Sample_In_User_Prompt()
+    {
+        var llm = new StubLlm
+        {
+            Response = "```yaml\nhost: example.com\nrules:\n  - role: MainContent\n    selectors:\n      - main\n```",
+        };
+        var inducer = new LlmTemplateInducer(llm);
+        await inducer.RepairFromSkeletonAsync(
+            "SKEL", "example.com", FailingTemplateYaml, "BAD_MARKDOWN_SAMPLE");
+
+        llm.Calls.Should().Be(1);
+        llm.CapturedSystem.Should().Be(LlmInducerPrompts.SystemRepair);
+        llm.CapturedUser.Should().Contain("SKEL");
+        llm.CapturedUser.Should().Contain(FailingTemplateYaml);
+        llm.CapturedUser.Should().Contain("BAD_MARKDOWN_SAMPLE");
+    }
+
+    [Fact]
+    public async Task Repair_Returns_Null_When_Llm_Throws_Provider_Exception()
+    {
+        var llm = new StubLlm
+        {
+            Throw = new LlmProviderException("model not available"),
+        };
+        var inducer = new LlmTemplateInducer(llm);
+        var template = await inducer.RepairFromSkeletonAsync(
+            "SKEL", "example.com", FailingTemplateYaml);
+        template.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Repair_Rejects_Empty_ExistingTemplate()
+    {
+        var inducer = new LlmTemplateInducer(new StubLlm());
+        var act = () => inducer.RepairFromSkeletonAsync("SKEL", "example.com", "");
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task Repair_Returns_Null_When_Llm_Returns_Bare_Prose()
+    {
+        var llm = new StubLlm { Response = "Sorry, I cannot repair this template." };
+        var inducer = new LlmTemplateInducer(llm);
+        var template = await inducer.RepairFromSkeletonAsync(
+            "SKEL", "example.com", FailingTemplateYaml);
+        template.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Repair_Rewrites_Hallucinated_Host()
+    {
+        var llm = new StubLlm
+        {
+            Response = "```yaml\nhost: wrong.example\nrules:\n  - role: MainContent\n    selectors:\n      - main\n```",
+        };
+        var inducer = new LlmTemplateInducer(llm);
+        var template = await inducer.RepairFromSkeletonAsync(
+            "SKEL", "example.com", FailingTemplateYaml);
+        template.Should().NotBeNull();
+        template!.Host.Should().Be("example.com");
+    }
 }

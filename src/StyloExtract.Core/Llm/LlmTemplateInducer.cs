@@ -139,6 +139,81 @@ public sealed class LlmTemplateInducer
     }
 
     /// <summary>
+    /// Repair an existing template that produced poor output for a page. Send
+    /// the LLM the page skeleton + the failing template's YAML + (optionally)
+    /// a short sample of its bad output, and get back a corrected template.
+    /// Same failure semantics as <see cref="InduceFromSkeletonAsync"/>: returns
+    /// <c>null</c> on any failure; caller falls back to the existing template.
+    /// </summary>
+    public async Task<OperatorTemplate?> RepairFromSkeletonAsync(
+        string skeleton,
+        string host,
+        string existingTemplateYaml,
+        string? badMarkdownSample = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(skeleton)) throw new ArgumentException("skeleton required", nameof(skeleton));
+        if (string.IsNullOrWhiteSpace(host)) throw new ArgumentException("host required", nameof(host));
+        if (string.IsNullOrWhiteSpace(existingTemplateYaml))
+            throw new ArgumentException("existing template required", nameof(existingTemplateYaml));
+
+        var userPrompt = LlmInducerPrompts.BuildRepairPrompt(
+            host, skeleton, existingTemplateYaml, badMarkdownSample ?? string.Empty);
+        string response;
+        try
+        {
+            response = await _llm.CompleteAsync(
+                LlmInducerPrompts.SystemRepair, userPrompt, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (LlmProviderException ex)
+        {
+            _logger?.LogWarning(ex, "repair backend failed for {Host}", host);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "repair backend threw unexpected exception for {Host}", host);
+            return null;
+        }
+
+        var yaml = ExtractYamlBlock(response);
+        if (yaml is null)
+        {
+            _logger?.LogWarning(
+                "repair response for {Host} contained no fenced YAML block; head=\"{Head}\"",
+                host, Snip(response, 200));
+            return null;
+        }
+
+        OperatorTemplate parsed;
+        try
+        {
+            parsed = YamlOperatorTemplateLoader.Parse(yaml);
+        }
+        catch (OperatorTemplateParseException ex)
+        {
+            _logger?.LogWarning(ex,
+                "repair for {Host} produced YAML that failed validation; yaml=\"{Yaml}\"",
+                host, Snip(yaml, 400));
+            return null;
+        }
+
+        if (!string.Equals(parsed.Host, host, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger?.LogInformation(
+                "repair for {Host} rewrote model-supplied host \"{ModelHost}\"",
+                host, parsed.Host);
+            parsed = parsed with { Host = host };
+        }
+
+        return parsed;
+    }
+
+    /// <summary>
     /// Extract the YAML body from a fenced code block. The model is
     /// instructed to wrap its reply in a single ```yaml ... ``` fence;
     /// if it complies, return the body. Otherwise try to recover by

@@ -40,6 +40,7 @@ public static class TemplateCommand
         cmd.Add(BuildRemove(rootOpt));
         cmd.Add(BuildTest(rootOpt));
         cmd.Add(BuildInduce(rootOpt));
+        cmd.Add(BuildRepair(rootOpt));
         cmd.Add(BuildDumpSkeleton());
         cmd.Options.Add(rootOpt);
         return cmd;
@@ -354,6 +355,96 @@ public static class TemplateCommand
                 var path = Path.Combine(root, host + ".yaml");
                 await File.WriteAllTextAsync(path, yaml);
                 Console.Error.WriteLine($"# wrote {path}");
+            }
+            Console.Write(yaml);
+            return 0;
+        });
+        return c;
+    }
+
+    private static Command BuildRepair(Option<string> rootOpt)
+    {
+        var urlOpt = new Option<string?>("--url") { Description = "URL to fetch and repair a template against." };
+        var fileOpt = new Option<string?>("--file") { Description = "Local HTML file to repair against instead of fetching." };
+        var hostOpt = new Option<string?>("--host") { Description = "Override host used for the YAML output (default: derived from --url or filename)." };
+        var templateOpt = new Option<string?>("--template")
+        {
+            Description = "Path to the existing (failing) template YAML to repair. Defaults to <--root>/<host>.yaml.",
+        };
+        var writeOpt = new Option<bool>("--write") { Description = "After repair, overwrite the template at <--root>/<host>.yaml." };
+        var ollamaUrlOpt = new Option<string>("--ollama-url")
+        {
+            Description = "Ollama base URL.",
+            DefaultValueFactory = _ => "http://localhost:11434",
+        };
+        var modelOpt = new Option<string>("--model")
+        {
+            Description = "Ollama model tag.",
+            DefaultValueFactory = _ => "gemma4:e4b-it-qat",
+        };
+
+        var c = new Command("repair",
+            "Ask the LLM to repair an existing (failing) template using the current page and the broken YAML.");
+        c.Options.Add(urlOpt);
+        c.Options.Add(fileOpt);
+        c.Options.Add(hostOpt);
+        c.Options.Add(templateOpt);
+        c.Options.Add(writeOpt);
+        c.Options.Add(ollamaUrlOpt);
+        c.Options.Add(modelOpt);
+        c.SetAction(async pr =>
+        {
+            var url = pr.GetValue(urlOpt);
+            var file = pr.GetValue(fileOpt);
+            if (string.IsNullOrEmpty(url) && string.IsNullOrEmpty(file))
+            {
+                Console.Error.WriteLine("--url or --file is required");
+                return 2;
+            }
+
+            var (html, host) = await LoadHtmlAsync(url, file, pr.GetValue(hostOpt));
+            var doc = LoadAndCleanDocument(html);
+            var skeleton = new DomSkeletonRenderer().Render(doc);
+            if (string.IsNullOrEmpty(skeleton))
+            {
+                Console.Error.WriteLine("page produced an empty skeleton (no body or no candidates)");
+                return 1;
+            }
+
+            // Locate the broken template.
+            var templatePath = pr.GetValue(templateOpt) ?? Path.Combine(pr.GetValue(rootOpt)!, host + ".yaml");
+            if (!File.Exists(templatePath))
+            {
+                Console.Error.WriteLine($"existing template not found at {templatePath}");
+                Console.Error.WriteLine("hint: pass --template explicitly, or run `template induce --write` first.");
+                return 1;
+            }
+            var existingYaml = await File.ReadAllTextAsync(templatePath);
+
+            var services = new ServiceCollection();
+            services.AddOptions<OllamaTextProviderOptions>().Configure(o =>
+            {
+                o.OllamaUrl = pr.GetValue(ollamaUrlOpt)!;
+                o.Model = pr.GetValue(modelOpt)!;
+            });
+            services.AddOllamaTextProvider();
+            using var sp = services.BuildServiceProvider();
+            var provider = sp.GetRequiredService<ILlmTextProvider>();
+            var inducer = new LlmTemplateInducer(provider);
+
+            Console.Error.WriteLine($"# repairing template for host={host} via {pr.GetValue(ollamaUrlOpt)} model={pr.GetValue(modelOpt)}");
+            var template = await inducer.RepairFromSkeletonAsync(skeleton, host, existingYaml);
+            if (template is null)
+            {
+                Console.Error.WriteLine("repair returned no template (LLM error, malformed response, or validation failure)");
+                return 1;
+            }
+
+            var yaml = OperatorTemplateYamlEmitter.Emit(template);
+            if (pr.GetValue(writeOpt))
+            {
+                await File.WriteAllTextAsync(templatePath, yaml);
+                Console.Error.WriteLine($"# wrote {templatePath}");
             }
             Console.Write(yaml);
             return 0;
