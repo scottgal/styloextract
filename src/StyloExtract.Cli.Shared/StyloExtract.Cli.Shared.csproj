@@ -12,5 +12,6 @@
     <ProjectReference Include="..\StyloExtract.Templates\StyloExtract.Templates.csproj" />
     <ProjectReference Include="..\StyloExtract.Html\StyloExtract.Html.csproj" />
     <ProjectReference Include="..\StyloExtract.Ml\StyloExtract.Ml.csproj" />
+    <ProjectReference Include="..\StyloExtract.Llm.Ollama\StyloExtract.Llm.Ollama.csproj" />
   </ItemGroup>
 </Project>

@@ -38,6 +38,10 @@ public sealed class OperatorTemplateEndpointsTests : IDisposable
                     services.AddStyloExtract(o => o.StorePath = ":memory:");
                     services.AddStyloExtractOperatorTemplates(_root);
                     services.AddRouting();
+                    // Wire the LLM stack with a stub provider so /induce works
+                    // in tests without needing a live Ollama.
+                    services.AddSingleton<StyloExtract.Abstractions.ILlmTextProvider>(_ => new StubInducerLlm());
+                    services.AddStyloExtractLlmInducer(_root);
                 });
                 web.Configure(app =>
                 {
@@ -307,6 +311,79 @@ public sealed class OperatorTemplateEndpointsTests : IDisposable
         var resp = await _client.GetFromJsonAsync<List<SummaryDto>>("/api/styloextract/templates/");
         resp.Should().NotBeNull();
         resp!.Should().Contain(s => s.host == "list.example" && s.ruleCount == 1);
+    }
+
+    [Fact]
+    public async Task Induce_Endpoint_Returns_Yaml_From_Llm_Stub()
+    {
+        const string html = """
+            <html><body>
+              <header><nav><a href="/">Home</a></nav></header>
+              <main class="acme-content"><h1>Heading</h1><p>Body content with enough text for the renderer to pick it up.</p></main>
+              <footer>©</footer>
+            </body></html>
+            """;
+        var resp = await _client.PostAsJsonAsync(
+            "/api/styloextract/templates/induce.example/induce",
+            new { html });
+        resp.StatusCode.Should().Be(HttpStatusCode.OK);
+        resp.Content.Headers.ContentType!.MediaType.Should().Be("text/yaml");
+        var body = await resp.Content.ReadAsStringAsync();
+        body.Should().Contain("host: induce.example");
+        body.Should().Contain("- role: MainContent");
+        body.Should().Contain("main.acme-content");
+    }
+
+    [Fact]
+    public async Task Induce_Endpoint_Validates_Hostname()
+    {
+        var resp = await _client.PostAsJsonAsync(
+            "/api/styloextract/templates/..%2fetc%2fpasswd/induce",
+            new { html = "<html><body><main>x</main></body></html>" });
+        resp.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Induce_Endpoint_Requires_Body_With_Html_Or_Url()
+    {
+        var resp = await _client.PostAsJsonAsync(
+            "/api/styloextract/templates/induce.example/induce",
+            new { });
+        resp.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    private sealed class StubInducerLlm : StyloExtract.Abstractions.ILlmTextProvider
+    {
+        public Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken cancellationToken = default)
+        {
+            // The stub mirrors a well-behaved Gemma response: a fenced YAML
+            // block matching the operator-template schema. The skeleton
+            // appears in the user prompt and we extract the .acme-content
+            // class from it so the assertion against `main.acme-content`
+            // succeeds without hard-coding host strings.
+            var host = ExtractHostFromPrompt(userPrompt) ?? "induced.example";
+            var yaml = $$"""
+                ```yaml
+                host: {{host}}
+                rules:
+                  - role: MainContent
+                    selectors:
+                      - main.acme-content
+                    confidence: 0.95
+                ```
+                """;
+            return Task.FromResult(yaml);
+        }
+
+        private static string? ExtractHostFromPrompt(string userPrompt)
+        {
+            const string marker = "Host: ";
+            var idx = userPrompt.IndexOf(marker, StringComparison.Ordinal);
+            if (idx < 0) return null;
+            var rest = userPrompt[(idx + marker.Length)..];
+            var newline = rest.IndexOf('\n');
+            return newline < 0 ? rest.Trim() : rest[..newline].Trim();
+        }
     }
 
     private sealed record TestResponseDto(string status, int blockCount, string markdown);

@@ -3,7 +3,11 @@ using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using StyloExtract.Abstractions;
 using StyloExtract.AspNetCore;
+using StyloExtract.Core.Llm;
 using StyloExtract.Core.OperatorTemplates;
+using StyloExtract.Core.Skeleton;
+using StyloExtract.Html;
+using StyloExtract.Llm.Ollama;
 
 namespace StyloExtract.Cli.Shared.Commands;
 
@@ -35,6 +39,8 @@ public static class TemplateCommand
         cmd.Add(BuildAdd(rootOpt));
         cmd.Add(BuildRemove(rootOpt));
         cmd.Add(BuildTest(rootOpt));
+        cmd.Add(BuildInduce(rootOpt));
+        cmd.Add(BuildDumpSkeleton());
         cmd.Options.Add(rootOpt);
         return cmd;
     }
@@ -274,4 +280,132 @@ public static class TemplateCommand
     }
 
     internal static string EmitYaml(OperatorTemplate t) => OperatorTemplateYamlEmitter.Emit(t);
+
+    // ----- LLM-driven template induction (phase 3d) -----
+
+    private static Command BuildInduce(Option<string> rootOpt)
+    {
+        var urlOpt = new Option<string?>("--url") { Description = "URL to fetch and induce a template for." };
+        var fileOpt = new Option<string?>("--file") { Description = "Local HTML file to induce against instead of fetching." };
+        var hostOpt = new Option<string?>("--host") { Description = "Override host used for the YAML output (default: derived from --url or filename)." };
+        var writeOpt = new Option<bool>("--write") { Description = "After inducing, write the YAML to <--root>/<host>.yaml." };
+        var ollamaUrlOpt = new Option<string>("--ollama-url")
+        {
+            Description = "Ollama base URL.",
+            DefaultValueFactory = _ => "http://localhost:11434",
+        };
+        var modelOpt = new Option<string>("--model")
+        {
+            Description = "Ollama model tag.",
+            DefaultValueFactory = _ => "gemma4:e4b-it-qat",
+        };
+
+        var c = new Command("induce",
+            "Run the LLM template inducer on one page and print (or write) the resulting YAML.");
+        c.Options.Add(urlOpt);
+        c.Options.Add(fileOpt);
+        c.Options.Add(hostOpt);
+        c.Options.Add(writeOpt);
+        c.Options.Add(ollamaUrlOpt);
+        c.Options.Add(modelOpt);
+        c.SetAction(async pr =>
+        {
+            var url = pr.GetValue(urlOpt);
+            var file = pr.GetValue(fileOpt);
+            if (string.IsNullOrEmpty(url) && string.IsNullOrEmpty(file))
+            {
+                Console.Error.WriteLine("--url or --file is required");
+                return 2;
+            }
+
+            var (html, host) = await LoadHtmlAsync(url, file, pr.GetValue(hostOpt));
+            var doc = LoadAndCleanDocument(html);
+            var skeleton = new DomSkeletonRenderer().Render(doc);
+            if (string.IsNullOrEmpty(skeleton))
+            {
+                Console.Error.WriteLine("page produced an empty skeleton (no body or no candidates)");
+                return 1;
+            }
+
+            var services = new ServiceCollection();
+            services.AddOptions<OllamaTextProviderOptions>().Configure(o =>
+            {
+                o.OllamaUrl = pr.GetValue(ollamaUrlOpt)!;
+                o.Model = pr.GetValue(modelOpt)!;
+            });
+            services.AddOllamaTextProvider();
+            using var sp = services.BuildServiceProvider();
+            var provider = sp.GetRequiredService<ILlmTextProvider>();
+            var inducer = new LlmTemplateInducer(provider);
+
+            Console.Error.WriteLine($"# inducing template for host={host} via {pr.GetValue(ollamaUrlOpt)} model={pr.GetValue(modelOpt)}");
+            var template = await inducer.InduceFromSkeletonAsync(skeleton, host);
+            if (template is null)
+            {
+                Console.Error.WriteLine("induction returned no template (LLM error, malformed response, or validation failure)");
+                return 1;
+            }
+
+            var yaml = OperatorTemplateYamlEmitter.Emit(template);
+            if (pr.GetValue(writeOpt))
+            {
+                var root = pr.GetValue(rootOpt)!;
+                Directory.CreateDirectory(root);
+                var path = Path.Combine(root, host + ".yaml");
+                await File.WriteAllTextAsync(path, yaml);
+                Console.Error.WriteLine($"# wrote {path}");
+            }
+            Console.Write(yaml);
+            return 0;
+        });
+        return c;
+    }
+
+    private static Command BuildDumpSkeleton()
+    {
+        var urlOpt = new Option<string?>("--url") { Description = "URL to fetch and skeletonise." };
+        var fileOpt = new Option<string?>("--file") { Description = "Local HTML file to skeletonise instead." };
+
+        var c = new Command("dump-skeleton",
+            "Dump the slim DOM skeleton the LLM inducer would see for one page.");
+        c.Options.Add(urlOpt);
+        c.Options.Add(fileOpt);
+        c.SetAction(async pr =>
+        {
+            var url = pr.GetValue(urlOpt);
+            var file = pr.GetValue(fileOpt);
+            if (string.IsNullOrEmpty(url) && string.IsNullOrEmpty(file))
+            {
+                Console.Error.WriteLine("--url or --file is required");
+                return 2;
+            }
+            var (html, _) = await LoadHtmlAsync(url, file, null);
+            var doc = LoadAndCleanDocument(html);
+            var skeleton = new DomSkeletonRenderer().Render(doc);
+            Console.Write(skeleton);
+            return 0;
+        });
+        return c;
+    }
+
+    private static async Task<(string Html, string Host)> LoadHtmlAsync(string? url, string? file, string? hostOverride)
+    {
+        if (!string.IsNullOrEmpty(url))
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 stylo-extract/template-induce");
+            var html = await http.GetStringAsync(url);
+            var host = hostOverride ?? new Uri(url).Host;
+            return (html, host);
+        }
+        var content = await File.ReadAllTextAsync(file!);
+        return (content, hostOverride ?? "file:" + Path.GetFileNameWithoutExtension(file));
+    }
+
+    private static AngleSharp.Dom.IDocument LoadAndCleanDocument(string html)
+    {
+        var doc = new AngleSharpHtmlDomParser().Parse(html);
+        new DomCleaner().Clean(doc);
+        return doc;
+    }
 }

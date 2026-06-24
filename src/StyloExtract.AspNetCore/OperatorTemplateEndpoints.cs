@@ -162,6 +162,79 @@ public static class OperatorTemplateEndpoints
             return Results.NoContent();
         });
 
+        // Ad-hoc template induction over the LLM stack. The induced
+        // OperatorTemplate is RETURNED as YAML; the operator decides
+        // whether to PUT it back as a hand-authored template (so the
+        // hard-override path takes over) or discard it. This is
+        // separate from the background TemplateEnrichmentCoordinator
+        // which fires on novel templates automatically and writes the
+        // result directly to disk.
+        group.MapPost("/{host}/induce", async (
+            string host,
+            InduceRequest body,
+            ILlmTextProvider llm,
+            StyloExtract.Core.Skeleton.DomSkeletonRenderer skeletonRenderer,
+            StyloExtract.Core.Llm.LlmTemplateInducer inducer) =>
+        {
+            if (!IsValidHostname(host))
+                return Results.BadRequest(new { error = "host must be a valid hostname" });
+
+            string html;
+            if (!string.IsNullOrEmpty(body.Html))
+            {
+                html = body.Html;
+            }
+            else if (!string.IsNullOrEmpty(body.Url))
+            {
+                var validation = await TryResolvePublicUrlAsync(body.Url);
+                if (validation.Error is not null)
+                    return Results.BadRequest(new { error = validation.Error });
+                using var handler = new HttpClientHandler { AllowAutoRedirect = false };
+                using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) };
+                http.DefaultRequestHeaders.UserAgent.ParseAdd("stylo-extract/operator-template-induce");
+                using var resp = await http.GetAsync(validation.Uri!);
+                if ((int)resp.StatusCode >= 300 && (int)resp.StatusCode < 400)
+                    return Results.BadRequest(new { error = "redirects are not followed; re-issue with the resolved URL" });
+                resp.EnsureSuccessStatusCode();
+                html = await resp.Content.ReadAsStringAsync();
+            }
+            else
+            {
+                return Results.BadRequest(new { error = "body must include 'html' or 'url'" });
+            }
+
+            var parser = new StyloExtract.Html.AngleSharpHtmlDomParser();
+            var cleaner = new StyloExtract.Html.DomCleaner();
+            var doc = parser.Parse(html);
+            cleaner.Clean(doc);
+
+            var skeleton = skeletonRenderer.Render(doc);
+            if (string.IsNullOrEmpty(skeleton))
+                return Results.BadRequest(new { error = "page produced an empty skeleton (no body or no candidates)" });
+
+            OperatorTemplate? template;
+            try
+            {
+                template = await inducer.InduceFromSkeletonAsync(skeleton, host);
+            }
+            catch (LlmProviderException ex)
+            {
+                return Results.Problem(
+                    detail: ex.Message,
+                    statusCode: StatusCodes.Status502BadGateway,
+                    title: "LLM backend failure");
+            }
+            if (template is null)
+            {
+                return Results.Problem(
+                    detail: "induction returned no template (malformed response or validation failure)",
+                    statusCode: StatusCodes.Status502BadGateway,
+                    title: "induction failed");
+            }
+            var yaml = EmitYaml(template);
+            return Results.Text(yaml, "text/yaml; charset=utf-8");
+        });
+
         return app;
     }
 
@@ -300,8 +373,10 @@ public static class OperatorTemplateEndpoints
 public sealed record OperatorTemplateSummary(string Host, string Description, int Version, int RuleCount);
 public sealed record TestRequest(string? Html = null, string? Url = null);
 public sealed record TestResponse(string Status, int BlockCount, string Markdown);
+public sealed record InduceRequest(string? Html = null, string? Url = null);
 
 [JsonSerializable(typeof(List<OperatorTemplateSummary>))]
 [JsonSerializable(typeof(TestRequest))]
 [JsonSerializable(typeof(TestResponse))]
+[JsonSerializable(typeof(InduceRequest))]
 internal partial class OperatorTemplateJsonContext : JsonSerializerContext { }
