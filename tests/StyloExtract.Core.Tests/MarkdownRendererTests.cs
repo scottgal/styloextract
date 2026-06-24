@@ -80,4 +80,49 @@ public class MarkdownRendererTests
         var mdDebug = r.Render(new[] { shortBlock }, ExtractionProfile.DebugFull);
         mdDebug.Should().Contain("Too short.");
     }
+
+    [Fact]
+    public void Render_Wcxb_Uses_Plain_Text_Not_Markdown_From_Block()
+    {
+        IMarkdownRenderer r = new TypedMarkdownRenderer();
+        // Block with explicit Text and Markdown that differ — Wcxb must pick Text.
+        var b = new ExtractedBlock
+        {
+            Id = "b",
+            Role = BlockRole.MainContent,
+            Confidence = 0.9,
+            Text = "Plain text content with no formatting markers anywhere in the body.",
+            Markdown = "# Heading\n\nMarkdown content **bold** and *italic* with formatting.",
+            XPath = "/",
+            TextLength = 65,
+            LinkDensity = 0.0,
+            Links = Array.Empty<ExtractedLink>(),
+        };
+
+        var md = r.Render(new[] { b }, ExtractionProfile.Wcxb);
+        md.Should().Contain("Plain text content");
+        md.Should().NotContain("# Heading",
+            because: "Wcxb profile must emit block.Text, not block.Markdown");
+        md.Should().NotContain("**bold**");
+    }
+
+    [Fact]
+    public void Render_Wcxb_Has_Same_Role_Set_As_MainContentOnly()
+    {
+        IMarkdownRenderer r = new TypedMarkdownRenderer();
+        var blocks = new[]
+        {
+            Block(BlockRole.PrimaryNavigation, "Home About Blog Archive Contact Us Pages"),
+            Block(BlockRole.MainContent, "The article body contains substantial prose text for a proper extraction."),
+            Block(BlockRole.Sidebar, "Related posts: An interesting article. Another one. And one more."),
+            Block(BlockRole.Footer, "Copyright 2026 Example Corp. All rights reserved worldwide."),
+        };
+
+        var md = r.Render(blocks, ExtractionProfile.Wcxb);
+        md.Should().Contain("The article body");
+        md.Should().NotContain("Home About Blog");
+        md.Should().NotContain("Copyright 2026");
+        md.Should().NotContain("Related posts",
+            because: "Sidebar role is excluded from MainContentOnly + Wcxb identically");
+    }
 }

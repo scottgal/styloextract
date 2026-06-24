@@ -15,7 +15,11 @@ public sealed class TypedMarkdownRenderer : IMarkdownRenderer
             {
                 sb.AppendLine($"<!-- block:{block.Role} confidence:{block.Confidence:F2} xpath:{block.XPath} -->");
             }
-            sb.AppendLine(BlockRoleRenderers.Render(block));
+            // Wcxb: emit plain Text (no markdown syntax). All other profiles emit
+            // the block's GFM Markdown via the role-specific renderer.
+            sb.AppendLine(profile == ExtractionProfile.Wcxb
+                ? block.Text
+                : BlockRoleRenderers.Render(block));
             sb.AppendLine();
         }
         return sb.ToString().TrimEnd() + "\n";
@@ -42,6 +46,12 @@ public sealed class TypedMarkdownRenderer : IMarkdownRenderer
             // AgentNavigation: RepeatedItem is content, not navigation - exclude it.
             ExtractionProfile.AgentNavigation => b.Role is BlockRole.PrimaryNavigation or BlockRole.SecondaryNavigation
                 or BlockRole.Breadcrumb or BlockRole.Form,
+            // Wcxb: same role-set as MainContentOnly so we benchmark like-for-like
+            // against word-overlap ground truth; the difference vs MainContentOnly
+            // is in the render step (plain Text, not GFM Markdown).
+            ExtractionProfile.Wcxb => b.Role is BlockRole.MainContent or BlockRole.Article
+                or BlockRole.Heading or BlockRole.Summary or BlockRole.Table or BlockRole.CodeBlock
+                or BlockRole.RepeatedItem,
             _ => true
         };
     }

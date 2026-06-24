@@ -261,7 +261,7 @@ static class Program
         // Parse CLI args
         string datasetPath  = "/tmp/wcxb";
         string split        = "dev";
-        string profile      = "MainContentOnly";
+        string profile      = "Wcxb";
         int    maxPages     = int.MaxValue;
         string outPath      = "docs/wcxb.md";
         bool   diagnostic   = false;
@@ -291,7 +291,7 @@ static class Program
 
         if (!Enum.TryParse<ExtractionProfile>(profile, out var extractionProfile))
         {
-            Console.Error.WriteLine($"Unknown profile '{profile}'. Valid: MainContentOnly, RagFull, AgentNavigation, DebugFull");
+            Console.Error.WriteLine($"Unknown profile '{profile}'. Valid: MainContentOnly, RagFull, AgentNavigation, DebugFull, Wcxb");
             return 1;
         }
 
