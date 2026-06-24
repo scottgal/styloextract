@@ -44,4 +44,35 @@ public sealed record TemplateEnrichmentJob
     /// because the cache they'd update has long since changed).
     /// </summary>
     public required DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>
+    /// What the coordinator should do with this job.
+    /// <see cref="EnrichmentJobKind.Induce"/> is the original case (no
+    /// existing operator template, induce one from scratch).
+    /// <see cref="EnrichmentJobKind.Repair"/> means an existing template
+    /// produced poor output for this page; the coordinator loads the
+    /// failing YAML from the operator-template root and asks the LLM
+    /// to fix its selectors.
+    /// </summary>
+    public EnrichmentJobKind Kind { get; init; } = EnrichmentJobKind.Induce;
+
+    /// <summary>
+    /// For <see cref="EnrichmentJobKind.Repair"/>: a short sample of
+    /// the bad Markdown the failing template produced. Included in the
+    /// LLM prompt so the model can see the failure mode. Empty for
+    /// induce jobs.
+    /// </summary>
+    public string BadMarkdownSample { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// Discriminates the two operations the enrichment coordinator handles.
+/// </summary>
+public enum EnrichmentJobKind
+{
+    /// <summary>No template exists yet; induce one from the page skeleton.</summary>
+    Induce = 0,
+
+    /// <summary>An existing template performed badly; ask the LLM to repair it.</summary>
+    Repair = 1,
 }

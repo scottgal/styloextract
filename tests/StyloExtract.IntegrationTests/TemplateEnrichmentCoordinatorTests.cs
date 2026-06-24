@@ -239,4 +239,118 @@ public class TemplateEnrichmentCoordinatorTests : IDisposable
         }
         drained.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task Repair_Job_Loads_Existing_Yaml_And_Overwrites_With_Llm_Output()
+    {
+        // Seed an "existing" (broken) template on disk.
+        var host = "broken.example";
+        var existingPath = Path.Combine(_root, host + ".yaml");
+        await File.WriteAllTextAsync(existingPath, """
+            host: broken.example
+            description: Original (broken) - MainContent points at footer.
+            version: 1
+            rules:
+              - role: MainContent
+                selectors:
+                  - footer
+                confidence: 0.9
+            """);
+
+        const string repairedYaml = """
+            ```yaml
+            host: broken.example
+            description: Repaired by the LLM - MainContent now targets the article body.
+            version: 2
+            rules:
+              - role: MainContent
+                selectors:
+                  - main.article-body
+                confidence: 0.95
+            ```
+            """;
+        using var queue = new InMemoryTemplateEnrichmentQueue();
+        var llm = new CannedLlm { Response = repairedYaml };
+        var inducer = new LlmTemplateInducer(llm, new DomSkeletonRenderer());
+        var coordinator = new TemplateEnrichmentCoordinator(
+            queue, inducer, _root,
+            operatorTemplateStore: null,
+            options: new EnrichmentCoordinatorOptions { MinInterCallInterval = TimeSpan.Zero });
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await coordinator.StartAsync(cts.Token);
+
+        var repairJob = new TemplateEnrichmentJob
+        {
+            Host = host,
+            Skeleton = "ROOT body\n├─ main.article-body — \"actual article text\"\n└─ footer — \"chrome\"\n",
+            FingerprintHex = "fingerprint01",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Kind = EnrichmentJobKind.Repair,
+            BadMarkdownSample = "© 2026 chrome only",
+        };
+        (await queue.TryEnqueueAsync(repairJob)).Should().BeTrue();
+
+        var waitUntil = DateTimeOffset.UtcNow.AddSeconds(4);
+        while (DateTimeOffset.UtcNow < waitUntil)
+        {
+            var content = File.Exists(existingPath) ? await File.ReadAllTextAsync(existingPath) : "";
+            if (content.Contains("article-body")) break;
+            await Task.Delay(50);
+        }
+
+        llm.Calls.Should().Be(1, "the coordinator must call the LLM once for the repair job");
+        var afterContent = await File.ReadAllTextAsync(existingPath);
+        afterContent.Should().Contain("article-body",
+            because: "the repaired YAML should overwrite the broken one in place");
+        afterContent.Should().NotContain("- footer",
+            because: "the broken selector should be replaced, not duplicated");
+
+        queue.Complete();
+        try { await coordinator.StopAsync(CancellationToken.None); } catch { }
+        cts.Cancel();
+    }
+
+    [Fact]
+    public async Task Repair_Job_Skips_When_Existing_Template_File_Missing()
+    {
+        const string anyYaml = """
+            ```yaml
+            host: nofile.example
+            rules:
+              - role: MainContent
+                selectors:
+                  - main
+            ```
+            """;
+        using var queue = new InMemoryTemplateEnrichmentQueue();
+        var llm = new CannedLlm { Response = anyYaml };
+        var inducer = new LlmTemplateInducer(llm, new DomSkeletonRenderer());
+        var coordinator = new TemplateEnrichmentCoordinator(
+            queue, inducer, _root,
+            operatorTemplateStore: null,
+            options: new EnrichmentCoordinatorOptions { MinInterCallInterval = TimeSpan.Zero });
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        await coordinator.StartAsync(cts.Token);
+
+        var repairJob = new TemplateEnrichmentJob
+        {
+            Host = "nofile.example",
+            Skeleton = "ROOT body\n└─ main\n",
+            FingerprintHex = "fingerprint02",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Kind = EnrichmentJobKind.Repair,
+        };
+        (await queue.TryEnqueueAsync(repairJob)).Should().BeTrue();
+        await Task.Delay(500);
+
+        llm.Calls.Should().Be(0,
+            because: "without an existing template on disk there's nothing to repair");
+        File.Exists(Path.Combine(_root, "nofile.example.yaml")).Should().BeFalse();
+
+        queue.Complete();
+        try { await coordinator.StopAsync(CancellationToken.None); } catch { }
+        cts.Cancel();
+    }
 }

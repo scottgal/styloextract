@@ -91,9 +91,12 @@ public sealed class TemplateEnrichmentCoordinator : BackgroundService
 
     private async Task ProcessJobAsync(TemplateEnrichmentJob job, CancellationToken cancellationToken)
     {
-        // Skip if an operator-written template already exists for this host
-        // — hand-authored takes precedence over induced, always.
-        if (_operatorTemplateStore is not null &&
+        // For Induce: skip if an operator-written template already exists for
+        // this host — hand-authored takes precedence over induced. For Repair:
+        // the existing operator-template IS what we're being asked to fix, so
+        // the presence check is the trigger, not a block.
+        if (job.Kind == EnrichmentJobKind.Induce &&
+            _operatorTemplateStore is not null &&
             _operatorTemplateStore.TryGet(job.Host, out _))
         {
             _logger?.LogDebug(
@@ -105,8 +108,12 @@ public sealed class TemplateEnrichmentCoordinator : BackgroundService
         OperatorTemplate? template;
         try
         {
-            template = await _inducer.InduceFromSkeletonAsync(
-                job.Skeleton, job.Host, cancellationToken).ConfigureAwait(false);
+            template = job.Kind switch
+            {
+                EnrichmentJobKind.Repair => await RepairExistingAsync(job, cancellationToken).ConfigureAwait(false),
+                _ => await _inducer.InduceFromSkeletonAsync(
+                    job.Skeleton, job.Host, cancellationToken).ConfigureAwait(false),
+            };
         }
         catch (OperationCanceledException)
         {
@@ -115,29 +122,50 @@ public sealed class TemplateEnrichmentCoordinator : BackgroundService
         catch (Exception ex)
         {
             _logger?.LogError(ex,
-                "induction crashed for {Host}; skipping job", job.Host);
+                "{Kind} crashed for {Host}; skipping job", job.Kind, job.Host);
             return;
         }
 
         if (template is null)
         {
             _logger?.LogInformation(
-                "induction returned null for {Host}; heuristic-induced template stays in place",
-                job.Host);
+                "{Kind} returned null for {Host}; existing template (if any) stays in place",
+                job.Kind, job.Host);
             return;
         }
 
-        // Validate selector minimum: an "induced" template with zero
-        // MainContent selectors is worse than the heuristic; don't write it.
+        // Validate selector minimum: a result with zero MainContent selectors
+        // is worse than what we have; don't write it.
         if (!template.Rules.Any(r => r.Role == BlockRole.MainContent))
         {
             _logger?.LogInformation(
-                "induction for {Host} produced no MainContent rule; skipping",
-                job.Host);
+                "{Kind} for {Host} produced no MainContent rule; skipping",
+                job.Kind, job.Host);
             return;
         }
 
         await WriteTemplateAsync(template, job, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<OperatorTemplate?> RepairExistingAsync(
+        TemplateEnrichmentJob job, CancellationToken cancellationToken)
+    {
+        // Repair needs the existing template's YAML. Read from the operator-
+        // template root we own. A repair job whose target file doesn't exist
+        // is a no-op — without a baseline to fix, the work belongs in an induce
+        // job instead.
+        var path = Path.Combine(_operatorTemplateRoot, job.Host + ".yaml");
+        if (!File.Exists(path))
+        {
+            _logger?.LogInformation(
+                "repair skipped for {Host}: existing template file {Path} not found",
+                job.Host, path);
+            return null;
+        }
+        var existingYaml = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+        return await _inducer.RepairFromSkeletonAsync(
+            job.Skeleton, job.Host, existingYaml, job.BadMarkdownSample, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task WriteTemplateAsync(

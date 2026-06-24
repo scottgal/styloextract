@@ -428,6 +428,21 @@ public sealed class LayoutExtractor : ILayoutExtractor
         renderTimer.Stop();
         total.Stop();
 
+        // Post-render repair-enqueue: when an EXISTING template was used
+        // (fast-path hit / slow-path match, NOT novel) but the rendered
+        // Markdown is below the same FallbackMinTextLength threshold the
+        // classifier-output fallback uses, ask the LLM to repair the
+        // template's selectors. The hot path doesn't block — the job is
+        // dropped if the queue is full or the host is on cooldown.
+        const int RepairMarkdownMinLength = FallbackMinTextLength;
+        if (status is MatchStatus.FastPathHit or MatchStatus.SlowPathMatch &&
+            markdown.Trim().Length < RepairMarkdownMinLength &&
+            _operatorTemplates is not null &&
+            _operatorTemplates.TryGet(resolvedHost, out _))
+        {
+            await MaybeEnqueueRepairAsync(doc, resolvedHost, fp.Hex, markdown, cancellationToken).ConfigureAwait(false);
+        }
+
         return new ExtractionResult
         {
             SourceUri = sourceUri,
@@ -500,6 +515,55 @@ public sealed class LayoutExtractor : ILayoutExtractor
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "enrichment enqueue failed for {Host}", host);
+        }
+    }
+
+    /// <summary>
+    /// Enqueue a repair job for an existing operator template that produced
+    /// low-quality Markdown for the current page. Counterpart of
+    /// <see cref="MaybeEnqueueEnrichmentAsync"/>; the runtime path never
+    /// blocks on the result.
+    /// </summary>
+    private async Task MaybeEnqueueRepairAsync(
+        AngleSharp.Dom.IDocument doc, string host, string fingerprintHex,
+        string badMarkdown, CancellationToken cancellationToken)
+    {
+        if (_enrichmentQueue is null || _skeletonRenderer is null) return;
+        if (string.IsNullOrEmpty(host)) return;
+
+        string skeleton;
+        try
+        {
+            skeleton = _skeletonRenderer.Render(doc);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "skeleton render failed for {Host}; skipping repair enqueue", host);
+            return;
+        }
+        if (string.IsNullOrEmpty(skeleton)) return;
+
+        // Truncate the bad markdown sample so the queue stays cheap.
+        const int MaxBadSampleChars = 400;
+        var sample = badMarkdown.Length <= MaxBadSampleChars
+            ? badMarkdown
+            : badMarkdown[..MaxBadSampleChars];
+
+        try
+        {
+            await _enrichmentQueue.TryEnqueueAsync(new TemplateEnrichmentJob
+            {
+                Host = host,
+                Skeleton = skeleton,
+                FingerprintHex = fingerprintHex,
+                CreatedAt = DateTimeOffset.UtcNow,
+                Kind = StyloExtract.Abstractions.TemplateEnrichment.EnrichmentJobKind.Repair,
+                BadMarkdownSample = sample,
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "repair enqueue failed for {Host}", host);
         }
     }
 
