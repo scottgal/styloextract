@@ -740,22 +740,46 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         // Fix 4: tighten Form classification so mobile-nav toggles and pure-button
         // forms don't get classified as Form. Only classify as Form when there is
         // at least one meaningful text-entry input or textarea.
+        //
+        // Body-spanning form exception: ASP.NET WebForms and some legacy CMSs wrap
+        // the ENTIRE page in a single <form id="aspnetForm"> with one hidden
+        // ViewState input plus a search box somewhere. That trips the meaningful-
+        // input check and classifies the whole page body as Form, suppressing all
+        // its descendant content candidates via overlap rejection. WCXB diagnostic:
+        // drainblasterbill, Google Sites pages, several .aspx hosts produced
+        // pred_chars=1 from this pattern. Heuristic: if the form's text is more
+        // than 70% of the body's text, treat it as a content wrapper, not a form.
         if (tag == "form")
         {
-            var meaningfulInputs = element.QuerySelectorAll("input, textarea")
-                .Count(input =>
-                {
-                    if (input.TagName.Equals("textarea", StringComparison.OrdinalIgnoreCase))
-                        return true;
-                    var type = (input.GetAttribute("type") ?? "text").ToLowerInvariant();
-                    return type is "text" or "email" or "search" or "tel" or "url"
-                           or "number" or "password" or "date" or "datetime-local"
-                           or "month" or "week" or "time";
-                });
-            if (meaningfulInputs >= 1)
+            var doc = element.Owner;
+            var bodyText = doc?.Body?.TextContent.Length ?? 0;
+            var formText = element.TextContent.Length;
+            // Substantial-size guard: only ASP.NET-style wrappers (kilobytes of
+            // text) get this treatment, not tiny test/contact forms.
+            const int BodySpanningMinFormText = 500;
+            var isBodySpanning = bodyText > 0
+                                 && formText >= BodySpanningMinFormText
+                                 && (double)formText / bodyText >= 0.7;
+
+            if (!isBodySpanning)
             {
-                return (BlockRole.Form, 0.85);
+                var meaningfulInputs = element.QuerySelectorAll("input, textarea")
+                    .Count(input =>
+                    {
+                        if (input.TagName.Equals("textarea", StringComparison.OrdinalIgnoreCase))
+                            return true;
+                        var type = (input.GetAttribute("type") ?? "text").ToLowerInvariant();
+                        return type is "text" or "email" or "search" or "tel" or "url"
+                               or "number" or "password" or "date" or "datetime-local"
+                               or "month" or "week" or "time";
+                    });
+                if (meaningfulInputs >= 1)
+                {
+                    return (BlockRole.Form, 0.85);
+                }
             }
+            // Body-spanning forms fall through to the default classification
+            // path so their content descendants can win via overlap selection.
             // form with no meaningful inputs: fall through to default classification
         }
         // Note: We DO NOT classify a non-<form> element as Form just because it contains
