@@ -388,6 +388,39 @@ public sealed class LayoutExtractor : ILayoutExtractor
                 augmented.AddRange(blocks);
                 blocks = augmented;
             }
+            else
+            {
+                // Body-text fallback: old-school single-page HTML (no <main>/<article>/
+                // structural <div> wrappers) gives BlockSegmenter no usable candidates, so
+                // the classifier emits ~nothing. Walk body, skip chrome semantic children
+                // (<header>/<footer>/<nav>/<aside>), and emit the residue as a synthetic
+                // MainContent block.
+                //
+                // Empirical: WCXB diagnostic post-contamination-fix surfaced 7 article
+                // pages still emitting pred_chars=1 (erikdemaine.org/foldcut and similar
+                // flat HTML pages with H1/H2/P directly under body). All have meaningful
+                // body text once chrome semantic siblings are skipped.
+                var bodyText = ExtractBodyTextSkippingChrome(doc);
+                if (!string.IsNullOrWhiteSpace(bodyText) && bodyText.Length >= FallbackMinTextLength)
+                {
+                    var fallbackBlock = new ExtractedBlock
+                    {
+                        Id = "body-text",
+                        Role = BlockRole.MainContent,
+                        Confidence = 0.5,
+                        Text = bodyText,
+                        Markdown = "",
+                        XPath = "/html/body",
+                        CssSelector = "body",
+                        TextLength = bodyText.Length,
+                        LinkDensity = 0.0,
+                        Links = Array.Empty<ExtractedLink>(),
+                    };
+                    var augmented = new List<ExtractedBlock>(blocks.Count + 1) { fallbackBlock };
+                    augmented.AddRange(blocks);
+                    blocks = augmented;
+                }
+            }
         }
 
         var renderTimer = Stopwatch.StartNew();
@@ -468,5 +501,42 @@ public sealed class LayoutExtractor : ILayoutExtractor
         {
             _logger?.LogWarning(ex, "enrichment enqueue failed for {Host}", host);
         }
+    }
+
+    private static string ExtractBodyTextSkippingChrome(AngleSharp.Dom.IDocument doc)
+    {
+        var body = doc.Body;
+        if (body is null) return string.Empty;
+
+        // Walk body's direct + transitive children, skipping subtrees rooted at chrome
+        // semantic tags so site nav/header/footer/aside don't leak into the fallback.
+        // No allocations beyond the StringBuilder; iterative DFS uses a Stack.
+        var sb = new System.Text.StringBuilder();
+        var stack = new Stack<AngleSharp.Dom.IElement>();
+        foreach (var child in body.Children) stack.Push(child);
+
+        while (stack.Count > 0)
+        {
+            var el = stack.Pop();
+            var tag = el.LocalName;
+            if (tag is "nav" or "header" or "footer" or "aside") continue;
+
+            // Leaf-ish element with no element children: append its text directly.
+            if (el.ChildElementCount == 0)
+            {
+                var text = el.TextContent;
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    sb.Append(text);
+                    sb.Append(' ');
+                }
+                continue;
+            }
+
+            // Has element children: push children to walk into them.
+            foreach (var c in el.Children) stack.Push(c);
+        }
+
+        return sb.ToString().Trim();
     }
 }
