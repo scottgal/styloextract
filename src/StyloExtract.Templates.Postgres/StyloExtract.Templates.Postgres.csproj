@@ -10,9 +10,6 @@
     <PackageTags>styloextract;postgres;postgresql;npgsql;template;centroid;rag;site-version</PackageTags>
   </PropertyGroup>
   <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
     <ProjectReference Include="..\StyloExtract.Fingerprint\StyloExtract.Fingerprint.csproj" />
     <ProjectReference Include="..\StyloExtract.Templates\StyloExtract.Templates.csproj" />
