@@ -89,10 +89,28 @@ internal static class IntraBlockCleaner
         if (tag == "nav") return true;
 
         // A) id or class contains a known contamination hint.
+        //
+        // Substring match (so "sidebar" matches "right-sidebar" + "sidebar-wrap" etc.)
+        // is intentional, but it false-positives on CSS modifier-style class names
+        // that embed a hint word as a state qualifier — e.g. WordPress / SNOFlex's
+        // `<div class="sno-story-page sno-story-sidebar-mode-single">` is THE article
+        // body, not a sidebar; the class is reading "the sidebar mode is single", not
+        // "this element is a sidebar". Without a content-guard, the article gets
+        // stripped and the page emits 1 char of MainContent.
+        //
+        // Guard: only treat as contamination if the element looks chrome-shaped —
+        // i.e. small overall (< 1000 chars) OR mostly links (>= 0.4 density). A
+        // 15 KB low-link-density div is content regardless of class string.
         var id = el.GetAttribute("id") ?? "";
         var cls = el.GetAttribute("class") ?? "";
         var idCls = (id + " " + cls).ToLowerInvariant();
-        if (ContaminationHints.Any(h => idCls.Contains(h))) return true;
+        if (ContaminationHints.Any(h => idCls.Contains(h)))
+        {
+            const int ContentSizeMin = 1000;
+            const double ContentLinkDensityMax = 0.4;
+            if (el.TextContent.Length < ContentSizeMin || ComputeLinkDensity(el) >= ContentLinkDensityMax)
+                return true;
+        }
 
         // B) High-link-density <div> or <aside>: these are navigation listings,
         // related-article widgets, or sidebar link clusters inside the content subtree.

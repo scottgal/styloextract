@@ -398,12 +398,26 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         // textLength * linkPenalty^2 and won MainContent, leaving IntraBlockCleaner to strip
         // the mega-menu and emit ~38 chars of residue. Score-only comparison ignored the
         // explicit semantic intent encoded by the page author's <main>/<article> tag.
+        //
+        // The rule has one exception: an "empty" semantic wrapper does NOT win automatically.
+        // WordPress + SNOFlex / similar themes routinely render <main> as a near-empty CSS
+        // scaffold (just inline <style> tags consumed by DomCleaner) while the real article
+        // body lives in a deeper <div> matching no framework-content hint. Without an
+        // emptiness check, the semantic-tag-wins rule keeps the empty <main> and rejects
+        // the rich div — yielding ~1 char of MainContent output. WCXB diagnostic
+        // (2026-06-24): 10+ pages emit pred_chars=1, all matching this shape. Threshold
+        // shared with SubstantialSemanticTextThreshold above.
         const double SemanticTagConfidenceFloor = 0.70;
+        const int EmptySemanticWrapperTextCeiling = SubstantialSemanticTextThreshold;
         bool IsSemanticTagCandidate(IElement el, double conf)
         {
             if (conf < SemanticTagConfidenceFloor) return false;
             var tag = el.LocalName;
-            return tag is "main" or "article" or "header" or "nav" or "aside" or "footer";
+            if (tag is not ("main" or "article" or "header" or "nav" or "aside" or "footer"))
+                return false;
+            // Empty wrapper: WP/SNOFlex/etc <main> with only <style>/whitespace.
+            // Refuse semantic-priority so a richer content descendant can win on score.
+            return el.TextContent.Trim().Length >= EmptySemanticWrapperTextCeiling;
         }
 
         var bestPerSingletonRole = new Dictionary<BlockRole, (IElement Element, double Score, bool IsSemantic)>();
