@@ -12,6 +12,7 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Xunit.SkippableFact" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\StyloExtract.Core\StyloExtract.Core.csproj" />
