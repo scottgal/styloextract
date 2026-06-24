@@ -49,7 +49,7 @@ public sealed class LlmTemplateInducer
     /// failure; the caller logs and falls back to the heuristic-induced
     /// template.
     /// </summary>
-    public async Task<OperatorTemplate?> InduceAsync(
+    public Task<OperatorTemplate?> InduceAsync(
         IDocument document,
         string host,
         CancellationToken cancellationToken = default)
@@ -61,8 +61,22 @@ public sealed class LlmTemplateInducer
         if (string.IsNullOrEmpty(skeleton))
         {
             _logger?.LogDebug("induce skipped for {Host}: empty skeleton", host);
-            return null;
+            return Task.FromResult<OperatorTemplate?>(null);
         }
+        return InduceFromSkeletonAsync(skeleton, host, cancellationToken);
+    }
+
+    /// <summary>
+    /// Variant for callers (the background coordinator) that already have
+    /// a rendered skeleton in hand. Skips the renderer call entirely.
+    /// </summary>
+    public async Task<OperatorTemplate?> InduceFromSkeletonAsync(
+        string skeleton,
+        string host,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(skeleton)) throw new ArgumentException("skeleton required", nameof(skeleton));
+        if (string.IsNullOrWhiteSpace(host)) throw new ArgumentException("host required", nameof(host));
 
         var userPrompt = LlmInducerPrompts.BuildUserPrompt(host, skeleton);
         string response;

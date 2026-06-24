@@ -2,7 +2,9 @@ using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Mostlylucid.Ephemeral;
 using StyloExtract.Abstractions;
+using StyloExtract.Abstractions.TemplateEnrichment;
 using StyloExtract.Core.OperatorTemplates;
+using StyloExtract.Core.Skeleton;
 using StyloExtract.Heuristics;
 using StyloExtract.Templates;
 
@@ -28,6 +30,8 @@ public sealed class LayoutExtractor : ILayoutExtractor
     private readonly ILogger<LayoutExtractor>? _logger;
 
     private readonly IOperatorTemplateStore? _operatorTemplates;
+    private readonly ITemplateEnrichmentQueue? _enrichmentQueue;
+    private readonly DomSkeletonRenderer? _skeletonRenderer;
 
     public LayoutExtractor(
         IHtmlDomParser parser,
@@ -46,7 +50,9 @@ public sealed class LayoutExtractor : ILayoutExtractor
         ITemplateVersionEventSink eventSink,
         TypedSignalSink<StyloExtractSignal>? signals = null,
         ILogger<LayoutExtractor>? logger = null,
-        IOperatorTemplateStore? operatorTemplates = null)
+        IOperatorTemplateStore? operatorTemplates = null,
+        ITemplateEnrichmentQueue? enrichmentQueue = null,
+        DomSkeletonRenderer? skeletonRenderer = null)
     {
         _parser = parser; _cleaner = cleaner; _fingerprinter = fingerprinter;
         _segmenter = segmenter; _classifier = classifier; _renderer = renderer;
@@ -57,6 +63,10 @@ public sealed class LayoutExtractor : ILayoutExtractor
         _signals = signals;
         _logger = logger;
         _operatorTemplates = operatorTemplates;
+        _enrichmentQueue = enrichmentQueue;
+        // Lazily allocate the renderer only if a queue is wired. The skeleton
+        // is the queue payload; without a queue, no renderer is needed.
+        _skeletonRenderer = enrichmentQueue is not null ? (skeletonRenderer ?? new DomSkeletonRenderer()) : null;
     }
 
     public async Task<ExtractionResult> ExtractAsync(
@@ -216,6 +226,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
                     _signals?.Raise(StyloExtractSignals.TemplateNovel,
                         new StyloExtractSignal(TemplateId: templateId, FingerprintHex: fp.Hex, HostDisplayName: sourceUri?.Host),
                         key: templateId.Value.ToString("N"));
+                    await MaybeEnqueueEnrichmentAsync(doc, resolvedHost, fp.Hex, cancellationToken).ConfigureAwait(false);
                 }
                 else
                 {
@@ -272,6 +283,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
                     _signals?.Raise(StyloExtractSignals.TemplateNovel,
                         new StyloExtractSignal(TemplateId: templateId, FingerprintHex: fp.Hex, HostDisplayName: sourceUri?.Host),
                         key: templateId.Value.ToString("N"));
+                    await MaybeEnqueueEnrichmentAsync(doc, resolvedHost, fp.Hex, cancellationToken).ConfigureAwait(false);
                 }
             }
         }
@@ -410,5 +422,51 @@ public sealed class LayoutExtractor : ILayoutExtractor
                 RenderTime = renderTimer.Elapsed
             }
         };
+    }
+
+    /// <summary>
+    /// Enqueue an LLM template-enrichment job for the host that just
+    /// produced a novel template. No-op if:
+    ///   * no <see cref="ITemplateEnrichmentQueue"/> is wired (the
+    ///     deployment isn't running the LLM coordinator);
+    ///   * the host is empty (file extraction without a host override);
+    ///   * a hand-authored operator template already exists for the host
+    ///     (hard-override wins; LLM induction is unnecessary).
+    /// On enqueue failure (queue full, cooldown active) the producer
+    /// just moves on — the heuristic-induced template covers the request.
+    /// </summary>
+    private async Task MaybeEnqueueEnrichmentAsync(
+        AngleSharp.Dom.IDocument doc, string host, string fingerprintHex, CancellationToken cancellationToken)
+    {
+        if (_enrichmentQueue is null || _skeletonRenderer is null) return;
+        if (string.IsNullOrEmpty(host)) return;
+        if (_operatorTemplates is not null && _operatorTemplates.TryGet(host, out _)) return;
+
+        string skeleton;
+        try
+        {
+            skeleton = _skeletonRenderer.Render(doc);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "skeleton render failed for {Host}; skipping enrichment", host);
+            return;
+        }
+        if (string.IsNullOrEmpty(skeleton)) return;
+
+        try
+        {
+            await _enrichmentQueue.TryEnqueueAsync(new TemplateEnrichmentJob
+            {
+                Host = host,
+                Skeleton = skeleton,
+                FingerprintHex = fingerprintHex,
+                CreatedAt = DateTimeOffset.UtcNow,
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "enrichment enqueue failed for {Host}", host);
+        }
     }
 }

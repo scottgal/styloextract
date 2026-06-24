@@ -294,30 +294,7 @@ public static class OperatorTemplateEndpoints
         return false;
     }
 
-    private static string EmitYaml(OperatorTemplate t)
-    {
-        // Mirrors the tiny emitter on TemplateCommand. Kept private here so the
-        // AspNetCore package doesn't take a project reference on Cli.Shared.
-        var sb = new StringBuilder();
-        sb.Append("host: ").Append(t.Host).Append('\n');
-        if (!string.IsNullOrEmpty(t.Description))
-            sb.Append("description: ").Append(t.Description).Append('\n');
-        if (t.Version != 1)
-            sb.Append("version: ").Append(t.Version).Append('\n');
-        sb.Append("rules:\n");
-        foreach (var rule in t.Rules)
-        {
-            sb.Append("  - role: ").Append(rule.Role).Append('\n');
-            sb.Append("    selectors:\n");
-            foreach (var sel in rule.Selectors)
-                sb.Append("      - ").Append(sel).Append('\n');
-            if (rule.Confidence != 1.0)
-                sb.Append("    confidence: ")
-                    .Append(rule.Confidence.ToString(System.Globalization.CultureInfo.InvariantCulture))
-                    .Append('\n');
-        }
-        return sb.ToString();
-    }
+    private static string EmitYaml(OperatorTemplate t) => OperatorTemplateYamlEmitter.Emit(t);
 }
 
 public sealed record OperatorTemplateSummary(string Host, string Description, int Version, int RuleCount);
