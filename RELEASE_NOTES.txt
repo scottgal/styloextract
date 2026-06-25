@@ -1,3 +1,83 @@
+StyloExtract 1.8.0-alpha.5 - 2026-06-25
+========================================
+
+In-process CPU LLM backend (LLamaSharp) + 13-model bench harness.
+Operators can now embed a single ~2-3 GB GGUF model in the host
+process — no Ollama server, no separate LLM daemon. Same
+ILlmTextProvider contract as the Ollama backend, so the
+LlmTemplateInducer + production enrichment coordinator + CLI
+`template train` all work unchanged.
+
+What's new since 1.8.0-alpha.4
+------------------------------
+
+Mostlylucid.StyloExtract.Llm.LlamaSharp
+
+    New package. ILlmTextProvider implementation backed by LLamaSharp
+    0.27 (the .NET binding for llama.cpp). Loads a GGUF model from
+    disk; the executor reads the model's chat template from GGUF
+    metadata so prompts written for Ollama work unchanged.
+
+    Wire-up:
+
+        services.AddStyloExtract(...);
+        services.AddStyloExtractLlamaSharp(o =>
+        {
+            o.ModelPath = "/var/models/Phi-4-mini-instruct-Q4_K_M.gguf";
+            o.ContextSize = 8192;
+            o.GpuLayerCount = 0;        // pure CPU target
+        });
+        services.AddStyloExtractLlmInducer("config/templates");
+
+    Anti-prompt set covers Qwen, Phi, Llama 3+, and Gemma 4 stop
+    tokens so the generator halts at the model's natural turn boundary
+    instead of echoing the chat template structure.
+
+    Known LLamaSharp 0.27 issue documented in the package README:
+    Gemma 4 E2B / E4B's chat template metadata isn't applied cleanly
+    by StatelessExecutor — the model emits Jinja2 template source
+    instead of YAML. Phi-4-mini, Qwen 2.5 Coder, Llama 3.2 work fine.
+
+Model benchmark harness
+
+    New tests/StyloExtract.Llm.Benchmark project — runs the
+    cross-product of (models × pages) for template induction and
+    reports F1 / train-time / markdown-size matrices. Reuses WCXB
+    ground-truth shape (one HTML.gz per page id, one ground-truth
+    JSON) and the operator-template store path.
+
+    Model spec routing: `llamasharp:/path/to/file.gguf` resolves via
+    the in-process backend; anything else hits Ollama. Lets one
+    bench compare server (Ollama) and embedded (LlamaSharp) backends
+    side-by-side with identical fixtures.
+
+Recommended models (empirically validated)
+
+    For Ollama backend:
+      * qwen3.5:4b           — 3 GB, ~26 s, F1 0.805  (default, best)
+      * qwen2.5-coder:3b     — 2 GB, ~21 s, F1 0.767  (smaller-and-faster pick;
+                                                       code-trained matters for
+                                                       CSS selectors)
+      * qwen3.5:0.8b         — 1 GB,  ~5 s, F1 0.528  (tiny floor)
+
+    For LLamaSharp backend (use bartowski quants):
+      * Phi-4-mini-instruct Q4_K_M    — 2.5 GB, verified working
+      * Qwen 3.5 4B Q4_K_M            — 3 GB, verified working
+      * Qwen 2.5 Coder 3B Q4_K_M      — 2 GB, verified working
+
+OllamaTextProviderOptions default model bumped
+
+    Default tag was gemma4:e4b-it-qat; switched to qwen3.5:4b per the
+    bench. The doc-comment now lists the smaller-and-faster pick and
+    the model families to avoid (thinking-mode budget burn).
+
+Tests
+
+    494 across 11 projects. New StyloExtract.Llm.LlamaSharp.Tests
+    project covers ctor validation, missing-file behaviour, and
+    SkippableFact live-GGUF integration (skipped without
+    STYLOEXTRACT_LLAMASHARP_MODEL env var pointing at a GGUF file).
+
 StyloExtract 1.8.0-alpha.4 - 2026-06-25
 ========================================
 

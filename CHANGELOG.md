@@ -4,6 +4,47 @@ All notable changes to StyloExtract are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0-alpha.5] - 2026-06-25
+
+In-process CPU LLM backend (LLamaSharp) + 13-model bench harness.
+
+### Added
+
+- **`Mostlylucid.StyloExtract.Llm.LlamaSharp`** package — in-process
+  CPU LLM backend via LLamaSharp 0.27. Loads GGUF model from disk;
+  no Ollama server required. `AddStyloExtractLlamaSharp(o => o.ModelPath = ...)`
+  wires it as the `ILlmTextProvider`. Singleton-cached weights,
+  per-call StatelessExecutor, chat template applied from GGUF metadata.
+- **`tests/StyloExtract.Llm.Benchmark`** — standalone cross-model
+  benchmark harness. Routes `llamasharp:/path/to/file.gguf` model
+  specs to the in-process backend; everything else hits Ollama.
+  Same fixtures + same inducer infrastructure for fair side-by-side
+  comparison.
+- 6 new tests for `LlamaSharpTextProvider` (2 unit, 4 SkippableFact
+  live-GGUF integration).
+
+### Changed
+
+- `OllamaTextProviderOptions.Model` default bumped from
+  `gemma4:e4b-it-qat` to `qwen3.5:4b` — empirically the best F1 on the
+  template-induction bench (0.805 vs the larger Gemma 4 E4B's 0.605).
+  Doc-comment now points operators at `qwen2.5-coder:3b` as the
+  smaller-and-faster pick (F1 0.767, 2 GB, 21 s avg).
+- `LlamaSharpTextProvider` anti-prompts widened to cover Qwen / Phi /
+  Llama 3+ / Gemma 4 stop tokens.
+
+### Known limitations
+
+- LLamaSharp 0.27 + Gemma 4 E2B / E4B: `StatelessExecutor.ApplyTemplate`
+  appears to mishandle Gemma 4's chat template metadata — the model
+  emits Jinja2 template source instead of YAML. Phi-4-mini, Qwen 3.5,
+  Qwen 2.5 Coder all work cleanly. Re-test when LLamaSharp ships a
+  bumped llama.cpp.
+
+### Tests
+
+494 across 11 projects. All green.
+
 ## [1.8.0-alpha.4] - 2026-06-25
 
 Two consumer-facing patches found while smoke-installing alpha.3.
