@@ -71,6 +71,7 @@ jobs:
             src/StyloExtract.Core \
             src/StyloExtract.AspNetCore \
             src/StyloExtract.Llm.Ollama \
+            src/StyloExtract.Llm.LlamaSharp \
             src/StyloExtract.Playwright; do
             echo "=== Packing $proj at $PKG_VERSION ==="
             dotnet pack "$proj" -c Release --no-build -o artifacts -p:Version="$PKG_VERSION"
@@ -218,7 +219,7 @@ jobs:
 
             ### NuGet packages
 
-            All twelve packages are published to NuGet.org. Add the one you need:
+            All thirteen packages are published to NuGet.org. Add the one you need:
 
             ```
             dotnet add package Mostlylucid.StyloExtract.AspNetCore
