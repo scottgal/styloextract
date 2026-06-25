@@ -89,6 +89,11 @@ public sealed class LayoutExtractor : ILayoutExtractor
         // jumps from 635 to 666 lines because the JSON blob's TextContent appears inside
         // <main>); the right shape is "lift out, then strip".
         var preCleanJsonLdText = JsonLdContentExtractor.ExtractMainContent(doc);
+        // Discourse pages embed every post in a <div id="data-preloaded"
+        // data-preloaded="...JSON..."> blob. The div survives DomCleaner (it's
+        // a <div>, not a <script>) but capturing it here keeps the symmetric
+        // shape with JSON-LD. Empty for non-Discourse pages.
+        var preCleanDiscourseText = DiscourseRehydrationExtractor.ExtractMainContent(doc);
         _cleaner.Clean(doc);
         parseTimer.Stop();
         _signals?.Raise(StyloExtractSignals.ParseDone, default);
@@ -407,6 +412,32 @@ public sealed class LayoutExtractor : ILayoutExtractor
                     XPath = "/structured-data",
                     CssSelector = "script[type='application/ld+json']",
                     TextLength = jsonLdText.Length,
+                    LinkDensity = 0.0,
+                    Links = Array.Empty<ExtractedLink>(),
+                };
+                var augmented = new List<ExtractedBlock>(blocks.Count + 1) { fallbackBlock };
+                augmented.AddRange(blocks);
+                blocks = augmented;
+            }
+            else if (!string.IsNullOrWhiteSpace(preCleanDiscourseText) && preCleanDiscourseText.Length >= FallbackMinTextLength)
+            {
+                // Discourse data-preloaded rehydration: the page is a Discourse
+                // forum SPA whose post bodies live in JSON, not the DOM. Recover
+                // the topic title + every post's "cooked" HTML, stripped to
+                // text. WCXB diagnostic 2026-06-25: 13 catastrophic forum pages
+                // (forums.eveonline.com, forum.level1techs.com, forum.lingq.com,
+                // boards.straightdope.com, forum.mssociety.org.uk, etc.) all
+                // share this pattern; Discourse powers 5 000+ public forums.
+                var fallbackBlock = new ExtractedBlock
+                {
+                    Id = "discourse-rehydration",
+                    Role = BlockRole.MainContent,
+                    Confidence = 0.7,
+                    Text = preCleanDiscourseText,
+                    Markdown = "",
+                    XPath = "/discourse-rehydration",
+                    CssSelector = "div#data-preloaded",
+                    TextLength = preCleanDiscourseText.Length,
                     LinkDensity = 0.0,
                     Links = Array.Empty<ExtractedLink>(),
                 };
