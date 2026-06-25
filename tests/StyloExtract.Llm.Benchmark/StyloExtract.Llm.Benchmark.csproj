@@ -16,5 +16,6 @@
     <ProjectReference Include="..\..\src\StyloExtract.Heuristics\StyloExtract.Heuristics.csproj" />
     <ProjectReference Include="..\..\src\StyloExtract.Html\StyloExtract.Html.csproj" />
     <ProjectReference Include="..\..\src\StyloExtract.Llm.Ollama\StyloExtract.Llm.Ollama.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Llm.LlamaSharp\StyloExtract.Llm.LlamaSharp.csproj" />
   </ItemGroup>
 </Project>

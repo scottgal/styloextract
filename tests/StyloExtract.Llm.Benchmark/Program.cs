@@ -12,6 +12,7 @@ using StyloExtract.Core.Llm;
 using StyloExtract.Core.OperatorTemplates;
 using StyloExtract.Core.Skeleton;
 using StyloExtract.Html;
+using StyloExtract.Llm.LlamaSharp;
 using StyloExtract.Llm.Ollama;
 
 namespace StyloExtract.Llm.Benchmark;
@@ -73,6 +74,7 @@ internal static class Program
         }
 
         var modelList = models.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToArray();
+        var modelDisplayNames = new string[modelList.Length];
         var ids = pageIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToArray();
 
         var gtDir = Path.Combine(wcxbPath, split, "ground-truth");
@@ -127,17 +129,37 @@ internal static class Program
             var templateRoot = Path.Combine(Path.GetTempPath(), $"bench-{Guid.NewGuid():N}");
             Directory.CreateDirectory(templateRoot);
 
+            // Model spec routing: `llamasharp:/path/to/file.gguf` runs
+            // in-process via LLamaSharp; anything else hits Ollama. Lets the
+            // same bench compare both backends side-by-side.
             var llmServices = new ServiceCollection();
-            llmServices.AddOptions<OllamaTextProviderOptions>().Configure(o =>
+            string displayName;
+            if (model.StartsWith("llamasharp:", StringComparison.OrdinalIgnoreCase))
             {
-                o.OllamaUrl = ollamaUrl;
-                o.Model = model;
-                o.Timeout = TimeSpan.FromSeconds(timeoutSec);
-            });
-            llmServices.AddOllamaTextProvider();
+                var ggufPath = model["llamasharp:".Length..];
+                displayName = "llamasharp:" + Path.GetFileNameWithoutExtension(ggufPath);
+                llmServices.AddStyloExtractLlamaSharp(o =>
+                {
+                    o.ModelPath = ggufPath;
+                    o.ContextSize = 8192;
+                    o.Timeout = TimeSpan.FromSeconds(timeoutSec);
+                });
+            }
+            else
+            {
+                displayName = model;
+                llmServices.AddOptions<OllamaTextProviderOptions>().Configure(o =>
+                {
+                    o.OllamaUrl = ollamaUrl;
+                    o.Model = model;
+                    o.Timeout = TimeSpan.FromSeconds(timeoutSec);
+                });
+                llmServices.AddOllamaTextProvider();
+            }
             using var llmSp = llmServices.BuildServiceProvider();
             var llm = llmSp.GetRequiredService<ILlmTextProvider>();
             var inducer = new LlmTemplateInducer(llm);
+            modelDisplayNames[mi] = displayName;
 
             // Phase 1: train one template per fixture.
             for (int fi = 0; fi < fixtures.Count; fi++)
@@ -215,7 +237,7 @@ internal static class Program
         }
 
         // Print + write report.
-        var report = BuildReport(modelList, fixtures, results, ollamaUrl);
+        var report = BuildReport(modelDisplayNames, fixtures, results, ollamaUrl);
         Console.WriteLine(report);
         var dir = Path.GetDirectoryName(outPath);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
