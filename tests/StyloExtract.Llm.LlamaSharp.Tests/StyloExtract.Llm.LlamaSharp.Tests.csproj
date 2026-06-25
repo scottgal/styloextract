@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>StyloExtract.Llm.LlamaSharp.Tests</RootNamespace>
+    <AssemblyName>StyloExtract.Llm.LlamaSharp.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Xunit.SkippableFact" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Llm.LlamaSharp\StyloExtract.Llm.LlamaSharp.csproj" />
+  </ItemGroup>
+</Project>
