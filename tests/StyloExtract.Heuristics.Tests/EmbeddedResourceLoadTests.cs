@@ -61,8 +61,8 @@ public sealed class EmbeddedResourceLoadTests
     public void FrameworkContentClassHints_has_expected_count()
     {
         var hints = ReadStringArray("framework-content-class-hints.json", "hints");
-        hints.Should().HaveCount(27,
-            "27 hints are declared in framework-content-class-hints.json; update this assertion if hints are added/removed");
+        hints.Should().HaveCount(47,
+            "47 hints are declared in framework-content-class-hints.json; update this assertion if hints are added/removed");
     }
 
     [Fact]

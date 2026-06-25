@@ -26,6 +26,26 @@
     "page-content",
     "content-body",
     "blog-post-content",
-    "blog-content"
+    "blog-content",
+    "cooked",
+    "topic-body",
+    "topic-area",
+    "single-post-content",
+    "block_content",
+    "category-products",
+    "products-list",
+    "woocommerce-product-details",
+    "single-product-content",
+    "product__description",
+    "product-single__description",
+    "productView-description",
+    "sqs-block-content",
+    "sqs-block-markdown",
+    "markdown-body",
+    "postbody",
+    "postcontent",
+    "item-page",
+    "w-richtext",
+    "wixui-text"
   ]
 }
