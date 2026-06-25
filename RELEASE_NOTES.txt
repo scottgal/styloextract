@@ -1,3 +1,40 @@
+StyloExtract 1.8.0-alpha.4 - 2026-06-25
+========================================
+
+Tiny patch alpha to fix two consumer-facing bugs found while smoke-
+installing alpha.3 against NuGet.
+
+What's new since 1.8.0-alpha.3
+------------------------------
+
+SQLite chain CVE patched (GHSA-2m69-gcr7-jv3q)
+
+    Microsoft.Data.Sqlite bumped 10.0.1 -> 10.0.9; StyloExtract.Templates
+    gains a direct PackageReference to SQLitePCLRaw.bundle_e_sqlite3 so
+    the existing 3.0.3 central pin lifts the resolved bundle off the
+    vulnerable 2.1.11 line and onto SourceGear.sqlite3 3.50.4.5.
+    `dotnet list package --vulnerable` on consumer projects now
+    returns clean.
+
+PlaywrightHtmlFetcher.Dispose() (sync path)
+
+    The fetcher previously only implemented IAsyncDisposable. When
+    registered as a DI singleton (which AddStyloExtractPlaywright()
+    does), `using var sp = services.BuildServiceProvider()` — the
+    canonical sync pattern — threw at container shutdown:
+
+      InvalidOperationException: 'PlaywrightHtmlFetcher' type only
+      implements IAsyncDisposable. Use DisposeAsync to dispose the
+      container.
+
+    Add a sync Dispose() that block-waits on the async path. Container
+    disposal happens off the request hot path so the sync wait is safe.
+
+Both fixes are backwards-compatible drop-in patches. No code changes
+needed in consumer projects beyond bumping the package version.
+
+492 tests across 10 projects, all green.
+
 StyloExtract 1.8.0-alpha.3 - 2026-06-25
 ========================================
 

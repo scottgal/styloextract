@@ -4,6 +4,22 @@ All notable changes to StyloExtract are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0-alpha.4] - 2026-06-25
+
+Two consumer-facing patches found while smoke-installing alpha.3.
+
+### Fixed
+
+- **GHSA-2m69-gcr7-jv3q** (SQLitePCLRaw.lib.e_sqlite3 2.1.11 HIGH-severity
+  CVE). Bumped Microsoft.Data.Sqlite 10.0.1 → 10.0.9 + added direct
+  PackageReference to SQLitePCLRaw.bundle_e_sqlite3 in StyloExtract.Templates
+  so the 3.0.3 central pin overrides the transitive 2.1.11 floor.
+  `dotnet list package --vulnerable` returns clean on consumer projects.
+- `PlaywrightHtmlFetcher` now implements `IDisposable` in addition to
+  `IAsyncDisposable`. Canonical `using var sp = services.BuildServiceProvider()`
+  pattern no longer throws at container shutdown when the singleton fetcher
+  is registered.
+
 ## [1.8.0-alpha.3] - 2026-06-25
 
 Two more rehydration paths (Next.js + Playwright auto-fallback) and a
