@@ -269,6 +269,7 @@ static class Program
         bool   usePlaywright = false;
         HashSet<string>? pageTypeFilter = null;  // null = all page types
         HashSet<string>? pageIdFilter = null;    // null = all page ids
+        string? operatorTemplatesRoot = null;    // null = no operator templates
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -291,6 +292,9 @@ static class Program
                     pageIdFilter = new HashSet<string>(
                         args[++i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
                         StringComparer.OrdinalIgnoreCase);
+                    break;
+                case "--operator-templates" when i + 1 < args.Length:
+                    operatorTemplatesRoot = args[++i];
                     break;
             }
         }
@@ -334,6 +338,16 @@ static class Program
                 o.StorePath = tmpDb;
                 o.DefaultProfile = extractionProfile;
             });
+            if (!string.IsNullOrEmpty(operatorTemplatesRoot))
+            {
+                if (!Directory.Exists(operatorTemplatesRoot))
+                {
+                    Console.Error.WriteLine($"--operator-templates: directory not found: {operatorTemplatesRoot}");
+                    return 1;
+                }
+                services.AddStyloExtractOperatorTemplates(operatorTemplatesRoot);
+                Console.WriteLine($"Operator templates loaded from {operatorTemplatesRoot}");
+            }
 
             await using var provider = services.BuildServiceProvider();
             var extractor = provider.GetRequiredService<ILayoutExtractor>();
