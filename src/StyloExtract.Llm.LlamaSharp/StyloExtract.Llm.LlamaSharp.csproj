@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>StyloExtract.Llm.LlamaSharp</RootNamespace>
+    <AssemblyName>StyloExtract.Llm.LlamaSharp</AssemblyName>
+    <PackageId>Mostlylucid.StyloExtract.Llm.LlamaSharp</PackageId>
+    <IsPackable>true</IsPackable>
+    <IsAotCompatible>false</IsAotCompatible>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>In-process CPU LLM backend for StyloExtract via LLamaSharp (llama.cpp binding). Loads GGUF models from disk; no Ollama server required. Deployment target: a single ~1-3 GB quantised model embedded in the host process for template-induction / template-repair workloads.</Description>
+    <PackageTags>styloextract;llamasharp;llama.cpp;gguf;cpu;local-llm;embedded;template-induction</PackageTags>
+    <!-- LLamaSharp's CPU backend ships native binaries (libllama.dll/so/dylib).
+         Trimming and AOT touch reflection paths we don't own, so opt out. -->
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
+    <PackageReference Include="LLamaSharp" />
+    <PackageReference Include="LLamaSharp.Backend.Cpu" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+</Project>
