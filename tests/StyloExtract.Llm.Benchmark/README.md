@@ -22,24 +22,49 @@ and word-F1's the resulting markdown against the gold `main_content`.
 
 ## Findings (2026-06-25)
 
-Current default is `qwen3.5:4b` (~3 GB, ~25 s per induce on CPU).
-Bench against current small-model leaders on a 5-page sample:
-
-| Model | Size | Avg F1 | Avg train sec | Notes |
-|---|---:|---:|---:|---|
-| **qwen3.5:4b** | 3 GB | **0.782** | 25.0 | Quality king. Default. |
-| llama3.2:3b | 2 GB | 0.635 | 12.4 | 2× faster, 80% quality. Best smaller-than-default. |
-| phi4-mini | 3.8 GB | 0.608 | 13.2 | Microsoft's sub-4B reasoner. Comparable to llama3.2:3b. |
-| qwen3.5:0.8b | 1 GB | 0.528 | 7.5 | Practical tiny floor. Sometimes wins on simple pages. |
-| smollm2:1.7b | 1 GB | 0.110 | 8.5 | Insufficient HTML/CSS training. |
-| llama3.2:1b | 1 GB | 0.000 | — | Every train returned null. Below threshold for CSS-selector reasoning. |
+Two bench runs covering 13 model variants across the current
+small-LLM landscape (Llama 3.2, Phi-4-mini, SmolLM2, Qwen 3, Qwen 3.5,
+Qwen 2.5 Coder, Phi 3.5, Granite MoE, DeepSeek R1, gemma4). 5 pages
+per run.
 
 ### Recommendations
 
-- **`qwen3.5:4b`** — production default. Best F1.
-- **`llama3.2:3b`** — pick for the smaller-and-faster axis. Half wall-clock at 80% of qwen3.5:4b's quality.
-- **`qwen3.5:0.8b`** — pick for the tiniest viable footprint. Occasionally beats 4× larger models on simple pages.
-- **DO NOT** use `llama3.2:1b`, `smollm2:1.7b`, or smaller for template induction. Below ~3B params today, CSS-selector reasoning fails or struggles.
+- **`qwen3.5:4b`** — production default. Best F1 (0.805).
+- **`qwen2.5-coder:3b`** — **smaller and faster pick**. 2 GB, 21 s avg,
+  F1 0.767 — only 0.04 behind the 4 B default. **Code-trained model
+  matters for CSS-selector reasoning**: this model scored 0.990 on
+  mybirdbuddy.eu where qwen3.5:4b scored 0.938.
+- **`qwen3:1.7b`** — tiniest viable, 2 GB, 12 s avg, F1 0.618. 2× faster
+  than the 4 B default at 77 % of quality.
+- **DO NOT** use `qwen3:4b`, `phi3.5:3.8b`, `phi4-mini`, `deepseek-r1`,
+  `llama3.2:1b`, `smollm2:*`, `granite3.1-moe:*`, or `gemma3:1b`. Each
+  has a specific failure mode: thinking-mode tokens burn the output
+  budget; reasoning models like R1 produce empty `content`; some
+  small models lack the HTML / CSS exposure to pick valid selectors;
+  granite over-extracts (163 KB markdown vs ~16 KB for good models).
+
+### Aggregate (run 2, 7 models)
+
+| Model | Size | Avg F1 | Train sec | Verdict |
+|---|---:|---:|---:|---|
+| **qwen3.5:4b** | 3 GB | **0.805** | 25.8 | Default. Best F1. |
+| **qwen2.5-coder:3b** | 2 GB | **0.767** | 20.9 | **NEW smaller winner** — code-trained matters |
+| qwen3:1.7b | 2 GB | 0.618 | **11.8** | Fastest viable; 2× faster than 4 B |
+| granite3.1-moe:3b | 2 GB | 0.327 | 13.1 | Over-extracts massively (163 K chars avg) |
+| qwen3:4b | 3 GB | **0.000** | 200+ | All trains hit the 200 s timeout (thinking-mode burn) |
+| phi3.5:3.8b | 3 GB | **0.000** | 90+ | Every train returned null |
+| deepseek-r1:1.5b | 1 GB | **0.000** | 130+ | R1 reasoning gymnastics burns all output tokens |
+
+### Aggregate (run 1, 6 models)
+
+| Model | Size | Avg F1 | Avg train sec | Notes |
+|---|---:|---:|---:|---|
+| qwen3.5:4b | 3 GB | 0.782 | 25.0 | Default |
+| llama3.2:3b | 2 GB | 0.635 | 12.4 | Older but works |
+| phi4-mini | 3.8 GB | 0.608 | 13.2 | Microsoft's sub-4 B reasoner |
+| qwen3.5:0.8b | 1 GB | 0.528 | 7.5 | Practical tiny floor |
+| smollm2:1.7b | 1 GB | 0.110 | 8.5 | Insufficient HTML / CSS training |
+| llama3.2:1b | 1 GB | 0.000 | — | Below threshold |
 
 ### Interesting per-page inversions
 

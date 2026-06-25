@@ -15,14 +15,27 @@ public sealed class OllamaTextProviderOptions
 
     /// <summary>
     /// Model tag to use. Default is <c>qwen3.5:4b</c> — Apache 2.0, ~3 GB on
-    /// disk, runs on a workstation CPU. Empirically out-performs Gemma 4 E4B
-    /// on the WCXB template-induction task at less than a third of the size
-    /// (Qwen 3.5 4B picks tighter compound selectors like
-    /// <c>div#uBlogsy_main section.uBlogsy_post_body</c> where Gemma 4 E4B
-    /// picks page wrappers and over-extracts). Operators with smaller
-    /// memory budgets can drop to <c>qwen3.5:0.8b</c> (~1 GB, ~5 s per
-    /// induce, valid templates but coarser selectors); operators with
-    /// more RAM can step up to a larger model.
+    /// disk, runs on a workstation CPU. Empirically the best F1 on the WCXB
+    /// template-induction bench (0.805) at less than a third of the size of
+    /// Gemma 4 E4B.
+    ///
+    /// <para>
+    /// Alternatives, per <c>tests/StyloExtract.Llm.Benchmark/README.md</c>:
+    /// <list type="bullet">
+    /// <item><c>qwen2.5-coder:3b</c> — 2 GB, ~21 s, F1 0.767. Code-trained;
+    ///   sometimes beats the 4 B model on CSS-selector tasks. Best
+    ///   smaller-and-faster pick.</item>
+    /// <item><c>qwen3:1.7b</c> — 2 GB, ~12 s, F1 0.618. Smallest viable;
+    ///   2× faster than the default.</item>
+    /// </list>
+    /// </para>
+    ///
+    /// <para>
+    /// Avoid models with thinking-mode budgets that empty the response
+    /// (qwen3:4b, phi3.5, phi4-mini), reasoning-tagged models that burn
+    /// output on chain-of-thought (deepseek-r1), and models too small for
+    /// CSS-selector reasoning (llama3.2:1b, smollm2:*, granite3.1-moe:*).
+    /// </para>
     /// </summary>
     public string Model { get; set; } = "qwen3.5:4b";
 
