@@ -1,0 +1,19 @@
+host: www.wral.com
+description: News listing page featuring multiple articles related to car rentals.
+rules:
+  - role: MainContent
+    selectors:
+      - section.LFud7X.bg-brand-gray-000.mBaXVX
+    confidence: 0.95
+  - role: Header
+    selectors:
+      - wral-header
+    confidence: 0.8
+  - role: Footer
+    selectors:
+      - wral-footer
+    confidence: 0.9
+  - role: RepeatedItem
+    selectors:
+      - div.SFlf8z.JY2t8E.eJWC9_
+    confidence: 0.9

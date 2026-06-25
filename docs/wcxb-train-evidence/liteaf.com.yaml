@@ -1,0 +1,12 @@
+host: liteaf.com
+description: E-commerce product/collection page structure with header, main content, and footer.
+rules:
+  - role: Header
+    selectors:
+      - header#header
+  - role: MainContent
+    selectors:
+      - main#main
+  - role: Footer
+    selectors:
+      - footer.footer-wrapper

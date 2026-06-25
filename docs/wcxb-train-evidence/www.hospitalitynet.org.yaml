@@ -1,0 +1,23 @@
+host: www.hospitalitynet.org
+description: Template for a news listing page with primary content and sidebar.
+rules:
+  - role: PrimaryNavigation
+    selectors:
+      - .site-header nav.tabs ul li
+    confidence: 0.95
+  - role: MainContent
+    selectors:
+      - main.main-content
+    confidence: 0.98
+  - role: Sidebar
+    selectors:
+      - div#sidebar
+    confidence: 0.95
+  - role: RepeatedItem
+    selectors:
+      - article.list-item
+    confidence: 0.92
+  - role: Footer
+    selectors:
+      - .site-footer
+    confidence: 0.9

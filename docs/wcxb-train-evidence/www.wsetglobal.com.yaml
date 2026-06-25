@@ -1,0 +1,32 @@
+host: www.wsetglobal.com
+description: Template for a blog post page structure.
+rules:
+  - role: MainContent
+    selectors:
+      - div.page-wrapper.blog-post
+      - .page-wrapper.blog-post
+    confidence: 0.95
+  - role: PrimaryNavigation
+    selectors:
+      - nav.main-nav
+      - .main-nav
+    confidence: 0.85
+  - role: Breadcrumb
+    selectors:
+      - div.breadcrumbs-wrapper
+      - ul.breadcrumbs
+    confidence: 0.9
+  - role: Article
+    selectors:
+      - div#uBlogsy_main
+      - '#uBlogsy_main'
+    confidence: 0.95
+  - role: Sidebar
+    selectors:
+      - aside#uBlogsy_right_col
+      - '#uBlogsy_right_col'
+    confidence: 0.8
+  - role: Footer
+    selectors:
+      - footer
+    confidence: 0.9

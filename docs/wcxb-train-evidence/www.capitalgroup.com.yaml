@@ -1,0 +1,18 @@
+host: www.capitalgroup.com
+description: Template for a corporate financial services website structure.
+rules:
+  - role: Header
+    selectors:
+      - div.header
+      - '#gds-global-header'
+    confidence: 0.95
+  - role: PrimaryNavigation
+    selectors:
+      - nav#gds-global-header-navigation
+      - .gds-header__nav
+    confidence: 0.9
+  - role: MainContent
+    selectors:
+      - div.ns-body.container
+      - .ns-body.container
+    confidence: 0.85

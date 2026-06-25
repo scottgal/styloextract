@@ -1,0 +1,23 @@
+host: www.activeendeavors.com
+description: E-commerce product or category page structure with distinct header, main content area, and footer sections.
+rules:
+  - role: Header
+    selectors:
+      - header#header
+      - .usp-carousel-pos-top.header-scrollable
+  - role: PrimaryNavigation
+    selectors:
+      - div#navbar-holder
+      - nav.navbar-type-mega.d-flex.justify-content-center
+  - role: Breadcrumb
+    selectors:
+      - '#breadcrumbs'
+  - role: MainContent
+    selectors:
+      - .container.productpage
+  - role: Footer
+    selectors:
+      - footer.margin-top-double
+  - role: SecondaryNavigation
+    selectors:
+      - div#mobile-nav-holder

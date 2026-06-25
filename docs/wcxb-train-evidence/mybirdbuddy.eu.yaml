@@ -1,0 +1,24 @@
+host: mybirdbuddy.eu
+description: E-commerce product page structure with header, main content, and footer.
+version: 2
+rules:
+  - role: Header
+    selectors:
+      - header.nm-header.default.resize-on-scroll#nm-header
+    confidence: 0.95
+  - role: MainContent
+    selectors:
+      - div.nm-single-product.layout-detailed-product-page.gallery-col-6#product-174795
+    confidence: 0.98
+  - role: Footer
+    selectors:
+      - footer.nm-footer
+    confidence: 0.95
+  - role: CookieBanner
+    selectors:
+      - aside.moove-gdpr-info-bar-hidden.moove-gdpr-align-center.moove-gdpr-dark-scheme#moove_gdpr_cookie_info_bar
+    confidence: 0.95
+  - role: PrimaryNavigation
+    selectors:
+      - nav.nm-main-menu
+    confidence: 0.85

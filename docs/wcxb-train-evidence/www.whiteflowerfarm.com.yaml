@@ -1,0 +1,21 @@
+host: www.whiteflowerfarm.com
+description: Template for an e-commerce category listing page with header, navigation, and product grid.
+rules:
+  - role: Header
+    selectors:
+      - header.site-header
+  - role: PrimaryNavigation
+    selectors:
+      - nav.js-site-nav.wff-nav-wrap
+  - role: Breadcrumb
+    selectors:
+      - div.bc-pn.container
+  - role: MainContent
+    selectors:
+      - section.site-content#content
+  - role: Sidebar
+    selectors:
+      - div.wff-category-sidebar
+  - role: RepeatedItem
+    selectors:
+      - div.thumb-wff

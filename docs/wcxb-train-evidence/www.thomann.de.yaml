@@ -1,0 +1,18 @@
+host: www.thomann.de
+description: Template for a complex e-commerce category page featuring header, main content, and footer sections.
+rules:
+  - role: Header
+    selectors:
+      - header.theme-fx.theme-fx--full-width.fx-header
+  - role: Breadcrumb
+    selectors:
+      - nav.fx-breadcrumb.fx-sm-hidden.fx-md-hidden ol.stages
+  - role: MainContent
+    selectors:
+      - main.thomann-content-module-cat.thomann-content-route-main
+  - role: Sidebar
+    selectors:
+      - div.theme-fx.theme-fx--full-width.fx-flyin#fx-flyin-filter
+  - role: Footer
+    selectors:
+      - footer.theme-fx.theme-fx--full-width.fx-content-footer

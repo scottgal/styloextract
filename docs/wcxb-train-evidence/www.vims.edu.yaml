@@ -1,0 +1,29 @@
+host: www.vims.edu
+description: Template for a complex institutional website layout featuring primary navigation, main content area with sidebar, and extensive footer.
+rules:
+  - role: PrimaryNavigation
+    selectors:
+      - div.vims-primary-bar
+      - nav#vpblinks
+    confidence: 0.95
+  - role: MainContent
+    selectors:
+      - main#main_content
+      - .content_wrapper
+    confidence: 0.98
+  - role: Sidebar
+    selectors:
+      - div#sidebar
+    confidence: 0.9
+  - role: Header
+    selectors:
+      - header#main-header
+    confidence: 0.85
+  - role: Footer
+    selectors:
+      - footer.footersection.o-vims-footer#footer
+    confidence: 0.95
+  - role: RepeatedItem
+    selectors:
+      - ul.vims-primary-bar__links li
+    confidence: 0.8

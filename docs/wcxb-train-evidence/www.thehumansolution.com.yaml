@@ -1,0 +1,21 @@
+host: www.thehumansolution.com
+description: E-commerce category page layout with header, sidebar filtering, and product listing.
+rules:
+  - role: Header
+    selectors:
+      - header.header
+  - role: PrimaryNavigation
+    selectors:
+      - div.bottom-menu
+  - role: Breadcrumb
+    selectors:
+      - ul.breadcrumbs
+  - role: Sidebar
+    selectors:
+      - aside.page-sidebar#faceted-search-container
+  - role: MainContent
+    selectors:
+      - main#product-listing-container
+  - role: RepeatedItem
+    selectors:
+      - li.product

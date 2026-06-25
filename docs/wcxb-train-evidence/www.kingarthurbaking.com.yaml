@@ -1,0 +1,27 @@
+host: www.kingarthurbaking.com
+description: Template for a recipe detail page with extensive navigation and related content blocks.
+rules:
+  - role: MainContent
+    selectors:
+      - main.main
+    confidence: 0.95
+  - role: Header
+    selectors:
+      - header.header
+    confidence: 0.92
+  - role: PrimaryNavigation
+    selectors:
+      - div#block-kafsubmenu
+    confidence: 0.88
+  - role: SecondaryNavigation
+    selectors:
+      - nav.header-subnav
+    confidence: 0.85
+  - role: RelatedLinks
+    selectors:
+      - div.region.region-content-footer
+    confidence: 0.9
+  - role: Footer
+    selectors:
+      - footer.footer
+    confidence: 0.93

@@ -1,0 +1,27 @@
+host: www.fermyon.com
+description: Template for a blog post page with extensive navigation and footer sections.
+rules:
+  - role: PrimaryNavigation
+    selectors:
+      - div.navbar-menu
+    confidence: 0.95
+  - role: MainContent
+    selectors:
+      - article.blog.blog-post.content
+    confidence: 0.98
+  - role: SecondaryNavigation
+    selectors:
+      - aside.columns.announcement-banner
+    confidence: 0.9
+  - role: RelatedLinks
+    selectors:
+      - div.blog-rec-wrapper
+    confidence: 0.92
+  - role: Footer
+    selectors:
+      - section.footer-wrap.container
+    confidence: 0.95
+  - role: Header
+    selectors:
+      - .navbar-menu
+    confidence: 0.85

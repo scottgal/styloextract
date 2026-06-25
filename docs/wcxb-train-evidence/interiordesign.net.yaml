@@ -1,0 +1,21 @@
+host: interiordesign.net
+description: Template for a complex, content-heavy design/portfolio website featuring primary navigation and article content.
+rules:
+  - role: Header
+    selectors:
+      - header.site-header#masthead
+  - role: PrimaryNavigation
+    selectors:
+      - nav.site-navigation.site-navigation__primary
+  - role: MainContent
+    selectors:
+      - article.post-221157.id_awards.type-id_awards
+  - role: Footer
+    selectors:
+      - footer.site-footer#colophon
+  - role: SecondaryNavigation
+    selectors:
+      - nav.site-navigation.site-navigation__secondary
+  - role: Boilerplate
+    selectors:
+      - div.site-copyright
