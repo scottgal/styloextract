@@ -88,7 +88,19 @@ public sealed class LlamaSharpTextProvider : ILlmTextProvider, IDisposable
             {
                 Temperature = _options.Temperature,
             },
-            AntiPrompts = new List<string> { "<|im_end|>", "<|end|>", "<|eot_id|>", "</s>" },
+            // Cover the stop tokens of every model family we benchmark so the
+            // generator halts at the model's natural turn boundary rather than
+            // continuing into the template's next-turn structure (which the
+            // model will happily echo back if we don't stop it). Qwen and
+            // Phi use <|im_end|> / <|end|>; Llama 3+ uses <|eot_id|>;
+            // Gemma uses <end_of_turn> / <|turn>; legacy uses </s>.
+            AntiPrompts = new List<string>
+            {
+                "<|im_end|>", "<|end|>",         // Qwen, Phi
+                "<|eot_id|>",                    // Llama 3+
+                "<end_of_turn>", "<|turn>",      // Gemma 4 family
+                "</s>",                          // legacy SentencePiece
+            },
         };
 
         // Serialise concurrent calls. The single-context model means we
