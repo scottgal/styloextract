@@ -2,7 +2,7 @@ using System.CommandLine;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using StyloExtract.Abstractions;
-using StyloExtract.AspNetCore;
+using StyloExtract.Core;
 using StyloExtract.Cli.Shared;
 using StyloExtract.Playwright;
 

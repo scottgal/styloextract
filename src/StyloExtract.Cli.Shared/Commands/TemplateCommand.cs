@@ -2,7 +2,7 @@ using System.CommandLine;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using StyloExtract.Abstractions;
-using StyloExtract.AspNetCore;
+using StyloExtract.Core;
 using StyloExtract.Core.Llm;
 using StyloExtract.Core.OperatorTemplates;
 using StyloExtract.Core.Skeleton;
@@ -265,7 +265,7 @@ public static class TemplateCommand
 
             using var store = new YamlFileOperatorTemplateStore(root, watch: false);
             var services = new ServiceCollection();
-            services.AddStyloExtract((Action<StyloExtract.AspNetCore.StyloExtractOptions>?)null);
+            services.AddStyloExtract((Action<StyloExtract.Core.StyloExtractOptions>?)null);
             services.AddSingleton<IOperatorTemplateStore>(store);
             var sp = services.BuildServiceProvider();
             var extractor = sp.GetRequiredService<ILayoutExtractor>();

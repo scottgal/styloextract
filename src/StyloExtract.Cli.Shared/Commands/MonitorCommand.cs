@@ -1,7 +1,7 @@
 using System.CommandLine;
 using Microsoft.Extensions.DependencyInjection;
 using StyloExtract.Abstractions;
-using StyloExtract.AspNetCore;
+using StyloExtract.Core;
 
 namespace StyloExtract.Cli.Shared.Commands;
 

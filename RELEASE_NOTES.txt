@@ -1,3 +1,27 @@
+StyloExtract 1.8.0-alpha.6 - 2026-06-25
+========================================
+
+App-safe AddStyloExtract — moved to StyloExtract.Core
+------------------------------------------------------
+
+The basic `AddStyloExtract(IServiceCollection, Action<StyloExtractOptions>?)`
+DI extension and its companion `StyloExtractOptions` type have moved from
+`Mostlylucid.StyloExtract.AspNetCore` to `Mostlylucid.StyloExtract.Core`.
+Desktop, CLI, and any non-AspNetCore host can now call:
+
+    services.AddStyloExtract(o => o.StorePath = "templates.db");
+
+without pulling `Microsoft.AspNetCore.App` (~70 MB of framework runtime).
+
+`Mostlylucid.StyloExtract.AspNetCore` keeps its `Action<ResponsePolicyBuilder>`
+overloads (response-policy framework, markdown content negotiation
+middleware, operator-template minimal-API endpoints) — those legitimately
+need AspNetCore. They now delegate to the Core overload internally.
+
+Migration: no source change required for AspNetCore consumers. Desktop /
+CLI consumers can drop direct dependencies on `Mostlylucid.StyloExtract.AspNetCore`
+and reference `Mostlylucid.StyloExtract.Core` alone.
+
 StyloExtract 1.8.0-alpha.5 - 2026-06-25
 ========================================
 

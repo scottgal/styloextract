@@ -1,6 +1,6 @@
 using StyloExtract.Abstractions;
 
-namespace StyloExtract.AspNetCore;
+namespace StyloExtract.Core;
 
 public sealed class StyloExtractOptions
 {
