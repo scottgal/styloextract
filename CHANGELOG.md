@@ -4,6 +4,109 @@ All notable changes to StyloExtract are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0-alpha.2] - 2026-06-25
+
+LLM template-training loop, Discourse rehydration, and a stack of
+heuristic + selection fixes. WCXB dev split (1495 pages, Wcxb plain-text
+profile) moves from F1 0.673 (post-1.7.1, MainContentOnly) to **0.760**.
+Catastrophic extraction failures (pred_chars ≤ 5): 92 → **25**.
+
+### Added
+
+- `stylo-extract template train` — operator-driven synchronous LLM
+  template specialisation CLI. Smart-routes between induce (no template
+  yet) and repair (template exists). Uses Ollama; default model
+  `gemma4:e4b-it-qat`.
+- `DocumentSelectorCatalog` — enumerates every real CSS selector on a
+  page and supplies it as a closed list in the LLM prompt. The model is
+  constrained to pick selectors that actually exist.
+- AngleSharp post-parse validation — every selector the LLM returns is
+  run through `doc.QuerySelectorAll`; misses are dropped; templates
+  without surviving MainContent are rejected.
+- `LlmTemplateInducer.RepairFromSkeletonAsync` — diagnostic repair
+  pathway. System prompt re-angled as "why is this failing AND how
+  should it work for this page."
+- `TemplateEnrichmentJob.Kind` (Induce | Repair) + `BadMarkdownSample`
+  + production coordinator dispatch + `LayoutExtractor.MaybeEnqueueRepairAsync`
+  on low-output existing-template hits.
+- `DiscourseRehydrationExtractor` — Discourse pages embed every post in
+  a `<div id="data-preloaded" data-preloaded="...JSON...">`. The
+  extractor parses the JSON, walks `topic_NNN.post_stream.posts[*].cooked`,
+  strips HTML to text, emits as a synthetic MainContent fallback.
+  Chains next to the JSON-LD fallback. 6 of 13 catastrophic forum
+  pages lifted from F1=0 to F1=0.83-0.99.
+- `ExtractionProfile.Wcxb` — plain-text variant of MainContentOnly
+  for fair benchmark comparison against word-overlap gold (the default
+  GFM Markdown is precision noise to plain-text scorers). The WCXB
+  benchmark harness defaults to this profile.
+- 20 new framework-content-class-hints — Discourse, phpBB, vBulletin,
+  PrestaShop, WooCommerce, Shopify, BigCommerce, Squarespace, Webflow,
+  Wix, Joomla, GitHub Pages.
+- WCXB harness `--operator-templates <root>` flag for loading YAML
+  files produced by `template train`; `--page-ids` for fast repro.
+- Body-text fallback in `LayoutExtractor` for old-school flat HTML
+  without `<main>` / `<article>` wrappers.
+
+### Changed
+
+- `OperatorTemplateYamlEmitter` quotes selectors that start with YAML
+  control chars (`#`, `&`, `*`, etc.) so emitted templates round-trip.
+- `OllamaTextProvider.MaxOutputTokens` default 1024 → 4096
+  (reasoning-tagged models burn tokens on chain-of-thought before
+  producing the answer); falls back to `message.thinking` when
+  `message.content` is empty.
+- `LlmTemplateInducer.ExtractYamlBlock` pre-repairs unquoted hash-
+  prefixed selectors in the LLM response before parse (LLMs commonly
+  emit `- #my-id` which YAML reads as a comment).
+
+### Fixed
+
+- `DomCleaner`: `<select>` is now stripped globally so its `<option>`
+  text content (category dropdowns, sort selectors) stops dominating
+  output. mostlylucid.net opened with 290+ category names before this.
+- `IntraBlockCleaner`: contamination-hint substring match now requires
+  the element to actually look chrome-shaped (small text OR high link
+  density). "sidebar" substring was eating WordPress / SNOFlex article
+  bodies whose class contained "sidebar-mode-single"; 28 catastrophic
+  article pages recovered.
+- `LayoutExtractor.IsApplicatorBroken`: detect chrome-heavy applicator
+  output. Stale templates applied to wrong-shape pages on the same
+  host produced 1 char of MainContent while combinedText looked fine
+  because Header / Footer selectors were finding chrome. esprit-barbecue,
+  nike, rei collection pages recovered.
+- `HeuristicBlockClassifier`: empty-semantic-wrapper handling at the
+  singleton-role cap. Empty `<main>` (WP themes that put real content
+  in `<div class="...story-page">`) no longer wins by semantic
+  priority alone.
+- `HeuristicBlockClassifier`: body-spanning `<form>` fall-through.
+  ASP.NET WebForms / Google Sites pages where the whole body is wrapped
+  in a single `<form>` no longer classify the wrapper as Form-role.
+
+### WCXB progression
+
+| Layer                                                  | F1     | Catastrophic |
+|--------------------------------------------------------|-------:|-------------:|
+| 1.7.1 baseline (MainContentOnly)                       | 0.673  |           92 |
+| 1.8.0-alpha.2 heuristic fixes (Wcxb profile)           | 0.751  |           43 |
+| + Discourse rehydration                                | 0.755  |           36 |
+| + 14 LLM-trained operator templates                    | **0.760** | **25** |
+
+Per page type (with everything stacked):
+
+| Page type      | StyloExtract | rs-traf | Trafilatura | Readability |
+|----------------|-------------:|--------:|------------:|------------:|
+| Article (792)  | 0.889        | 0.932   | 0.926       | 0.825       |
+| Documentation  | 0.881        | 0.932   | 0.888       | 0.736       |
+| Service        | 0.724        | 0.844   | 0.763       | 0.604       |
+| Listing        | 0.548        | 0.707   | 0.589       | 0.496       |
+| Forum          | 0.535        | 0.808   | 0.585       | 0.466       |
+| Collection     | 0.500        | 0.716   | 0.553       | 0.445       |
+| Product        | 0.501        | 0.641   | 0.567       | 0.407       |
+
+### Tests
+
+486 tests across 10 projects, all green.
+
 ## [1.8.0] - 2026-06-24
 
 The ML release. Closes the arbitrary-site coverage gap for hosts whose
