@@ -1,3 +1,72 @@
+StyloExtract 1.8.0-alpha.3 - 2026-06-25
+========================================
+
+What's new since 1.8.0-alpha.2
+------------------------------
+
+Next.js __NEXT_DATA__ rehydration extractor
+
+    Next.js apps embed their page state in a JSON blob inside
+    <script id="__NEXT_DATA__" type="application/json">. Schemas vary
+    per site (Shopify Hydrogen uses pageProps.shopifyProductsPreloadedState,
+    news sites use pageProps.initialState.article.body) so the
+    extractor walks props.pageProps recursively and collects every
+    string value that looks like prose (>= 80 chars, contains a space,
+    isn't a URL / data URI / CSS variable / serialised JSON). Conservative
+    key-exclusion list keeps URLs and build metadata out of the result.
+
+    Chains next to the JSON-LD and Discourse rehydration fallbacks.
+
+Content-role fallback gate
+
+    The chained fallback (JSON-LD -> Next.js -> Discourse -> body-text)
+    previously gated on the all-blocks text sum. That sum looked
+    healthy for pages where the heuristic emitted 3 KB of nav + footer +
+    boilerplate while finding zero MainContent — the renderer's
+    MainContentOnly / Wcxb profiles drop those roles anyway, so the
+    actual markdown is 0 chars. Switch the gate to content-role text
+    mass only. 18 catastrophic pages recovered without any new code,
+    just the gate change.
+
+Playwright auto-fallback decorator
+
+    AddStyloExtractPlaywright() wires PlaywrightHtmlFetcher AND
+    decorates the existing ILayoutExtractor with a RenderingLayoutExtractor
+    that runs static extraction first, then re-fetches via Playwright
+    only when:
+      * the caller passed a non-null sourceUri
+      * the static result has < 200 chars of content-role text
+      * an IRenderedHtmlFetcher is wired in DI
+
+    File-only callers never trigger a render. Operators who don't want
+    the Chromium dependency simply don't add the package. Three guards
+    against wasted work: Playwright throws -> return static; rendered
+    HTML same length as static -> skip the re-extract; re-extract
+    yields no improvement -> return static.
+
+    Usage:
+
+        services.AddStyloExtract(...);
+        services.AddStyloExtractPlaywright();
+
+    492 tests across 10 projects, 6 new unit tests for the decorator
+    policy.
+
+Aggregate WCXB (1495 dev pages, Wcxb profile):
+
+    | Stage                                  |     F1 | Catastrophic |
+    |----------------------------------------|-------:|-------------:|
+    | 1.8.0-alpha.2                          |  0.760 |           25 |
+    | + Next.js extractor                    |  same  |              |
+    | + content-role fallback gate           |  0.760 |           17 |
+    | + 14 LLM-trained YAMLs                 |  0.760 |           17 |
+    | (Playwright auto-fallback)             |   --   |              |
+
+    Playwright auto-fallback is wired but not exercised in the WCXB
+    benchmark by default — needs `playwright install chromium`. Real-
+    world consumers with the package added see automatic recovery for
+    JS-rendered SPAs whose content is hydrated client-side.
+
 StyloExtract 1.8.0-alpha.2 - 2026-06-25
 ========================================
 

@@ -4,6 +4,44 @@ All notable changes to StyloExtract are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0-alpha.3] - 2026-06-25
+
+Two more rehydration paths (Next.js + Playwright auto-fallback) and a
+fallback-gate fix that drops catastrophic count from 25 → 17.
+
+### Added
+
+- `NextDataRehydrationExtractor` — extracts prose-shape strings from
+  `<script id="__NEXT_DATA__" type="application/json">` blobs. Walks
+  `props.pageProps` recursively; no canonical content path so collects
+  any string >= 80 chars containing a space, filters URLs / IDs / CSS.
+  Covers Next.js sites (Shopify Hydrogen, news sites, e-commerce).
+- `RenderingLayoutExtractor` — decorator that wraps the inner
+  `ILayoutExtractor` with an automatic Playwright re-fetch. Only fires
+  when: source URI present, static result < 200 chars of content-role
+  text, `IRenderedHtmlFetcher` registered. Three skip-guards prevent
+  wasted work.
+- `AddStyloExtractPlaywright()` DI extension — one-line wiring of the
+  Playwright fetcher + the decorator. Call after `AddStyloExtract()`.
+
+### Changed
+
+- LayoutExtractor's chained fallback (JSON-LD → Next.js → Discourse →
+  body-text) now gates on CONTENT-ROLE text mass, not all-blocks sum.
+  Pages whose heuristic emits 3 KB of chrome but zero MainContent now
+  reach the fallback chain.
+
+### WCXB
+
+- 0.760 F1 / 17 catastrophic with content-role gate + Next.js extractor
+  + 14 trained YAMLs. Static-HTML floor reached; Playwright auto-
+  fallback wired for the residual JS-only cases (needs
+  `playwright install chromium` to exercise).
+
+### Tests
+
+492 across 10 projects, all green (+6 new for `RenderingLayoutExtractor`).
+
 ## [1.8.0-alpha.2] - 2026-06-25
 
 LLM template-training loop, Discourse rehydration, and a stack of
