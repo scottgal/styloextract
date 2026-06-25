@@ -1,10 +1,17 @@
 using FluentAssertions;
+using Microsoft.Data.Sqlite;
 using StyloExtract.Abstractions;
 using StyloExtract.Abstractions.TemplateEnrichment;
+using StyloExtract.Core;
 using StyloExtract.Core.Llm;
 using StyloExtract.Core.OperatorTemplates;
 using StyloExtract.Core.Skeleton;
 using StyloExtract.Core.TemplateEnrichment;
+using StyloExtract.Fingerprint;
+using StyloExtract.Heuristics;
+using StyloExtract.Html;
+using StyloExtract.Markdown;
+using StyloExtract.Templates;
 using Xunit;
 
 namespace StyloExtract.IntegrationTests;
@@ -352,5 +359,77 @@ public class TemplateEnrichmentCoordinatorTests : IDisposable
         queue.Complete();
         try { await coordinator.StopAsync(CancellationToken.None); } catch { }
         cts.Cancel();
+    }
+
+    /// <summary>
+    /// ExtractionResult.LlmInductionFired is true when the enrichment queue
+    /// is wired and the extraction produces a novel template (queue enqueue
+    /// succeeds). False when no queue is wired.
+    /// </summary>
+    [Fact]
+    public async Task LlmInductionFired_True_When_EnrichmentQueue_Wired_And_Novel_Template()
+    {
+        var body = new string('x', 400);
+        var html = $"<!DOCTYPE html><html><head><title>LLM Flag Test</title></head>" +
+                   $"<body><main><article><h1>Test Article</h1><p>{body}</p>" +
+                   $"</article></main></body></html>";
+
+        using var queue = new InMemoryTemplateEnrichmentQueue(new EnrichmentQueueOptions
+        {
+            PerHostCooldown = TimeSpan.Zero,
+        });
+
+        // Build a LayoutExtractor with the queue wired (no skeleton renderer override
+        // needed — LayoutExtractor creates its own DomSkeletonRenderer when a queue
+        // is provided but no explicit renderer is passed).
+        var cs = $"Data Source=file:test-llmflag-{Guid.NewGuid():N}?mode=memory&cache=shared&uri=true";
+        using var conn = new SqliteConnection(cs);
+        conn.Open();
+        SqliteSchema.EnsureCreated(conn);
+        var index = new SqliteTemplateIndex(cs);
+        var noise = ClassNoiseFilter.LoadFromEmbeddedResource();
+        var sketcher = new MinHashSketcher(128);
+        var fp = new StructuralFingerprinter(
+            new ShingleGenerator(noise), sketcher, new LshBander(16, 8),
+            new AnchorPathFingerprinter(noise, sketcher), new PqGramExtractor());
+        var extractor = new LayoutExtractor(
+            new AngleSharpHtmlDomParser(), new DomCleaner(), fp,
+            new BlockSegmenter(), HeuristicBlockClassifier.LoadFromEmbeddedResources(),
+            new TypedMarkdownRenderer(), index, new HostHasher(new byte[32]),
+            new ExtractorInducer(), new ExtractorApplicator(),
+            fastPathThreshold: 0.85, slowPathThreshold: 0.75,
+            new RefitOrchestrator(index, new ExtractorInducer(), 0.35, 5, 3),
+            new DefaultNoopVersionEventSink(),
+            enrichmentQueue: queue);
+
+        var sourceUri = new Uri("https://llm-flag.example/article");
+        var result = await extractor.ExtractAsync(
+            html, sourceUri,
+            new ExtractionOptions { LearnNewTemplates = true });
+
+        result.LlmInductionFired.Should().BeTrue(
+            because: "a novel template with a wired queue should enqueue LLM induction");
+
+        // Without a queue, the flag must stay false.
+        var cs2 = $"Data Source=file:test-llmflag-nq-{Guid.NewGuid():N}?mode=memory&cache=shared&uri=true";
+        using var conn2 = new SqliteConnection(cs2);
+        conn2.Open();
+        SqliteSchema.EnsureCreated(conn2);
+        var index2 = new SqliteTemplateIndex(cs2);
+        var extractor2 = new LayoutExtractor(
+            new AngleSharpHtmlDomParser(), new DomCleaner(), fp,
+            new BlockSegmenter(), HeuristicBlockClassifier.LoadFromEmbeddedResources(),
+            new TypedMarkdownRenderer(), index2, new HostHasher(new byte[32]),
+            new ExtractorInducer(), new ExtractorApplicator(),
+            fastPathThreshold: 0.85, slowPathThreshold: 0.75,
+            new RefitOrchestrator(index2, new ExtractorInducer(), 0.35, 5, 3),
+            new DefaultNoopVersionEventSink());
+
+        var result2 = await extractor2.ExtractAsync(
+            html, sourceUri,
+            new ExtractionOptions { LearnNewTemplates = true });
+
+        result2.LlmInductionFired.Should().BeFalse(
+            because: "without a wired enrichment queue LLM induction cannot fire");
     }
 }

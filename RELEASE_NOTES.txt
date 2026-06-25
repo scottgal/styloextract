@@ -1,3 +1,37 @@
+StyloExtract 1.8.0-alpha.9 - 2026-06-25
+========================================
+
+App-safe AddStyloExtract + LlmInductionFired flag
+--------------------------------------------------
+
+Two changes that downstream desktop / CLI consumers (e.g. lucidVIEW-FULL)
+need:
+
+1. The basic `AddStyloExtract(IServiceCollection, Action<StyloExtractOptions>?)`
+   DI extension and its companion `StyloExtractOptions` type now live in
+   `Mostlylucid.StyloExtract.Core` instead of `Mostlylucid.StyloExtract.AspNetCore`.
+   Non-AspNetCore hosts (desktop apps, CLI tools, console workers) can call:
+
+       services.AddStyloExtract(o => o.StorePath = "templates.db");
+
+   without pulling `Microsoft.AspNetCore.App` (~70 MB of framework runtime).
+
+   `Mostlylucid.StyloExtract.AspNetCore` keeps its `Action<ResponsePolicyBuilder>`
+   overloads (response-policy framework, markdown content negotiation
+   middleware, operator-template minimal-API endpoints) — those legitimately
+   need AspNetCore. They now delegate to the Core overload internally.
+
+   Migration: no source change for AspNetCore consumers. Desktop / CLI
+   consumers can reference `Mostlylucid.StyloExtract.Core` alone.
+
+2. `ExtractionResult.LlmInductionFired` (new bool property) signals
+   whether the LLM template inducer ran during this extraction. Downstream
+   telemetry surfaces (e.g. status bars, NDJSON exports) can now show LLM
+   utilisation per call without reflection or polling internal state.
+   Defaults to false for non-LLM hosts and heuristic-only extractions;
+   set true only when the LlmTemplateInducer (or any future ILlmTextProvider-
+   backed inducer) actually invoked the LLM.
+
 StyloExtract 1.8.0-alpha.6 - 2026-06-25
 ========================================
 

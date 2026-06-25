@@ -218,6 +218,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
         }
 
         bool applicatorBugOut = false;
+        bool llmInductionFired = false;
         var matchTimer = Stopwatch.StartNew();
         var fastHit = await _index.ProbeFastPathAsync(hostHash, fp, _fastPathThreshold, cancellationToken);
         if (fastHit is not null)
@@ -261,7 +262,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
                     _signals?.Raise(StyloExtractSignals.TemplateNovel,
                         new StyloExtractSignal(TemplateId: templateId, FingerprintHex: fp.Hex, HostDisplayName: sourceUri?.Host),
                         key: templateId.Value.ToString("N"));
-                    await MaybeEnqueueEnrichmentAsync(doc, resolvedHost, fp.Hex, cancellationToken).ConfigureAwait(false);
+                    llmInductionFired |= await MaybeEnqueueEnrichmentAsync(doc, resolvedHost, fp.Hex, cancellationToken).ConfigureAwait(false);
                 }
                 else
                 {
@@ -318,7 +319,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
                     _signals?.Raise(StyloExtractSignals.TemplateNovel,
                         new StyloExtractSignal(TemplateId: templateId, FingerprintHex: fp.Hex, HostDisplayName: sourceUri?.Host),
                         key: templateId.Value.ToString("N"));
-                    await MaybeEnqueueEnrichmentAsync(doc, resolvedHost, fp.Hex, cancellationToken).ConfigureAwait(false);
+                    llmInductionFired |= await MaybeEnqueueEnrichmentAsync(doc, resolvedHost, fp.Hex, cancellationToken).ConfigureAwait(false);
                 }
             }
         }
@@ -545,6 +546,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
             Title = doc.Title,
             Markdown = markdown,
             Blocks = blocks,
+            LlmInductionFired = llmInductionFired,
             Match = new LayoutMatch
             {
                 TemplateId = templateId,
@@ -578,13 +580,15 @@ public sealed class LayoutExtractor : ILayoutExtractor
     ///     (hard-override wins; LLM induction is unnecessary).
     /// On enqueue failure (queue full, cooldown active) the producer
     /// just moves on — the heuristic-induced template covers the request.
+    /// Returns true when the job was successfully enqueued (i.e. the LLM
+    /// inducer will run for this host), false for every no-op path.
     /// </summary>
-    private async Task MaybeEnqueueEnrichmentAsync(
+    private async Task<bool> MaybeEnqueueEnrichmentAsync(
         AngleSharp.Dom.IDocument doc, string host, string fingerprintHex, CancellationToken cancellationToken)
     {
-        if (_enrichmentQueue is null || _skeletonRenderer is null) return;
-        if (string.IsNullOrEmpty(host)) return;
-        if (_operatorTemplates is not null && _operatorTemplates.TryGet(host, out _)) return;
+        if (_enrichmentQueue is null || _skeletonRenderer is null) return false;
+        if (string.IsNullOrEmpty(host)) return false;
+        if (_operatorTemplates is not null && _operatorTemplates.TryGet(host, out _)) return false;
 
         string skeleton;
         try
@@ -594,13 +598,13 @@ public sealed class LayoutExtractor : ILayoutExtractor
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "skeleton render failed for {Host}; skipping enrichment", host);
-            return;
+            return false;
         }
-        if (string.IsNullOrEmpty(skeleton)) return;
+        if (string.IsNullOrEmpty(skeleton)) return false;
 
         try
         {
-            await _enrichmentQueue.TryEnqueueAsync(new TemplateEnrichmentJob
+            return await _enrichmentQueue.TryEnqueueAsync(new TemplateEnrichmentJob
             {
                 Host = host,
                 Skeleton = skeleton,
@@ -611,6 +615,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "enrichment enqueue failed for {Host}", host);
+            return false;
         }
     }
 
