@@ -37,8 +37,12 @@ public sealed class OllamaTextProviderOptions
 
     /// <summary>
     /// Max tokens for the completion. Template YAML is small;
-    /// 2 KB / ~600 tokens is plenty. Bound it so a runaway model
-    /// can't pin the LLM for minutes.
+    /// 2 KB / ~600 tokens is plenty. Reasoning-tagged models (Gemma 4,
+    /// Qwen 3, etc.) burn tokens on chain-of-thought before producing the
+    /// answer, so the budget needs headroom even though the final YAML
+    /// itself is short. 4 096 leaves room for ~3 KB of thinking + a 1 KB
+    /// YAML answer. Bound it so a runaway model can't pin the LLM for
+    /// minutes.
     /// </summary>
-    public int MaxOutputTokens { get; set; } = 1024;
+    public int MaxOutputTokens { get; set; } = 4096;
 }

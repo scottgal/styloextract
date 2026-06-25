@@ -30,24 +30,30 @@ public sealed class LlmTemplateInducer
 {
     private readonly ILlmTextProvider _llm;
     private readonly DomSkeletonRenderer _skeleton;
+    private readonly DocumentSelectorCatalog _catalog;
     private readonly ILogger<LlmTemplateInducer>? _logger;
 
     public LlmTemplateInducer(
         ILlmTextProvider llm,
         DomSkeletonRenderer? skeleton = null,
+        DocumentSelectorCatalog? catalog = null,
         ILogger<LlmTemplateInducer>? logger = null)
     {
         _llm = llm ?? throw new ArgumentNullException(nameof(llm));
         _skeleton = skeleton ?? new DomSkeletonRenderer();
+        _catalog = catalog ?? new DocumentSelectorCatalog();
         _logger = logger;
     }
 
     /// <summary>
     /// Render the skeleton for <paramref name="document"/>, prompt the
     /// LLM, parse the YAML reply into an <see cref="OperatorTemplate"/>
-    /// keyed on <paramref name="host"/>. Returns <c>null</c> on any
-    /// failure; the caller logs and falls back to the heuristic-induced
-    /// template.
+    /// keyed on <paramref name="host"/>. The document is also used to
+    /// enumerate a closed list of available CSS selectors for the prompt
+    /// AND to validate the model's returned selectors after parsing,
+    /// rejecting any that don't match a real element. Returns <c>null</c>
+    /// on any failure; the caller logs and falls back to the heuristic-
+    /// induced template.
     /// </summary>
     public Task<OperatorTemplate?> InduceAsync(
         IDocument document,
@@ -63,22 +69,34 @@ public sealed class LlmTemplateInducer
             _logger?.LogDebug("induce skipped for {Host}: empty skeleton", host);
             return Task.FromResult<OperatorTemplate?>(null);
         }
-        return InduceFromSkeletonAsync(skeleton, host, cancellationToken);
+        var availableSelectors = _catalog.Render(document);
+        return InduceFromSkeletonAsync(skeleton, host, availableSelectors, document, cancellationToken);
     }
 
     /// <summary>
     /// Variant for callers (the background coordinator) that already have
     /// a rendered skeleton in hand. Skips the renderer call entirely.
+    /// Optionally accepts an <paramref name="availableSelectors"/> catalog
+    /// to constrain the prompt and a <paramref name="document"/> to
+    /// validate selectors post-parse — pass both when you have them.
     /// </summary>
+    public Task<OperatorTemplate?> InduceFromSkeletonAsync(
+        string skeleton,
+        string host,
+        CancellationToken cancellationToken = default)
+        => InduceFromSkeletonAsync(skeleton, host, availableSelectors: "", document: null, cancellationToken);
+
     public async Task<OperatorTemplate?> InduceFromSkeletonAsync(
         string skeleton,
         string host,
+        string availableSelectors,
+        IDocument? document,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(skeleton)) throw new ArgumentException("skeleton required", nameof(skeleton));
         if (string.IsNullOrWhiteSpace(host)) throw new ArgumentException("host required", nameof(host));
 
-        var userPrompt = LlmInducerPrompts.BuildUserPrompt(host, skeleton);
+        var userPrompt = LlmInducerPrompts.BuildUserPrompt(host, skeleton, availableSelectors);
         string response;
         try
         {
@@ -135,6 +153,11 @@ public sealed class LlmTemplateInducer
             parsed = parsed with { Host = host };
         }
 
+        if (document is not null)
+        {
+            var validated = FilterSelectorsAgainstDocument(parsed, document, host, "induce");
+            return validated;
+        }
         return parsed;
     }
 
@@ -145,11 +168,21 @@ public sealed class LlmTemplateInducer
     /// Same failure semantics as <see cref="InduceFromSkeletonAsync"/>: returns
     /// <c>null</c> on any failure; caller falls back to the existing template.
     /// </summary>
-    public async Task<OperatorTemplate?> RepairFromSkeletonAsync(
+    public Task<OperatorTemplate?> RepairFromSkeletonAsync(
         string skeleton,
         string host,
         string existingTemplateYaml,
         string? badMarkdownSample = null,
+        CancellationToken cancellationToken = default)
+        => RepairFromSkeletonAsync(skeleton, host, existingTemplateYaml, badMarkdownSample, availableSelectors: "", document: null, cancellationToken);
+
+    public async Task<OperatorTemplate?> RepairFromSkeletonAsync(
+        string skeleton,
+        string host,
+        string existingTemplateYaml,
+        string? badMarkdownSample,
+        string availableSelectors,
+        IDocument? document,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(skeleton)) throw new ArgumentException("skeleton required", nameof(skeleton));
@@ -158,7 +191,7 @@ public sealed class LlmTemplateInducer
             throw new ArgumentException("existing template required", nameof(existingTemplateYaml));
 
         var userPrompt = LlmInducerPrompts.BuildRepairPrompt(
-            host, skeleton, existingTemplateYaml, badMarkdownSample ?? string.Empty);
+            host, skeleton, existingTemplateYaml, badMarkdownSample ?? string.Empty, availableSelectors);
         string response;
         try
         {
@@ -210,7 +243,57 @@ public sealed class LlmTemplateInducer
             parsed = parsed with { Host = host };
         }
 
+        if (document is not null)
+        {
+            var validated = FilterSelectorsAgainstDocument(parsed, document, host, "repair");
+            return validated;
+        }
         return parsed;
+    }
+
+    /// <summary>
+    /// Validate the model's selectors against the actual DOM. Selectors that
+    /// match zero elements are dropped from their rule; rules whose selectors
+    /// all dropped are dropped; if MainContent has no surviving selectors the
+    /// whole template is rejected (the most important rule has to land). Logs
+    /// hallucinations at Information so operators can see them.
+    /// </summary>
+    private OperatorTemplate? FilterSelectorsAgainstDocument(
+        OperatorTemplate template, IDocument doc, string host, string op)
+    {
+        var validatedRules = new List<OperatorTemplateRule>(template.Rules.Count);
+        foreach (var rule in template.Rules)
+        {
+            var workingSelectors = new List<string>(rule.Selectors.Count);
+            foreach (var sel in rule.Selectors)
+            {
+                int matched = 0;
+                try { matched = doc.QuerySelectorAll(sel).Length; }
+                catch { matched = 0; }
+                if (matched > 0)
+                {
+                    workingSelectors.Add(sel);
+                }
+                else
+                {
+                    _logger?.LogInformation(
+                        "{Op} for {Host}: selector \"{Selector}\" on rule {Role} matched 0 elements; dropping",
+                        op, host, sel, rule.Role);
+                }
+            }
+            if (workingSelectors.Count > 0)
+            {
+                validatedRules.Add(rule with { Selectors = workingSelectors });
+            }
+        }
+        if (!validatedRules.Any(r => r.Role == BlockRole.MainContent))
+        {
+            _logger?.LogWarning(
+                "{Op} for {Host}: no MainContent rule survived selector validation; rejecting template",
+                op, host);
+            return null;
+        }
+        return template with { Rules = validatedRules };
     }
 
     /// <summary>
@@ -229,6 +312,7 @@ public sealed class LlmTemplateInducer
         int fenceStart = response.IndexOf("```yaml", StringComparison.OrdinalIgnoreCase);
         if (fenceStart < 0) fenceStart = response.IndexOf("```yml", StringComparison.OrdinalIgnoreCase);
         if (fenceStart < 0) fenceStart = response.IndexOf("```", StringComparison.Ordinal);
+        string body;
         if (fenceStart >= 0)
         {
             int bodyStart = response.IndexOf('\n', fenceStart);
@@ -236,17 +320,57 @@ public sealed class LlmTemplateInducer
             bodyStart++;
             int fenceEnd = response.IndexOf("```", bodyStart, StringComparison.Ordinal);
             if (fenceEnd < 0) return null;
-            var body = response[bodyStart..fenceEnd].Trim();
-            return body.Length > 0 ? body : null;
+            body = response[bodyStart..fenceEnd].Trim();
+            if (body.Length == 0) return null;
         }
-        // Fallback: bare YAML, no fence. Accept it if it looks like a host: line
-        // is present early. Cheaper than parsing optimistically and catching.
-        int hostIdx = response.IndexOf("host:", StringComparison.OrdinalIgnoreCase);
-        if (hostIdx >= 0 && hostIdx < 400)
+        else
         {
-            return response[hostIdx..].Trim();
+            // Fallback: bare YAML, no fence. Accept it if it looks like a host: line
+            // is present early. Cheaper than parsing optimistically and catching.
+            int hostIdx = response.IndexOf("host:", StringComparison.OrdinalIgnoreCase);
+            if (hostIdx >= 0 && hostIdx < 400)
+            {
+                body = response[hostIdx..].Trim();
+            }
+            else return null;
         }
-        return null;
+        return RepairUnquotedHashSelectors(body);
+    }
+
+    /// <summary>
+    /// Common LLM mistake: writing `- #my-id` in a YAML list. YAML treats `#`
+    /// after a space as a comment, so the list item becomes empty. Walk the
+    /// emitted YAML and wrap any unquoted `#`-prefixed selector value in
+    /// single quotes so the parser sees it as a string.
+    /// </summary>
+    private static string RepairUnquotedHashSelectors(string yaml)
+    {
+        var lines = yaml.Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            // Pattern: optional whitespace, `- `, `#`, then selector text. The
+            // line must be a list-item AND the value starts with # (not already quoted).
+            int dashIdx = -1;
+            for (int j = 0; j < line.Length; j++)
+            {
+                if (line[j] == '-' && j + 1 < line.Length && line[j + 1] == ' ')
+                {
+                    dashIdx = j;
+                    break;
+                }
+                if (!char.IsWhiteSpace(line[j])) break;
+            }
+            if (dashIdx < 0) continue;
+            // Find the value start (after "- ").
+            int valStart = dashIdx + 2;
+            while (valStart < line.Length && line[valStart] == ' ') valStart++;
+            if (valStart >= line.Length || line[valStart] != '#') continue;
+            // Quote the value: `- #foo` -> `- '#foo'`
+            var value = line[valStart..].TrimEnd();
+            lines[i] = string.Concat(line.AsSpan(0, valStart), "'", value, "'");
+        }
+        return string.Join('\n', lines);
     }
 
     private static string Snip(string s, int max)

@@ -77,12 +77,16 @@ public static class LlmInducerPrompts
     /// <summary>
     /// Build the user-side prompt for a given (host, skeleton) pair. The
     /// skeleton is the output of <see cref="StyloExtract.Core.Skeleton.DomSkeletonRenderer"/>.
+    /// <paramref name="availableSelectors"/> is an optional closed list of
+    /// real CSS selectors from the document (one per line) the model is
+    /// instructed to pick from; pass empty when the catalog isn't available.
     /// </summary>
-    public static string BuildUserPrompt(string host, string skeleton)
+    public static string BuildUserPrompt(string host, string skeleton, string availableSelectors = "")
     {
-        // Keep prompt construction trivial; no JSON serialisation here.
-        return $"Host: {host}\n\nDOM skeleton:\n\n```\n{skeleton}\n```\n\n" +
-               "Produce the YAML template now.";
+        var selectorSection = string.IsNullOrWhiteSpace(availableSelectors)
+            ? ""
+            : $"\n\nAvailable CSS selectors on this page (USE ONLY THESE — inventing other selectors will fail):\n\n```\n{availableSelectors}\n```";
+        return $"Host: {host}\n\nDOM skeleton:\n\n```\n{skeleton}\n```{selectorSection}\n\nProduce the YAML template now.";
     }
 
     /// <summary>
@@ -91,7 +95,7 @@ public static class LlmInducerPrompts
     /// not inducing from scratch. The shape of the response is the same.
     /// </summary>
     public const string SystemRepair = """
-        You are a web template repairer. You are given:
+        You are a web template diagnostician. You are given:
 
           1. A slim representation of a web page's DOM tree (tags, classes, child
              counts, short text exemplars).
@@ -99,10 +103,19 @@ public static class LlmInducerPrompts
              its selectors did not match the actual content block.
           3. (Optionally) the empty/wrong Markdown output produced by the failing
              template, so you can see what went wrong.
+          4. (Optionally) a closed list of CSS selectors that actually exist on
+             the page — pick from these only.
 
-        Produce a CORRECTED YAML template — same shape as the existing one — with
-        selectors that actually match the page's content. Preserve roles that were
-        correct; replace selectors that were wrong.
+        Your job has two parts. First, internally ask yourself: WHY is this
+        failing? What did the old selector target, and why didn't that match
+        the article body / item list / product description on THIS page? Then,
+        HOW should it work for this page? Which container in the skeleton
+        actually holds the main content?
+
+        Use that diagnosis to write a CORRECTED YAML template — same shape as
+        the existing one — with selectors that actually match the page's
+        content. Preserve roles that were correct; replace selectors that
+        were wrong.
 
         The YAML must be a single document with this exact shape:
 
@@ -143,12 +156,15 @@ public static class LlmInducerPrompts
     /// <paramref name="badMarkdownSample"/> is what the template produced (truncated
     /// to a few hundred chars; pass empty if not available).
     /// </summary>
-    public static string BuildRepairPrompt(string host, string skeleton, string existingTemplateYaml, string badMarkdownSample)
+    public static string BuildRepairPrompt(string host, string skeleton, string existingTemplateYaml, string badMarkdownSample, string availableSelectors = "")
     {
         var sampleSection = string.IsNullOrWhiteSpace(badMarkdownSample)
             ? ""
             : $"\n\nThe failing template produced this Markdown (which is too short / wrong content):\n\n```\n{badMarkdownSample}\n```";
+        var selectorSection = string.IsNullOrWhiteSpace(availableSelectors)
+            ? ""
+            : $"\n\nAvailable CSS selectors on this page (USE ONLY THESE — inventing other selectors will fail):\n\n```\n{availableSelectors}\n```";
 
-        return $"Host: {host}\n\nDOM skeleton:\n\n```\n{skeleton}\n```\n\nExisting (failing) template:\n\n```yaml\n{existingTemplateYaml}\n```{sampleSection}\n\nProduce the repaired YAML template now.";
+        return $"Host: {host}\n\nDOM skeleton:\n\n```\n{skeleton}\n```\n\nExisting (failing) template:\n\n```yaml\n{existingTemplateYaml}\n```{sampleSection}{selectorSection}\n\nProduce the repaired YAML template now.";
     }
 }

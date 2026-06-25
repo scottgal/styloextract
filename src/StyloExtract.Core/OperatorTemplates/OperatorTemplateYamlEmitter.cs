@@ -39,7 +39,7 @@ public static class OperatorTemplateYamlEmitter
             sb.Append("    selectors:\n");
             foreach (var sel in rule.Selectors)
             {
-                sb.Append("      - ").Append(sel).Append('\n');
+                sb.Append("      - ").Append(QuoteIfYamlSpecial(sel)).Append('\n');
             }
             if (rule.Confidence != 1.0)
             {
@@ -49,5 +49,22 @@ public static class OperatorTemplateYamlEmitter
             }
         }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// CSS selectors that start with characters YAML treats as control tokens
+    /// (#, &amp;, *, [, {, |, &gt;, ?, ', ") need to be quoted, or the parser
+    /// reads them as comments / anchors / flow sequences instead of strings.
+    /// `#some-id` is by far the most common case (ID selectors emitted by the
+    /// LLM). Use single quotes — selectors never contain a literal single
+    /// quote, so no escaping needed.
+    /// </summary>
+    private static string QuoteIfYamlSpecial(string selector)
+    {
+        if (string.IsNullOrEmpty(selector)) return "''";
+        char first = selector[0];
+        if (first is '#' or '&' or '*' or '[' or '{' or '|' or '>' or '?' or '\'' or '"' or '!' or '%' or '@' or '`')
+            return $"'{selector}'";
+        return selector;
     }
 }

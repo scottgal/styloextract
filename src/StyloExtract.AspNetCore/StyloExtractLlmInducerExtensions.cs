@@ -77,8 +77,8 @@ public static class StyloExtractLlmInducerExtensions
         services.TryAddSingleton<LlmTemplateInducer>(sp =>
             new LlmTemplateInducer(
                 sp.GetRequiredService<ILlmTextProvider>(),
-                sp.GetRequiredService<DomSkeletonRenderer>(),
-                sp.GetService<ILogger<LlmTemplateInducer>>()));
+                skeleton: sp.GetRequiredService<DomSkeletonRenderer>(),
+                logger: sp.GetService<ILogger<LlmTemplateInducer>>()));
 
         services.AddHostedService(sp =>
             new TemplateEnrichmentCoordinator(

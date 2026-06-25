@@ -41,6 +41,7 @@ public static class TemplateCommand
         cmd.Add(BuildTest(rootOpt));
         cmd.Add(BuildInduce(rootOpt));
         cmd.Add(BuildRepair(rootOpt));
+        cmd.Add(BuildTrain(rootOpt));
         cmd.Add(BuildDumpSkeleton());
         cmd.Options.Add(rootOpt);
         return cmd;
@@ -452,6 +453,123 @@ public static class TemplateCommand
         return c;
     }
 
+    private static Command BuildTrain(Option<string> rootOpt)
+    {
+        var urlOpt = new Option<string?>("--url") { Description = "URL to fetch and train against." };
+        var fileOpt = new Option<string?>("--file") { Description = "Local HTML file to train against instead of fetching." };
+        var hostOpt = new Option<string?>("--host") { Description = "Override host used for the YAML output (default: derived from --url or filename)." };
+        var ollamaUrlOpt = new Option<string>("--ollama-url")
+        {
+            Description = "Ollama base URL.",
+            DefaultValueFactory = _ => "http://localhost:11434",
+        };
+        var modelOpt = new Option<string>("--model")
+        {
+            Description = "Ollama model tag.",
+            DefaultValueFactory = _ => "gemma4:e4b-it-qat",
+        };
+        var minOutputOpt = new Option<int>("--min-output")
+        {
+            Description = "Minimum acceptable Markdown length (chars). Below this, train fires the LLM.",
+            DefaultValueFactory = _ => 200,
+        };
+        var verboseOpt = new Option<bool>("--verbose")
+        {
+            Description = "Print the catalog sent to the LLM and the raw LLM response on stderr.",
+        };
+
+        var c = new Command("train",
+            "Specialise the template for one page via the LLM, inline. Routes between induce / repair " +
+            "based on whether a template already exists. Writes the result to <--root>/<host>.yaml.");
+        c.Options.Add(urlOpt);
+        c.Options.Add(fileOpt);
+        c.Options.Add(hostOpt);
+        c.Options.Add(ollamaUrlOpt);
+        c.Options.Add(modelOpt);
+        c.Options.Add(minOutputOpt);
+        c.Options.Add(verboseOpt);
+        c.SetAction(async pr =>
+        {
+            var url = pr.GetValue(urlOpt);
+            var file = pr.GetValue(fileOpt);
+            if (string.IsNullOrEmpty(url) && string.IsNullOrEmpty(file))
+            {
+                Console.Error.WriteLine("--url or --file is required");
+                return 2;
+            }
+
+            var (html, host) = await LoadHtmlAsync(url, file, pr.GetValue(hostOpt));
+            var doc = LoadAndCleanDocument(html);
+            var skeleton = new DomSkeletonRenderer().Render(doc);
+            if (string.IsNullOrEmpty(skeleton))
+            {
+                Console.Error.WriteLine("page produced an empty skeleton (no body or no candidates)");
+                return 1;
+            }
+            var catalog = new DocumentSelectorCatalog().Render(doc);
+            if (pr.GetValue(verboseOpt))
+            {
+                Console.Error.WriteLine("# === DOM skeleton ===");
+                Console.Error.WriteLine(skeleton);
+                Console.Error.WriteLine("# === Selector catalog ===");
+                Console.Error.WriteLine(catalog);
+                Console.Error.WriteLine("# ===");
+            }
+
+            // Decide route: if a template file already exists for this host, run repair;
+            // otherwise induce from scratch.
+            var root = pr.GetValue(rootOpt)!;
+            Directory.CreateDirectory(root);
+            var templatePath = Path.Combine(root, host + ".yaml");
+            var hasExisting = File.Exists(templatePath);
+
+            var services = new ServiceCollection();
+            services.AddOptions<OllamaTextProviderOptions>().Configure(o =>
+            {
+                o.OllamaUrl = pr.GetValue(ollamaUrlOpt)!;
+                o.Model = pr.GetValue(modelOpt)!;
+                o.Timeout = TimeSpan.FromMinutes(5); // train is operator-driven; let big models finish
+            });
+            services.AddOllamaTextProvider();
+            using var sp = services.BuildServiceProvider();
+            var rawProvider = sp.GetRequiredService<ILlmTextProvider>();
+            var provider = pr.GetValue(verboseOpt) ? (ILlmTextProvider)new VerboseLlmProvider(rawProvider) : rawProvider;
+            var inducer = new LlmTemplateInducer(provider);
+
+            OperatorTemplate? template;
+            if (hasExisting)
+            {
+                var existingYaml = await File.ReadAllTextAsync(templatePath);
+                Console.Error.WriteLine($"# training (repair) for host={host} via {pr.GetValue(ollamaUrlOpt)} model={pr.GetValue(modelOpt)}");
+                template = await inducer.RepairFromSkeletonAsync(
+                    skeleton, host, existingYaml,
+                    badMarkdownSample: null,
+                    availableSelectors: catalog, document: doc);
+            }
+            else
+            {
+                Console.Error.WriteLine($"# training (induce) for host={host} via {pr.GetValue(ollamaUrlOpt)} model={pr.GetValue(modelOpt)}");
+                template = await inducer.InduceFromSkeletonAsync(
+                    skeleton, host,
+                    availableSelectors: catalog, document: doc);
+            }
+
+            if (template is null)
+            {
+                Console.Error.WriteLine($"# {(hasExisting ? "repair" : "induce")} returned no template " +
+                                        "(LLM error, malformed response, or validation failure)");
+                return 1;
+            }
+
+            var yaml = OperatorTemplateYamlEmitter.Emit(template);
+            await File.WriteAllTextAsync(templatePath, yaml);
+            Console.Error.WriteLine($"# wrote {templatePath} ({template.Rules.Count} rule(s))");
+            Console.Write(yaml);
+            return 0;
+        });
+        return c;
+    }
+
     private static Command BuildDumpSkeleton()
     {
         var urlOpt = new Option<string?>("--url") { Description = "URL to fetch and skeletonise." };
@@ -491,6 +609,31 @@ public static class TemplateCommand
         }
         var content = await File.ReadAllTextAsync(file!);
         return (content, hostOverride ?? "file:" + Path.GetFileNameWithoutExtension(file));
+    }
+
+    private sealed class VerboseLlmProvider : ILlmTextProvider
+    {
+        private readonly ILlmTextProvider _inner;
+        public VerboseLlmProvider(ILlmTextProvider inner) => _inner = inner;
+        public async Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken cancellationToken = default)
+        {
+            Console.Error.WriteLine("# === User prompt sent to LLM ===");
+            Console.Error.WriteLine(userPrompt);
+            Console.Error.WriteLine($"# === Awaiting LLM response (system={systemPrompt.Length}ch, user={userPrompt.Length}ch) ===");
+            try
+            {
+                var response = await _inner.CompleteAsync(systemPrompt, userPrompt, cancellationToken);
+                Console.Error.WriteLine("# === Raw LLM response ===");
+                Console.Error.WriteLine(response);
+                Console.Error.WriteLine("# === end response ===");
+                return response;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"# === LLM call threw {ex.GetType().Name}: {ex.Message} ===");
+                throw;
+            }
+        }
     }
 
     private static AngleSharp.Dom.IDocument LoadAndCleanDocument(string html)

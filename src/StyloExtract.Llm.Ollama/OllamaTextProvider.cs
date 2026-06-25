@@ -112,6 +112,15 @@ public sealed class OllamaTextProvider : ILlmTextProvider
         var content = parsed?.Message?.Content;
         if (string.IsNullOrEmpty(content))
         {
+            // Fallback: some models put the answer in `thinking` when their
+            // chain-of-thought trace IS the answer (we asked for YAML; CoT-
+            // enabled models sometimes return YAML inside thinking).
+            var thinking = parsed?.Message?.Thinking;
+            if (!string.IsNullOrEmpty(thinking))
+            {
+                _logger?.LogInformation("Ollama returned content in `thinking` field, not `content`; using it; model={Model}", _options.Model);
+                return thinking;
+            }
             _logger?.LogWarning("Ollama returned empty content; model={Model}", _options.Model);
             throw new LlmProviderException("Ollama response had empty message.content");
         }
@@ -134,6 +143,12 @@ internal sealed class OllamaChatRequest
 {
     [JsonPropertyName("model")] public string Model { get; set; } = "";
     [JsonPropertyName("stream")] public bool Stream { get; set; }
+    // Gemma 4 (and other reasoning-tagged Ollama models) default to emitting a
+    // chain-of-thought "thinking" trace BEFORE the actual content. With our
+    // small NumPredict budget the model exhausts its output tokens on the
+    // thinking trace and returns message.content empty. Disable thinking so
+    // every output token goes to the actual response.
+    [JsonPropertyName("think")] public bool Think { get; set; }
     [JsonPropertyName("messages")] public OllamaChatMessage[] Messages { get; set; } = Array.Empty<OllamaChatMessage>();
     [JsonPropertyName("options")] public OllamaChatOptions? Options { get; set; }
 }
@@ -142,6 +157,11 @@ internal sealed class OllamaChatMessage
 {
     [JsonPropertyName("role")] public string Role { get; set; } = "";
     [JsonPropertyName("content")] public string Content { get; set; } = "";
+    // Gemma 4 and other reasoning-tagged models put their chain-of-thought
+    // in a separate `thinking` field. We try `content` first; if it's empty
+    // we fall back to `thinking` (the model occasionally emits the answer
+    // there when both fields are returned).
+    [JsonPropertyName("thinking")] public string? Thinking { get; set; }
 }
 
 internal sealed class OllamaChatOptions
