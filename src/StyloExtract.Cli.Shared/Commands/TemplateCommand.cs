@@ -299,7 +299,7 @@ public static class TemplateCommand
         var modelOpt = new Option<string>("--model")
         {
             Description = "Ollama model tag.",
-            DefaultValueFactory = _ => "gemma4:e4b-it-qat",
+            DefaultValueFactory = _ => "qwen3.5:4b",
         };
 
         var c = new Command("induce",
@@ -381,7 +381,7 @@ public static class TemplateCommand
         var modelOpt = new Option<string>("--model")
         {
             Description = "Ollama model tag.",
-            DefaultValueFactory = _ => "gemma4:e4b-it-qat",
+            DefaultValueFactory = _ => "qwen3.5:4b",
         };
 
         var c = new Command("repair",
@@ -466,7 +466,7 @@ public static class TemplateCommand
         var modelOpt = new Option<string>("--model")
         {
             Description = "Ollama model tag.",
-            DefaultValueFactory = _ => "gemma4:e4b-it-qat",
+            DefaultValueFactory = _ => "qwen3.5:4b",
         };
         var minOutputOpt = new Option<int>("--min-output")
         {

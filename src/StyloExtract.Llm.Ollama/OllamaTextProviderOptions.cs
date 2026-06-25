@@ -14,19 +14,24 @@ public sealed class OllamaTextProviderOptions
     public string OllamaUrl { get; set; } = "http://localhost:11434";
 
     /// <summary>
-    /// Model tag to use. Default is the design's recommended Gemma 4 E4B
-    /// quantised-aware-training variant — Apache 2.0, 128 K context, ~6 GB
-    /// on disk, runs on a workstation CPU. Operators with more RAM should
-    /// consider <c>gemma4:12b-it-qat</c> for stronger code/HTML output.
+    /// Model tag to use. Default is <c>qwen3.5:4b</c> — Apache 2.0, ~3 GB on
+    /// disk, runs on a workstation CPU. Empirically out-performs Gemma 4 E4B
+    /// on the WCXB template-induction task at less than a third of the size
+    /// (Qwen 3.5 4B picks tighter compound selectors like
+    /// <c>div#uBlogsy_main section.uBlogsy_post_body</c> where Gemma 4 E4B
+    /// picks page wrappers and over-extracts). Operators with smaller
+    /// memory budgets can drop to <c>qwen3.5:0.8b</c> (~1 GB, ~5 s per
+    /// induce, valid templates but coarser selectors); operators with
+    /// more RAM can step up to a larger model.
     /// </summary>
-    public string Model { get; set; } = "gemma4:e4b-it-qat";
+    public string Model { get; set; } = "qwen3.5:4b";
 
     /// <summary>
-    /// Per-call timeout. Gemma 4 E4B on CPU runs the induction prompt in
-    /// 10-30 s; the default 60 s leaves headroom for cold-cache loads
-    /// and the 12B variant.
+    /// Per-call timeout. Qwen 3.5 4B on CPU runs the induction prompt in
+    /// 30-60 s; the default 90 s leaves headroom for cold-cache loads
+    /// and per-page variance.
     /// </summary>
-    public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(60);
+    public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(90);
 
     /// <summary>
     /// Sampling temperature. Template induction wants deterministic
