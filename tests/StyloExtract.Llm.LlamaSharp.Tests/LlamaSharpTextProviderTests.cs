@@ -28,7 +28,9 @@ public class LlamaSharpTextProviderTests
         return string.IsNullOrWhiteSpace(p) ? null : File.Exists(p) ? p : null;
     }
 
-    [SkippableFact(Timeout = 300_000)]
+    // No Timeout — xUnit's Timeout attribute requires async tests, and this
+    // is a pure ctor-validation check that returns immediately.
+    [SkippableFact]
     public void Ctor_Throws_When_ModelPath_Not_Set()
     {
         var opts = Options.Create(new LlamaSharpTextProviderOptions { ModelPath = "" });
