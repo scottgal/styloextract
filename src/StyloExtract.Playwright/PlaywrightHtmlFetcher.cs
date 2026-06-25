@@ -9,7 +9,7 @@ namespace StyloExtract.Playwright;
 /// The single <see cref="IBrowser"/> instance is reused across calls; each call gets
 /// its own isolated <see cref="IBrowserContext"/> and <see cref="IPage"/>.
 /// </summary>
-public sealed class PlaywrightHtmlFetcher : IRenderedHtmlFetcher, IAsyncDisposable
+public sealed class PlaywrightHtmlFetcher : IRenderedHtmlFetcher, IAsyncDisposable, IDisposable
 {
     private IPlaywright? _playwright;
     private IBrowser? _browser;
@@ -86,5 +86,19 @@ public sealed class PlaywrightHtmlFetcher : IRenderedHtmlFetcher, IAsyncDisposab
             await _browser.DisposeAsync().ConfigureAwait(false);
         _playwright?.Dispose();
         _launchLock.Dispose();
+    }
+
+    /// <summary>
+    /// Sync dispose for the singleton-in-ServiceProvider case: when a sync
+    /// ServiceProvider scope is disposed (e.g. <c>using var sp = ...</c>
+    /// rather than <c>await using</c>), the DI container calls Dispose, not
+    /// DisposeAsync. Without an <see cref="IDisposable"/> implementation
+    /// that throws — visible in consumer smoke tests. Block-wait on the
+    /// async path; safe here because container disposal happens off the
+    /// request hot path.
+    /// </summary>
+    public void Dispose()
+    {
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }
