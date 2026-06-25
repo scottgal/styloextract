@@ -5,8 +5,14 @@
     <PackageId>Mostlylucid.StyloExtract.Templates</PackageId>
     <IsPackable>true</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
-    <!-- Suppress NU1903 for transitive SQLitePCLRaw.lib.e_sqlite3 (GHSA-2m69-gcr7-jv3q)
-         via Microsoft.Data.Sqlite 10.0.0. Tracking upstream for patch. -->
+    <!-- GHSA-2m69-gcr7-jv3q advisory addressed by the direct
+         SQLitePCLRaw.bundle_e_sqlite3 reference below (pinned to 3.0.3
+         via Directory.Packages.props). Microsoft.Data.Sqlite still
+         declares a transitive 2.1.11 floor in its nuspec, but the
+         direct PackageReference here lifts the resolved bundle to
+         3.0.3 — which carries a patched SQLitePCLRaw.lib.e_sqlite3.
+         Keep NU1903 suppression as a belt-and-braces for the
+         transitive advisory text; the actual runtime DLL is clean. -->
     <NoWarn>$(NoWarn);NU1903</NoWarn>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>SQLite-backed template index for StyloExtract. Single-writer coordination via mostlylucid.ephemeral; learned-extractor centroids that drift and refit with EWMA accumulation; refit-as-version-event for site-template-version monitoring. JSON export and import for portable template bundles.</Description>
@@ -22,5 +28,11 @@
     <ProjectReference Include="..\StyloExtract.Fingerprint\StyloExtract.Fingerprint.csproj" />
     <PackageReference Include="Mostlylucid.Ephemeral.Sqlite.SingleWriter" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
+    <!-- Lift bundle_e_sqlite3 to 3.0.3 — Microsoft.Data.Sqlite's transitive
+         dep is still 2.1.11 (carrying the GHSA-2m69-gcr7-jv3q
+         SQLitePCLRaw.lib.e_sqlite3 advisory). The direct reference here
+         ensures consumers pull the patched 3.x line. Pin lives in
+         Directory.Packages.props. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
   </ItemGroup>
 </Project>
