@@ -11,6 +11,14 @@
     <!-- LLamaSharp's CPU backend ships native binaries (libllama.dll/so/dylib).
          Trimming and AOT touch reflection paths we don't own, so opt out. -->
     <PublishTrimmed>false</PublishTrimmed>
+    <!-- LLamaSharp.Backend.Cpu intentionally ships native DLLs (llama.cpp +
+         ggml + mtmd) as 'content/' and 'contentFiles/' so they land next to
+         the host's binary at runtime. Packing this project triggers NU5100
+         ("assembly outside lib/") and NU5118 ("file already added") for
+         every flavour-folder (avx, avx2, avx512, noavx) × every native DLL.
+         These are by-design for llama.cpp deployment; suppress them so the
+         project packs under the repo's TreatWarningsAsErrors policy. -->
+    <NoWarn>$(NoWarn);NU5100;NU5118;NU5119</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
