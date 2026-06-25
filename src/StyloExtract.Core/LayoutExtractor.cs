@@ -94,6 +94,10 @@ public sealed class LayoutExtractor : ILayoutExtractor
         // a <div>, not a <script>) but capturing it here keeps the symmetric
         // shape with JSON-LD. Empty for non-Discourse pages.
         var preCleanDiscourseText = DiscourseRehydrationExtractor.ExtractMainContent(doc);
+        // Next.js apps embed their page state in <script id="__NEXT_DATA__"
+        // type="application/json">. DomCleaner strips ALL scripts so we must
+        // capture this before Clean. Empty for non-Next.js pages.
+        var preCleanNextDataText = NextDataRehydrationExtractor.ExtractMainContent(doc);
         _cleaner.Clean(doc);
         parseTimer.Stop();
         _signals?.Raise(StyloExtractSignals.ParseDone, default);
@@ -395,7 +399,19 @@ public sealed class LayoutExtractor : ILayoutExtractor
         // but the page ships substantial schema.org content (QAPage, DiscussionForumPosting,
         // FAQPage, ItemList, NewsArticle, BlogPosting) that contains the gold answer.
         const int FallbackMinTextLength = 200;
-        var combinedText = blocks.Sum(b => b.Text.Length);
+        // Gate on CONTENT-role text mass, not all-block sum. The renderer's
+        // MainContentOnly / Wcxb profiles drop Header/Footer/Boilerplate/Nav
+        // regardless, so a page whose heuristic emitted 3 KB of chrome but
+        // zero MainContent renders to ~0 markdown. WCXB diagnostic: wral.com
+        // and similar Next.js pages had this exact shape — bunch of nav +
+        // boilerplate found, no actual article body in static DOM, and the
+        // sum-based gate prevented the __NEXT_DATA__ rehydration fallback
+        // from firing.
+        var combinedText = blocks
+            .Where(b => b.Role is BlockRole.MainContent or BlockRole.Article
+                or BlockRole.Heading or BlockRole.Summary or BlockRole.Table
+                or BlockRole.CodeBlock or BlockRole.RepeatedItem)
+            .Sum(b => b.Text.Length);
         if (combinedText < FallbackMinTextLength)
         {
             // Use the text we captured before Clean stripped the JSON-LD blobs.
@@ -412,6 +428,29 @@ public sealed class LayoutExtractor : ILayoutExtractor
                     XPath = "/structured-data",
                     CssSelector = "script[type='application/ld+json']",
                     TextLength = jsonLdText.Length,
+                    LinkDensity = 0.0,
+                    Links = Array.Empty<ExtractedLink>(),
+                };
+                var augmented = new List<ExtractedBlock>(blocks.Count + 1) { fallbackBlock };
+                augmented.AddRange(blocks);
+                blocks = augmented;
+            }
+            else if (!string.IsNullOrWhiteSpace(preCleanNextDataText) && preCleanNextDataText.Length >= FallbackMinTextLength)
+            {
+                // Next.js __NEXT_DATA__ rehydration: the page is a Next.js SPA
+                // whose content lives under props.pageProps in the JSON blob,
+                // not the static DOM. WCXB diagnostic 2026-06-25: wral.com,
+                // ruggable.com, nike.com and similar caught here.
+                var fallbackBlock = new ExtractedBlock
+                {
+                    Id = "nextdata-rehydration",
+                    Role = BlockRole.MainContent,
+                    Confidence = 0.65,
+                    Text = preCleanNextDataText,
+                    Markdown = "",
+                    XPath = "/nextdata-rehydration",
+                    CssSelector = "script#__NEXT_DATA__",
+                    TextLength = preCleanNextDataText.Length,
                     LinkDensity = 0.0,
                     Links = Array.Empty<ExtractedLink>(),
                 };
