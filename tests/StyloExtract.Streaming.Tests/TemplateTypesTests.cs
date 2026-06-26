@@ -15,6 +15,7 @@ public sealed class TemplateTypesTests
         var template = new StreamingTemplate
         {
             TemplateId = Guid.NewGuid(),
+            Host = "",
             PrefixFence = prefix,
             ContentStartFence = contentStart,
             ContentEndFence = contentEnd,

@@ -16,6 +16,7 @@ public sealed class EndToEndCaptureTests
         var template = new StreamingTemplate
         {
             TemplateId = Guid.NewGuid(),
+            Host = "",
             PrefixFence = TemplateFence.BuildFromEvents(
                 TagEvents("<body>", "<header>", "</header>", "<article>"),
                 requiredDepth: 0),

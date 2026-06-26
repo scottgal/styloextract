@@ -37,6 +37,7 @@ public class ExtractionComparisonBench
         var template = new StreamingTemplate
         {
             TemplateId = _templateId,
+            Host = "",
             PrefixFence = TemplateFence.BuildFromEvents(
                 TagEvents("<header>", "</header>", "<nav>", "</nav>"),
                 requiredDepth: 0),

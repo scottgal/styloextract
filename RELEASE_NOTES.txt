@@ -1,3 +1,44 @@
+StyloExtract 1.8.0-alpha.17 - 2026-06-26
+=========================================
+
+Streaming: host-keyed templates + naive auto-induction
+-------------------------------------------------------
+
+Three changes to close the alpha.16 streaming integration loop:
+
+1. Host-keyed lookup
+   IStreamingTemplateStore gains GetByHostAsync / TryGetHotByHost /
+   UpsertAsync. StreamingTemplate gains a Host field (required). One
+   template per host (latest wins). The existing GUID-keyed methods
+   remain — Host is the lookup key for consumers; TemplateId stays for
+   stable identity / versioning.
+
+2. StreamingPathSelector.ScanByHost(host, bytes)
+   Synchronous hot-cache-only host scan. Returns NoTemplate on miss
+   so the caller can WarmByHostAsync + retry or induce.
+   WarmByHostAsync brings a host's template into the hot cache via
+   the durable tier.
+
+3. StreamingTemplateInducer
+   Naive first-pass inducer: walks HTML via MinimalHtmlTokenizer,
+   finds semantic-marker tag-sequence-pairs (<header>...</header>,
+   <p>...</p>...<p>...</p>, <footer>/</main>/</body>) and produces a
+   StreamingTemplate ready to upsert. Returns null on pages with no
+   identifiable structural fences (plain text, image-only, etc.).
+   Describe() returns a human-readable summary of the chosen markers
+   for logging.
+
+Storage migrations:
+- InMemoryStreamingTemplateStore: adds an in-memory host index.
+- SqliteStreamingTemplateStore: adds a 'host' TEXT column + index;
+  on-open ALTER TABLE migration handles pre-alpha.17 schemas
+  (existing rows get Host="" — reachable only by GUID).
+
+Migration: additive APIs; alpha.16 consumers using only the
+GUID-keyed surface continue to work unchanged. The new Host field
+on StreamingTemplate IS required — existing construction sites must
+set Host="" if they have no host context.
+
 StyloExtract 1.8.0-alpha.16 - 2026-06-26
 =========================================
 

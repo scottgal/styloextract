@@ -190,6 +190,7 @@ public sealed class FenceScannerTests
         (ulong, ulong)[] contentEnd) => new()
     {
         TemplateId = Guid.NewGuid(),
+        Host = "",
         PrefixFence = TemplateFence.BuildFromEvents(prefix, requiredDepth: 0),
         ContentStartFence = TemplateFence.BuildFromEvents(contentStart, requiredDepth: 0),
         ContentEndFence = TemplateFence.BuildFromEvents(contentEnd, requiredDepth: 0),

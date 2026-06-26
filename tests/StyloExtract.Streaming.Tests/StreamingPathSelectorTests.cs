@@ -42,6 +42,7 @@ public sealed class StreamingPathSelectorTests
         var smallTemplate = new StreamingTemplate
         {
             TemplateId = Guid.NewGuid(),
+            Host = "",
             PrefixFence = TemplateFence.BuildFromEvents(TagEvents("<a>", "</a>", "<b>"), requiredDepth: 0),
             ContentStartFence = TemplateFence.BuildFromEvents(TagEvents("</a>", "<b>", "</b>"), requiredDepth: 0),
             ContentEndFence = TemplateFence.BuildFromEvents(TagEvents("<b>", "</b>", "<c>"), requiredDepth: 0),
@@ -73,6 +74,7 @@ public sealed class StreamingPathSelectorTests
         return new StreamingTemplate
         {
             TemplateId = templateId,
+            Host = "",
             PrefixFence = TemplateFence.BuildFromEvents(
                 TagEvents("<body>", "<header>", "</header>", "<article>"),
                 requiredDepth: 0),

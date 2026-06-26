@@ -57,6 +57,7 @@ public sealed class SqliteStreamingTemplateStoreTests
         return new StreamingTemplate
         {
             TemplateId = Guid.NewGuid(),
+            Host = "",
             PrefixFence = fence,
             ContentStartFence = fence,
             ContentEndFence = fence,

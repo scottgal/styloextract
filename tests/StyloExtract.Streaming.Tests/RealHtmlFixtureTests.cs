@@ -20,6 +20,7 @@ public sealed class RealHtmlFixtureTests
         var template = new StreamingTemplate
         {
             TemplateId = Guid.NewGuid(),
+            Host = "",
             PrefixFence = TemplateFence.BuildFromEvents(
                 TagEvents("</header>", "<main>", "<article>", "<h1>"),
                 requiredDepth: 0),
