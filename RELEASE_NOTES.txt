@@ -1,3 +1,55 @@
+StyloExtract 1.8.0-alpha.19 - 2026-06-26
+=========================================
+
+Streaming: sliding-window design (no full-buffer retention)
+------------------------------------------------------------
+
+Refactors alpha.18's IncrementalHtmlTokenizer + IncrementalFenceScanner
+to a TRUE sliding-window streaming design:
+
+1. Bytes: only partial-tag bytes are retained. Once a tag is emitted,
+   the bytes are dropped immediately (compact-on-emit, not compact-on-
+   next-Feed). New PeakBufferedBytes property exposes the high-watermark
+   for telemetry. Worst-case in-flight buffer is O(longest tag), not
+   O(megabytes). MaxBufferSize lowered from 1 MiB to 64 KiB and
+   repositioned as a hard safety stop that should never be hit under
+   correct input — exceeding it now means a single tag (or unclosed
+   script/style body) genuinely exceeds 64 KiB and the scan must bail.
+
+2. Events: fixed-size sliding window of the last WindowSize tag events
+   (unchanged from alpha.18). Push new, pop oldest. The window is the
+   only event-level state.
+
+3. RollingSketch: documented (in IncrementalFenceScanner XML doc) that
+   MinHash with min-pooling is NOT reversibly rollable — once an element
+   leaves the window, its contribution to min(...) can't be subtracted.
+   The sketch therefore rebuilds the signature from the current event
+   window after each accepted tag (O(WindowSize × SignatureSize) per
+   tick, gated by the Bloom allowlist filter to skip the vast majority
+   of inbound tags). The bounded-buffer property — the user's headline
+   concern — is satisfied by the tokenizer; the sketch's per-tick recompute
+   is the price MinHash charges for the LSH-band locality the matcher
+   relies on. The event-level memory remains O(WindowSize) regardless.
+
+4. IncrementalFenceScanner now exposes PeakBufferedBytes and BytesConsumed
+   passthroughs from the tokenizer so callers can prove the bounded-memory
+   property to telemetry without reaching into the tokenizer directly.
+   The duplicated tick logic (mirroring FenceScanner.Tick over heap-backed
+   sketch state) is retained — it's hard-pinned to the ref-struct path by
+   the existing cross-validation tests, which give us higher confidence
+   than refactoring to delegate would.
+
+Memory-cap proof: tests/StreamingMemoryBoundTests.cs feeds 5 MiB of
+synthetic HTML in 4 KiB chunks and asserts PeakBufferedBytes stays
+under 16 KiB. The streaming gateway can now scan multi-megabyte
+responses while holding bounded memory.
+
+Migration: API is unchanged from alpha.18 — refactor is internal. The
+new PeakBufferedBytes and BytesConsumed diagnostic properties on
+IncrementalFenceScanner are additive. MaxBufferSize is still public but
+the new value is 64 KiB (was 1 MiB); only relevant if you were catching
+the InvalidOperationException for pathological input.
+
 StyloExtract 1.8.0-alpha.18 - 2026-06-26
 =========================================
 

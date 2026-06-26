@@ -2,8 +2,17 @@ namespace StyloExtract.Streaming;
 
 /// <summary>
 /// Stateful, heap-backed companion to <see cref="FenceScanner"/>. Combines
-/// <see cref="IncrementalHtmlTokenizer"/> with a per-fence MinHash sketch that
-/// survives chunk boundaries.
+/// <see cref="IncrementalHtmlTokenizer"/> (sliding-window byte buffer that
+/// retains only the partial tag in flight) with a fixed-size sliding event
+/// window + MinHash sketch that survives chunk boundaries.
+///
+/// Memory contract (alpha.19): the only retained byte-level state lives in
+/// the tokenizer's partial-tag buffer (capped at
+/// <see cref="IncrementalHtmlTokenizer.MaxBufferSize"/>). The scanner itself
+/// holds O(WindowSize) tag events plus an O(SignatureSize) MinHash signature
+/// — no historical bytes, ever. <see cref="PeakBufferedBytes"/> exposes the
+/// tokenizer's high-watermark so callers can prove the bounded-memory
+/// property to telemetry.
 ///
 /// Usage:
 /// <code>
@@ -22,7 +31,19 @@ namespace StyloExtract.Streaming;
 /// <see cref="IncrementalFenceScanner"/> replicates the same tick logic over
 /// heap-allocated signature/window arrays. The behavioural contract is
 /// identical: feeding the same bytes that <see cref="StreamingPathSelector.ScanByHost"/>
-/// would scan in one shot yields the same verdict.
+/// would scan in one shot yields the same verdict, and the duplicated tick
+/// logic is hard-pinned to the ref-struct path by cross-validation tests
+/// (see IncrementalFenceScannerTests).
+///
+/// Sketch update cost: <see cref="RollingSketch"/> uses MinHash with
+/// min-pooling, which is NOT reversibly rollable — when an element leaves
+/// the window we can't subtract its contribution from <c>min(...)</c>. So
+/// <see cref="Tick"/> rebuilds the signature from the current event window
+/// after each push (O(WindowSize × SignatureSize) per accepted tag, gated
+/// by the Bloom allowlist filter to skip the dominant majority of tags).
+/// The bounded-buffer property — the user's headline concern — is satisfied
+/// by the tokenizer; the sketch's full-window recompute is the price MinHash
+/// charges for the LSH-band locality property the fence-matcher relies on.
 /// </summary>
 public sealed class IncrementalFenceScanner
 {
@@ -70,6 +91,23 @@ public sealed class IncrementalFenceScanner
     public FenceState State => _state;
     public long CaptureStartByte => _captureStartByte;
     public long CaptureEndByte => _captureEndByte;
+
+    /// <summary>
+    /// High-watermark of the underlying tokenizer's in-flight byte buffer.
+    /// Proves the sliding-window memory contract: regardless of how many
+    /// megabytes have been fed through <see cref="Feed"/>, this value stays
+    /// bounded by the longest single tag observed (plus chunk slack).
+    /// </summary>
+    public int PeakBufferedBytes => _tokenizer.PeakBufferedBytes;
+
+    /// <summary>
+    /// Total bytes consumed by the underlying tokenizer (monotonically
+    /// increasing across feeds). Diagnostic counterpart to
+    /// <see cref="PeakBufferedBytes"/>: a large gap between these two —
+    /// e.g. consumed 200 KiB, peak buffered 8 KiB — is the headline proof
+    /// the streaming scan held bounded memory.
+    /// </summary>
+    public long BytesConsumed => _tokenizer.BytesConsumed;
 
     /// <summary>
     /// Feed the next response chunk into the scanner. Returns the latched

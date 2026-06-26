@@ -3,35 +3,46 @@ using System.IO.Hashing;
 namespace StyloExtract.Streaming;
 
 /// <summary>
-/// Stateful HTML tokenizer that survives chunk boundaries. Append bytes via
-/// <see cref="Feed"/> as they arrive from the network; drain completed tag
-/// events via <see cref="TryReadTag"/>. A partial tag at the end of one chunk
-/// (e.g. <c>"&lt;hea"</c>) is held in an internal buffer and completed when the
-/// next chunk arrives.
+/// Stateful HTML tokenizer that survives chunk boundaries with a TRUE
+/// sliding-window byte buffer: only the bytes of the partial tag currently
+/// in flight (plus the small slack required to detect closing markers
+/// straddling a chunk boundary) are retained. Once <see cref="TryReadTag"/>
+/// emits an event, the bytes that produced it are dropped immediately —
+/// the buffer's valid-byte count post-emit is O(partial-tag), never
+/// O(response-size).
 ///
-/// Heap-allocated (one pinned-ish buffer) — not zero-alloc like
-/// <see cref="MinimalHtmlTokenizer"/>'s span path. Use this for streaming-gateway
-/// scenarios where bytes arrive in chunks and you can't wait for the whole
-/// response. Trade-off vs the span tokenizer: one buffer allocation per request
-/// (the internal byte array, geometrically grown), not per chunk.
+/// This is the alpha.19 redesign of the alpha.18 tokenizer, which held a
+/// growable 8 KiB → 1 MiB buffer and only compacted at the next
+/// <see cref="Feed"/> call. The new contract: the worst-case in-flight
+/// buffer is the longest single tag (or script/style body close-marker
+/// preserve window), so a streaming gateway can scan multi-megabyte
+/// responses while holding bounded memory.
 ///
-/// Behavioural contract: feeding the same bytes that <see cref="MinimalHtmlTokenizer"/>
-/// would consume — in any chunking — yields the same <see cref="TagEvent"/>
-/// sequence in the same order, with the same hashes and byte lengths. The
-/// stateful path is structurally equivalent to the span path, just resumable.
+/// Behavioural contract (unchanged from alpha.18): feeding the same bytes
+/// that <see cref="MinimalHtmlTokenizer"/> would consume — in any chunking
+/// — yields the same <see cref="TagEvent"/> sequence in the same order,
+/// with the same hashes and byte lengths. The stateful path is structurally
+/// equivalent to the span path, just resumable.
 ///
-/// Buffer growth: starts at 8 KiB, doubles up to <see cref="MaxBufferSize"/> on
-/// each <see cref="Feed"/>. When the limit is reached and no consumable bytes
-/// have made progress, <see cref="Feed"/> throws <see cref="InvalidOperationException"/>
-/// rather than silently dropping bytes — this surfaces pathological inputs
-/// (no tags ever close) loudly enough to bail at the call site.
+/// Buffer growth: hard-capped at <see cref="MaxBufferSize"/> (64 KiB). The
+/// cap is a safety stop that should never be hit under correct input; if a
+/// single tag is genuinely longer than 64 KiB (or a script/style body has
+/// no close-marker in 64 KiB of body), <see cref="Feed"/> throws
+/// <see cref="InvalidOperationException"/> rather than silently dropping
+/// bytes. <see cref="PeakBufferedBytes"/> exposes the high-watermark for
+/// memory telemetry.
 /// </summary>
 public sealed class IncrementalHtmlTokenizer
 {
-    /// <summary>Hard cap on the internal byte buffer to prevent OOM on pathological inputs.</summary>
-    public const int MaxBufferSize = 1 * 1024 * 1024; // 1 MiB
+    /// <summary>
+    /// Hard safety cap on the internal byte buffer. Under correct input the
+    /// buffer's valid-byte count post-emit is O(longest tag), so this cap
+    /// is only hit on pathological input (a single tag > 64 KiB, or a
+    /// script/style body with no closing marker in 64 KiB of body).
+    /// </summary>
+    public const int MaxBufferSize = 64 * 1024;
 
-    private const int InitialBufferSize = 8 * 1024;
+    private const int InitialBufferSize = 4 * 1024;
 
     private static readonly ulong s_scriptHash = XxHash3.HashToUInt64("script"u8);
     private static readonly ulong s_styleHash = XxHash3.HashToUInt64("style"u8);
@@ -40,6 +51,7 @@ public sealed class IncrementalHtmlTokenizer
     private int _filled;     // index past the last byte fed into _buffer
     private int _consumed;   // index of the next byte the tokenizer will look at
     private long _droppedBytes; // bytes dropped during compaction (kept so BytesConsumed monotonically grows)
+    private int _peakBufferedBytes;
 
     // Skip-state: when we open a <script> or <style>, subsequent bytes belong to
     // the body of that element and must be skipped until the matching close tag
@@ -61,11 +73,19 @@ public sealed class IncrementalHtmlTokenizer
     public long BytesConsumed => _droppedBytes + _consumed;
 
     /// <summary>
+    /// High-watermark of the buffer's valid-byte count (<c>_filled - _consumed</c>)
+    /// observed since construction. Diagnostic for memory telemetry: under the
+    /// sliding-window contract, this should stay bounded by the longest tag
+    /// observed plus one chunk's worth of slack, regardless of response size.
+    /// </summary>
+    public int PeakBufferedBytes => _peakBufferedBytes;
+
+    /// <summary>
     /// Append <paramref name="chunk"/> to the internal buffer so subsequent
     /// <see cref="TryReadTag"/> calls can scan it. Compacts the buffer first
-    /// (drops consumed prefix); grows the buffer geometrically if needed.
-    /// Throws if appending would exceed <see cref="MaxBufferSize"/> with no
-    /// progress possible.
+    /// (drops consumed prefix) so retained bytes are bounded by the partial
+    /// tag in flight. Throws if appending would exceed <see cref="MaxBufferSize"/>
+    /// — under correct input this should never happen.
     /// </summary>
     public void Feed(ReadOnlySpan<byte> chunk)
     {
@@ -75,37 +95,36 @@ public sealed class IncrementalHtmlTokenizer
 
         var unread = _filled - _consumed;
         var required = unread + chunk.Length;
+        if (required > MaxBufferSize)
+        {
+            throw new InvalidOperationException(
+                $"IncrementalHtmlTokenizer buffer would exceed {MaxBufferSize} bytes " +
+                $"(unread={unread}, chunk={chunk.Length}). Under the sliding-window " +
+                $"contract this means either a single tag exceeds {MaxBufferSize} bytes " +
+                $"or a script/style body has no closing marker in that window. " +
+                $"Bail the scan — the input is pathological.");
+        }
         if (required > _buffer.Length)
         {
-            var newSize = _buffer.Length;
-            while (newSize < required) newSize = checked(newSize * 2);
-            if (newSize > MaxBufferSize)
-            {
-                if (required > MaxBufferSize)
-                {
-                    throw new InvalidOperationException(
-                        $"IncrementalHtmlTokenizer buffer would exceed {MaxBufferSize} bytes " +
-                        $"(unread={unread}, chunk={chunk.Length}). Input has no closing tags " +
-                        $"in the buffered window — bail the scan.");
-                }
-                newSize = MaxBufferSize;
-            }
+            // Grow only as far as needed (still capped by MaxBufferSize above).
+            var newSize = Math.Max(_buffer.Length * 2, required);
+            if (newSize > MaxBufferSize) newSize = MaxBufferSize;
             var grown = new byte[newSize];
-            Buffer.BlockCopy(_buffer, _consumed, grown, 0, unread);
-            _droppedBytes += _consumed;
-            _consumed = 0;
-            _filled = unread;
+            Buffer.BlockCopy(_buffer, 0, grown, 0, _filled);
             _buffer = grown;
         }
 
         chunk.CopyTo(_buffer.AsSpan(_filled));
         _filled += chunk.Length;
+        TrackPeak();
     }
 
     /// <summary>
     /// Drain the next completed tag from the internal buffer. Returns false
     /// when only a partial tag remains (caller should <see cref="Feed"/> the
-    /// next chunk and retry).
+    /// next chunk and retry). On a successful emit, the consumed bytes are
+    /// dropped IMMEDIATELY (compact-on-emit) so the buffer never carries
+    /// already-emitted history between calls.
     /// </summary>
     public bool TryReadTag(out TagEvent evt)
     {
@@ -121,6 +140,7 @@ public sealed class IncrementalHtmlTokenizer
                 // straddling the chunk boundary is missed entirely.
                 var preserve = Math.Min(_pendingSkipTarget.Length - 1, _filled - _consumed);
                 _consumed = _filled - preserve;
+                Compact();
                 evt = default;
                 return false;
             }
@@ -136,6 +156,7 @@ public sealed class IncrementalHtmlTokenizer
             {
                 // No '<' in the remaining buffer; advance past it and wait for more.
                 _consumed = _filled;
+                Compact();
                 evt = default;
                 return false;
             }
@@ -143,7 +164,9 @@ public sealed class IncrementalHtmlTokenizer
             var afterLt = _consumed + ltIdx + 1;
             if (afterLt >= _filled)
             {
-                // Partial '<' at the end — wait for the next chunk to bring the tag name.
+                // Partial '<' at the end — drop everything before it, wait for chunk.
+                _consumed += ltIdx;
+                Compact();
                 evt = default;
                 return false;
             }
@@ -155,6 +178,8 @@ public sealed class IncrementalHtmlTokenizer
                 var commentStart = afterLt + 3;
                 if (commentStart >= _filled)
                 {
+                    _consumed += ltIdx;
+                    Compact();
                     evt = default;
                     return false;
                 }
@@ -163,6 +188,8 @@ public sealed class IncrementalHtmlTokenizer
                 if (endIdx < 0)
                 {
                     // Partial comment; preserve the '<' so we re-evaluate after Feed.
+                    _consumed += ltIdx;
+                    Compact();
                     evt = default;
                     return false;
                 }
@@ -174,6 +201,8 @@ public sealed class IncrementalHtmlTokenizer
             var nameStart = isClose ? afterLt + 1 : afterLt;
             if (nameStart >= _filled)
             {
+                _consumed += ltIdx;
+                Compact();
                 evt = default;
                 return false;
             }
@@ -182,7 +211,9 @@ public sealed class IncrementalHtmlTokenizer
             var gtIdx = tagContent.IndexOf((byte)'>');
             if (gtIdx < 0)
             {
-                // Tag isn't closed yet — wait for next Feed.
+                // Tag isn't closed yet — drop bytes before the '<', wait for next Feed.
+                _consumed += ltIdx;
+                Compact();
                 evt = default;
                 return false;
             }
@@ -212,6 +243,10 @@ public sealed class IncrementalHtmlTokenizer
                 else if (nameHash == s_styleHash)
                     PrimeBodySkip("</style>"u8);
             }
+            // Compact-on-emit: drop the bytes we just consumed so the buffer
+            // post-emit holds only the partial-tag tail (or zero bytes when
+            // no partial tag is in flight).
+            Compact();
             return true;
         }
 
@@ -247,13 +282,24 @@ public sealed class IncrementalHtmlTokenizer
 
     private void Compact()
     {
-        if (_consumed == 0) return;
+        if (_consumed == 0)
+        {
+            TrackPeak();
+            return;
+        }
         var unread = _filled - _consumed;
         if (unread > 0)
             Buffer.BlockCopy(_buffer, _consumed, _buffer, 0, unread);
         _droppedBytes += _consumed;
         _filled = unread;
         _consumed = 0;
+        TrackPeak();
+    }
+
+    private void TrackPeak()
+    {
+        var inflight = _filled - _consumed;
+        if (inflight > _peakBufferedBytes) _peakBufferedBytes = inflight;
     }
 
     private static ulong ExtractClassHash(ReadOnlySpan<byte> attrs)
