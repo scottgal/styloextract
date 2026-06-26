@@ -15,6 +15,9 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Fixtures\mostlylucid-home.html.gz" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\src\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\StyloExtract.Core\StyloExtract.Core.csproj" />
     <ProjectReference Include="..\..\src\StyloExtract.Fingerprint\StyloExtract.Fingerprint.csproj" />

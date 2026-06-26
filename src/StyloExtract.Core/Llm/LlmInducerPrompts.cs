@@ -47,11 +47,45 @@ public static class LlmInducerPrompts
              #id, descendant combinator, child combinator). NO :has(), no
              :nth-child without need, no quirky pseudo-classes.
           3. The MainContent rule is the most important; emit it whenever you
-             can identify the body of the page.
+             can identify the body of the page. Pick the NARROWEST container
+             that wraps the article body / blog post list / product description.
+             Prefer an id-bearing inner container (e.g. `#content`, `#main`,
+             `#post-list`) over a broad outer wrapper (e.g. `.container`,
+             `body > div`) when both are available — the inner container
+             excludes auxiliary chrome that surrounds the content.
           4. Use RepeatedItem for list-of-things blocks (forum posts,
              product reviews, search results), not the container itself.
           5. Output the YAML INSIDE a fenced code block tagged `yaml`. No
              prose before or after. The block is your entire reply.
+
+        IMPORTANT — auxiliary UI is NOT MainContent. The following patterns
+        commonly appear next to the real content and MUST NOT be classified as
+        MainContent (or Article, Summary, Heading, or RepeatedItem):
+
+          * Language pickers / locale switchers — a list of language or country
+            names (often with flag icons), e.g. text like "العربية (Arabic)
+            Deutsch (German) English Español…". Often a high-linkDensity (≥0.5)
+            list of short anchors.
+          * Filter / faceted-search panels — UI with labels "Date:", "Lang:",
+            "Cat:", "Sort:", "Page size:" plus inputs / select dropdowns /
+            chip buttons. The panel that drives a listing is NOT the listing.
+          * Pagination strips — "1 2 3 … Next Page 1 of 80 (Total items: 791)".
+          * Cookie / GDPR consent banners — "We use cookies / Accept all".
+          * Newsletter signup forms — "Subscribe to our newsletter".
+          * Social-share / author-action strips ("Share on X / Copy link").
+          * Author bio / "About the author" cards near the top of a blog.
+          * Top-of-page announcement bars, toast / notification containers.
+
+        These should be one of: PrimaryNavigation, SecondaryNavigation,
+        Breadcrumb, Form, CookieBanner, Boilerplate — or simply OMITTED. Not
+        every visible region needs a rule. Quality over coverage: a template
+        with only `MainContent` + `Footer` is better than one that
+        misclassifies the language picker as MainContent.
+
+        Sanity check before answering: re-read the text excerpt of every
+        selector you chose as MainContent. If it reads like a list of language
+        names, a filter UI, "Page 1 of N", a cookie notice, or a bio blurb —
+        it's wrong. Pick a different (usually deeper) container.
 
         Example output for a simple article page:
 
@@ -142,12 +176,41 @@ public static class LlmInducerPrompts
              :nth-child without need, no quirky pseudo-classes.
           3. The MainContent rule is the highest priority — fixing it is the
              whole point of the repair. Look at the skeleton and pick the
-             container that actually holds the article body / item list /
-             product description.
+             NARROWEST container that actually holds the article body / item
+             list / product description. Prefer an id-bearing inner container
+             (e.g. `#content`, `#main`, `#post-list`) over a broad outer
+             wrapper (e.g. `.container`, `body > div`) when both exist — the
+             inner container excludes surrounding chrome (author bio, filter
+             panel, language picker, pagination, ads).
           4. Use RepeatedItem for list-of-things blocks (forum posts, product
              reviews, search results), not the container itself.
           5. Output the YAML INSIDE a fenced code block tagged `yaml`. No
              prose before or after. The block is your entire reply.
+
+        IMPORTANT — auxiliary UI is NOT MainContent. The previous template
+        likely failed because its MainContent selector matched a wrapper that
+        ALSO captured one of these patterns. Do NOT classify any of these as
+        MainContent (or Article, Summary, Heading, or RepeatedItem):
+
+          * Language pickers / locale switchers — lists of language or country
+            names (often with flag icons), e.g. "العربية (Arabic) Deutsch
+            (German) English Español…".
+          * Filter / faceted-search panels — "Date:", "Lang:", "Cat:", "Sort:",
+            "Page size:" labels paired with inputs / dropdowns / chip buttons.
+          * Pagination strips — "1 2 3 … Next Page 1 of N".
+          * Cookie / GDPR consent banners.
+          * Newsletter signup forms; social-share / share-this strips.
+          * Author bio / "About the author" cards near the top of a blog.
+
+        These belong to: PrimaryNavigation, SecondaryNavigation, Breadcrumb,
+        Form, CookieBanner, Boilerplate — or are simply OMITTED. Not every
+        visible region needs a rule. A template with only `MainContent` +
+        `Footer` is better than one that misclassifies a language picker.
+
+        Sanity check before answering: re-read the text excerpt of every
+        selector you chose as MainContent. If it reads like a list of language
+        names, a filter UI, "Page 1 of N", or a bio blurb — it's wrong. Pick
+        a different (usually deeper) container.
         """;
 
     /// <summary>

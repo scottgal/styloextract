@@ -1,3 +1,52 @@
+StyloExtract 1.8.0-alpha.10 - 2026-06-26
+=========================================
+
+LLM classification accuracy for chrome patterns
+------------------------------------------------
+
+Symptom: induced templates were labelling language pickers, filter UI,
+locale switchers, and pagination strips as MainContent on
+server-rendered blogs (mostlylucid.net being the canonical reproducer).
+The downstream RagFull renderer's role-filter — which already drops
+PrimaryNavigation / SecondaryNavigation / Form / Boilerplate — never
+saw them as nav and so left them in the extracted markdown, producing
+output WORSE than the deterministic heuristic.
+
+Fix: expanded the induction and repair system prompts with explicit
+"chrome pattern → role" examples (language picker → PrimaryNavigation;
+filter / faceted-search → Form; pagination → SecondaryNavigation;
+cookie banner → CookieBanner; newsletter signup → Form; social-share
+→ Boilerplate). Also nudged the model to prefer narrower MainContent
+selectors that don't include chrome as nested children.
+
+DomSkeletonRenderer now surfaces structural ARIA attributes (`role`,
+`aria-label`, `aria-labelledby`) alongside each element's tag / class /
+id, giving the LLM more signal for distinguishing landmark regions
+(nav / form / banner) from content. The hash-class-name filter is also
+slightly less aggressive: pure PascalCase ids (e.g. `LanguageDropDown`)
+now survive into the skeleton so the LLM can use them as selectors,
+while real CSS-module hashes (mixed-case + digits, or 4+ case
+transitions) are still dropped.
+
+The renderer side (TypedMarkdownRenderer.ShouldEmit) is unchanged —
+it was already correctly filtering by role. The fix is entirely about
+label accuracy and the signal the LLM sees.
+
+Migration: no source change required for consumers; templates induced
+post-1.8.0-alpha.10 will produce cleaner output under
+ExtractionProfile.RagFull and MainContentOnly. Cached templates
+induced under earlier alphas will keep producing the old output until
+they're refit (centroid drift triggers refit automatically; or
+operators can manually clear the template store).
+
+Regression tests: tests/StyloExtract.Core.Tests adds
+LlmInducerPromptAntiPatternTests (prompt snapshot) and
+MostlylucidLlmInductionRegressionTests (applies a synthetic bad-wide-
+wrapper template against a captured mostlylucid.net fixture, proves
+the language-picker / filter chrome leaks; then shows a properly
+authored RepeatedItem template excludes per-card chrome cleanly).
+
+
 StyloExtract 1.8.0-alpha.9 - 2026-06-25
 ========================================
 

@@ -133,10 +133,11 @@ public sealed class DomSkeletonRenderer
 
     private void AppendElementSummary(StringBuilder sb, IElement el)
     {
-        // tag.class#id — text="…" childcount linkDensity textLen
+        // tag.class#id [role=… aria-label=…] — text="…" childcount linkDensity textLen
         sb.Append(el.LocalName);
         AppendClassTokens(sb, el);
         AppendId(sb, el);
+        AppendSemanticAttributes(sb, el);
 
         int childCount = el.ChildElementCount;
         int textLen = el.TextContent.Length;
@@ -158,6 +159,40 @@ public sealed class DomSkeletonRenderer
         {
             sb.Append(" — \"").Append(excerpt).Append('"');
         }
+    }
+
+    /// <summary>
+    /// Emit a small, bounded set of structural ARIA / a11y attributes the LLM
+    /// can use to disambiguate navigation/filter UI from real content. We
+    /// emit only the ones the W3C ARIA spec uses to label landmarks and
+    /// regions: <c>role</c>, <c>aria-label</c>, <c>aria-labelledby</c>. Each
+    /// value is truncated to keep the skeleton compact even for verbose
+    /// authored labels.
+    /// </summary>
+    private static void AppendSemanticAttributes(StringBuilder sb, IElement el)
+    {
+        const int MaxAttrChars = 40;
+        var role = el.GetAttribute("role");
+        if (!string.IsNullOrEmpty(role))
+        {
+            sb.Append(" role=").Append(Truncate(role, MaxAttrChars));
+        }
+        var ariaLabel = el.GetAttribute("aria-label");
+        if (!string.IsNullOrEmpty(ariaLabel))
+        {
+            sb.Append(" aria-label=\"").Append(Truncate(ariaLabel, MaxAttrChars)).Append('"');
+        }
+        var ariaLabelledby = el.GetAttribute("aria-labelledby");
+        if (!string.IsNullOrEmpty(ariaLabelledby))
+        {
+            sb.Append(" aria-labelledby=").Append(Truncate(ariaLabelledby, MaxAttrChars));
+        }
+    }
+
+    private static string Truncate(string s, int max)
+    {
+        if (s.Length <= max) return s;
+        return string.Concat(s.AsSpan(0, max), "…");
     }
 
     private void AppendClassTokens(StringBuilder sb, IElement el)
@@ -198,21 +233,48 @@ public sealed class DomSkeletonRenderer
     {
         // Conservative: only call something a hash if it's long AND every char
         // is alphanumeric (no '-' / '_' / ':' etc which appear in real
-        // utility-class systems like Tailwind's bg-blue-500) AND it mixes
-        // upper + lower case OR contains a run of digits ≥3.
+        // utility-class systems like Tailwind's bg-blue-500) AND it shows
+        // hash-shape signal: a digit run ≥3, OR (mixed case AND ≥1 digit),
+        // OR ≥4 case transitions (which catches randomly-cased tokens like
+        // 'aB3xLm9kQ7rZw' while letting English PascalCase ids through —
+        // e.g. 'LanguageDropDown' is only 3 case transitions and has no
+        // digits, so it survives and the LLM can use it as a handle).
         if (token.Length < 8) return false;
-        bool hasUpper = false, hasLower = false;
+        bool hasUpper = false, hasLower = false, hasDigit = false;
         int digitRun = 0, maxDigitRun = 0;
+        int caseTransitions = 0;
+        bool? prevIsUpper = null;
         foreach (var c in token)
         {
             if (c == '-' || c == '_' || c == ':' || c == '/') return false;
             if (!char.IsLetterOrDigit(c)) return false;
-            if (char.IsUpper(c)) hasUpper = true;
-            else if (char.IsLower(c)) hasLower = true;
-            if (char.IsDigit(c)) { digitRun++; if (digitRun > maxDigitRun) maxDigitRun = digitRun; }
-            else digitRun = 0;
+            bool isUpper = char.IsUpper(c);
+            bool isLower = char.IsLower(c);
+            if (isUpper) hasUpper = true;
+            if (isLower) hasLower = true;
+            if (char.IsDigit(c))
+            {
+                hasDigit = true;
+                digitRun++;
+                if (digitRun > maxDigitRun) maxDigitRun = digitRun;
+            }
+            else
+            {
+                digitRun = 0;
+            }
+            if (isUpper || isLower)
+            {
+                if (prevIsUpper.HasValue && prevIsUpper.Value != isUpper)
+                {
+                    caseTransitions++;
+                }
+                prevIsUpper = isUpper;
+            }
         }
-        return (hasUpper && hasLower) || maxDigitRun >= 3;
+        if (maxDigitRun >= 3) return true;
+        if (hasUpper && hasLower && hasDigit) return true;
+        if (caseTransitions >= 4) return true;
+        return false;
     }
 
     // ---------- children / grouping ----------
