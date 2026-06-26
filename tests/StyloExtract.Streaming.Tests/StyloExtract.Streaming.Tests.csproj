@@ -13,4 +13,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\StyloExtract.Streaming\StyloExtract.Streaming.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="Fixtures\**\*.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>
