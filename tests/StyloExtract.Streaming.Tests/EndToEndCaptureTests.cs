@@ -29,6 +29,7 @@ public sealed class EndToEndCaptureTests
             BailoutBytes = 100_000,
             MaxCaptureBytes = 100_000,
             WindowSize = 4,
+            MaxEventsWithoutTransition = 256,
         };
 
         Span<uint> signature = stackalloc uint[128];

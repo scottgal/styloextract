@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>StyloExtract.Streaming.Benchmarks</RootNamespace>
+    <AssemblyName>StyloExtract.Streaming.Benchmarks</AssemblyName>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\StyloExtract.Streaming\StyloExtract.Streaming.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Core\StyloExtract.Core.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.AspNetCore\StyloExtract.AspNetCore.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="Fixtures\*.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+</Project>

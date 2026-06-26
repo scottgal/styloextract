@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta content="IE=edge,chrome=1" http-equiv="X-UA-Compatible" />
+    <meta
+        content="width=device-width, initial-scale=1, shrink-to-fit=no"
+        name="viewport"
+    />
+    <title>StyloBot Release Series: The Sidecar Architecture (English)</title>
+
+    <!-- RSS Feed Autodiscovery -->
+    <link rel="alternate" type="application/rss+xml"
+          title="mostlylucid.net RSS Feed"
+          href="https://mostlylucid.net/rss" />
+    <link rel="alternate" type="application/atom+xml"
+          title="mostlylucid.net Atom Feed"
+          href="https://mostlylucid.net/atom" />
+
+    <link rel="prefetch" href="https://accounts.google.com/gsi/client"/>
+
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://mostlylucid.net/blog/sidecar-architecture" />
+
+    <!-- Facebook Meta Tags -->
+    <meta property="og:url" content="https://mostlylucid.net/blog/sidecar-architecture" id="metaOgUrl">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="StyloBot Release Series: The Sidecar Architecture (English)">
+    <meta property="og:description" content="StyloBot&#x27;s detection engine is ASP.NET Core. This post explains how that engine connects to Go gateways, Node.js applications, and any other stack via a...">
+    <meta property="og:image" content="https://mostlylucid.net/img/social2.jpg">
+    <meta property="og:locale" content="en_GB" />
+    <meta property="og:site_name" content="mostlylucid" />
+
+    <!-- Twitter Meta Tags -->
+    <meta name="twitter:card" content="summary">
+    <meta property="twitter:domain" content="mostlylucid.net">
+    <meta property="twitter:url" content="https://mostlylucid.net/blog/sidecar-architecture" id="metaTwitterUrl">
+    <meta name="twitter:title" content="StyloBot Release Series: The Sidecar Architecture (English)">
+    <meta name="twitter:description" content="StyloBot&#x27;s detection engine is ASP.NET Core. This post explains how that engine connects to Go gateways, Node.js applications, and any other stack via a...">
+    <meta name="twitter:image" content="https://mostlylucid.net/img/social2.jpg">
+
+    <!-- Meta Description -->
+    <meta name="description" content="StyloBot&#x27;s detection engine is ASP.NET Core. This post explains how that engine connects to Go gateways, Node.js applications, and any other stack via a..." />
+
+    <!-- Site-wide Structured Data -->
+    <script type="application/ld&#x2B;json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "mostlylucid",
+        "url": "https://www.mostlylucid.net",
+        "description": "Technical blog covering ASP.NET Core, C#, Entity Framework, HTMX, Docker, and modern web development.",
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": "https://www.mostlylucid.net/search?query={search_term_string}"
+            },
+            "query-input": "required name=search_term_string"
+        },
+        "publisher": {
+            "@type": "Person",
+            "name": "Scott Galloway",
+            "url": "https://www.mostlylucid.net/blog/aboutme",
+            "sameAs": [
+                "https://github.com/scottgal",
+                "https://twitter.com/scottgal",
+                "https://www.linkedin.com/in/scottgalloway/"
+            ]
+        }
+    }
+    </script>
+
+    <!-- Article metadata for blog posts -->
+        <meta property="article:published_time" content="2026-06-01T10:30:00Z" />
+        <meta property="article:author" content="Scott Galloway" />
+    <link rel="icon" type="image/png" href="/img/smalllogo.svg" />
+
+    <script src="https://accounts.google.com/gsi/client"  data-cfasync="false" async defer></script>
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css"
+    />
+    <link rel="prefetch" href="/css/dist/main.css?v=h8ZrcL9u5gI5dLW0irFjSt0k6JDuVdD_MOBoiqY934c">
+    <link href="/css/dist/main.css?v=h8ZrcL9u5gI5dLW0irFjSt0k6JDuVdD_MOBoiqY934c" media="screen, print" rel="stylesheet" />
+    <!-- Highlight.js themes now bundled in main.css - no separate requests needed -->
+    <link rel="manifest" href="/manifest.json" />
+</head>
+<body x-data="globalSetup()" x-init="themeInit()" :class="isMobileMenuOpen ? 'max-h-screen overflow-hidden relative' : ''" class="bg-custom-light-bg dark:bg-custom-dark-bg ">
+<div id="toast" class="toast toast-bottom fixed z-50 hidden ">
+    <div id="toast-message" class="alert ">
+        <div>
+            <span id="toast-text" class="font-bold dark:text-white text-black">Notification message</span>
+        </div>
+    </div>
+    <p class="hidden right-1 bx-copy  cursor-pointer alert-success alert-warning alert-error alert-info overflow-y-hidden"></p>
+</div>
+<header class="sticky top-0 z-40 bg-white  dark:bg-custom-dark-bg shadow-md  container mx-auto flex flex-wrap items-center justify-between px-4 mb-3 py-1 w-full rounded border-b border-x border-l-neutral-600 border-r-neutral-600 border-b-neutral-600 print:!hidden" id="header">
+
+    <ul class="flex items-center w-full print:hidden gap-1 sm:gap-2">
+        <!-- Logo + Home Icon - Always visible (last to hide) -->
+        <li>
+            <a href="/" hx-swap="show:window:top" hx-target="#contentcontainer" hx-push-url="true" hx-headers='{"homerequest": "true"}' class="flex items-center" hx-get="/">
+                <span class="bx bx-home-alt-2 text-xl lg:text-2xl font-semibold mr-1 sm:mr-2 transition-colors group-hover:text-green dark:text-white dark:group-hover:text-secondary print:hidden"></span>
+
+                <div class="svg-container">
+                    <!-- Large screen logo (shown on large screens) -->
+                    <img src="/img/logo.svg?v=kUkb5rVbYNGnG7rw9AdiyMbnZiU7-WEYHK40rbEZwtA" width="180px" height="30px" alt="mostlylucid limited" class="hidden lg:block img-filter-dark" :class="{ 'img-filter-dark': !isDarkMode }" />
+
+                    <!-- Small screen logo (shown on small/medium screens) -->
+                    <img src="/img/smalllogo.svg?v=DwnIOiZqr44gIunxm1XFuIQgKTa_KzF_8n3xsNUZmkQ" width="30px" height="20px" alt="mostlylucid limited" class="block lg:hidden" />
+                </div>
+            </a>
+        </li>
+
+        <!-- Search Typeahead - Expands to fill available space -->
+        <li class="group relative mb-1 hidden lg:flex flex-1 mx-4 max-w-xl">
+            <div x-data="typeahead()" class="relative w-full" id="searchelement" x-on:click.outside="results = []">
+    <form x-on:submit.prevent="goToSearch" class="flex items-center gap-1 w-full">
+        <label class="input input-sm bg-neutral-500 bg-opacity-10 input-bordered flex items-center gap-2 flex-1">
+            <input
+                type="text"
+                x-model="query"
+                x-on:input.debounce.200ms="search"
+                x-on:keydown.down.prevent="moveDown"
+                x-on:keydown.up.prevent="moveUp"
+                x-on:keydown.tab.prevent="completeWithHighlighted"
+                x-on:keydown.enter.prevent="completeAndSearch"
+                placeholder="Search..."
+                class="border-0 grow input-sm text-black dark:text-white bg-transparent w-full"/>
+        </label>
+        <button type="submit" class="btn btn-sm btn-primary" title="Search">
+            <i class="bx bx-search text-lg"></i>
+        </button>
+    </form>
+    <!-- Dropdown showing matching articles -->
+    <ul x-show="results.length > 0"
+        id="searchresults"
+        class="absolute z-100 my-2 left-0 right-0 w-full min-w-[280px] bg-white dark:bg-custom-dark-bg border border-1 text-black dark:text-white border-neutral-600 rounded-lg shadow-lg overflow-hidden">
+        <template x-for="(article, index) in results" :key="article.slug">
+            <li x-on:click="window.location.href = '/blog/' + article.slug"
+                x-on:mouseenter="highlightedIndex = index"
+                :class="{
+                    'dark:bg-blue-dark bg-blue-light': index === highlightedIndex,
+                    'dark:hover:bg-blue-dark hover:bg-blue-light': true
+                }"
+                class="cursor-pointer text-sm p-2 m-2"><span x-text="article.title" class="block"></span></li>
+        </template>
+    </ul>
+</div>
+        </li>
+
+        <li class="ml-auto lg:hidden"></li>
+
+        <!-- Login/User Avatar - Hide on medium screens (lg+) -->
+        <li class="group relative mb-1 hidden lg:block">
+            <div class="flex items-center">
+                    <div class="w-[32px] h-[32px] rounded-full overflow-hidden flex items-center justify-center [&_iframe]:!rounded-full" title="Sign in with Google">
+                        <div id="google_button" class="scale-[1.3] -m-1"></div>
+                    </div>
+            </div>
+        </li>
+
+        <!-- Social Icons - Hide on medium screens (lg+) -->
+        <li class="group relative my-1 px-2 hidden lg:block border-neutral-400 dark:border-neutral-600 border rounded-lg">
+            <div class="mr-auto flex items-center pt-6 sm:mr-0 sm:pt-0 space-x-3 text-2xl ">
+
+    <a href="https://github.com/scottgal/" target="_blank">
+        <i class="text-primary dark:text-white hover:text-secondary dark:hover:text-secondary transition-colors bx bxl-github"></i>
+    </a>
+
+    <a href="https://hachyderm.io/@scottgal@hachyderm.io" target="_blank">
+        <i class=" text-primary dark:text-white hover:text-secondary dark:hover:text-secondary transition-colors bx bxl-mastodon"></i>
+    </a>
+
+    <a href="https://www.linkedin.com/in/scott-galloway-91608691/" target="_blank">
+        <i class=" text-primary dark:text-white hover:text-secondary dark:hover:text-secondary transition-colors bx bxl-linkedin"></i>
+    </a>
+
+</div>
+        </li>
+
+        <!-- RSS - Icon only -->
+        <li class="group relative mb-1 hidden md:block">
+            <a href="/rss" target="_blank" class="flex items-center text-lg hover:text-secondary dark:hover:text-secondary transition-colors" title="RSS Feed">
+                <i class="text-xl bx bx-rss"></i>
+            </a>
+        </li>
+
+        <!-- NuGet - Icon always visible, text on lg+ -->
+        <li class="group relative mb-1">
+            <a href="https://www.nuget.org/profiles/mostlylucid" class="broken-link" title="This link may be broken" target="_blank" rel="noopener noreferrer" class="flex items-center px-1 lg:px-2 font-body text-base font-medium text-primary transition-colors group-hover:text-green dark:text-white dark:group-hover:text-secondary" data-umami-event="NuGet Click">
+                <i class="bx bxl-nuget text-xl"></i>
+                <span class="ml-0.5 hidden lg:inline">NuGet</span>
+            </a>
+        </li>
+
+        <!-- Software - Icon always visible, text on lg+ -->
+        <li class="group relative mb-1">
+            <a href="/software" hx-boost="true" hx-target="#contentcontainer" hx-swap="show:window:top" class="flex items-center px-1 lg:px-2 font-body text-base font-medium text-primary transition-colors group-hover:text-green dark:text-white dark:group-hover:text-secondary" data-umami-event="Software Click">
+                <i class="bx bx-code-block text-xl"></i>
+                <span class="ml-0.5 hidden lg:inline">Software</span>
+            </a>
+        </li>
+
+        <!-- Contact - Icon always visible, text on lg+ -->
+        <li class="group relative mb-1">
+            <a hx-boost="true" hx-swap="show:window:top" hx-target="#contentcontainer" class="flex items-center px-1 lg:px-2 font-body text-base font-medium text-primary transition-colors group-hover:text-green dark:text-white dark:group-hover:text-secondary" data-umami-event="Contact Click" href="/contact">
+                <i class="bx bx-mail-send text-xl"></i>
+                <span class="ml-0.5 hidden lg:inline">Contact</span>
+            </a>
+        </li>
+
+        <!-- Theme Toggle - Always visible -->
+        <li class="group relative mb-1">
+            <div class="flex items-center">
+                <i class="bx cursor-pointer text-xl lg:text-3xl text-primary dark:text-white transition-colors" x-on:click="themeSwitch()" :class="isDarkMode ? 'bxs-sun' : 'bxs-moon'"></i>
+            </div>
+        </li>
+    </ul>
+
+</header>
+<div id="announcement-container" hx-get="/announcement/banner" hx-trigger="load" hx-swap="innerHTML"></div>
+<span class="hidden btn btn-sm btn-active btn-disabled select select-primary select-sm
+        text-sm text-gray-600 text-neutral-500 border rounded flex items-center
+        justify-center min-w-[80px] pr-4 pt-0 mt-0 mr-2 btn-primary btn-outline
+bg-white    dark:border-gray-600 dark:bg-gray-800 bg-gray-800
+        dark:bg-blue-500 dark:border-blue-400 dark:text-white dark:hover:bg-blue-600 
+        dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700
+        dark:btn-accent dark:btn-outline dark:btn-disabled dark:btn-primary dark:btn-active gap-2 whitespace-nowrap cursor-pointer">
+</span>
+<div class="container mx-auto" id="contentcontainer" hx-history-elt>
+    
+
+<!-- JSON-LD Structured Data for Blog Post -->
+<script type="application/ld&#x2B;json">
+{
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    "headline": "StyloBot Release Series: The Sidecar Architecture",
+    "description": "StyloBot&#x27;s detection engine is ASP.NET Core. This post explains how that engine connects to Go gateways, Node.js applications, and any other stack via a...",
+    "datePublished": "2026-06-01T10:30:00Z",
+        "dateModified": "2026-06-23T23:53:36Z",
+    "author": {
+        "@type": "Person",
+        "name": "Scott Galloway",
+        "url": "https://mostlylucid.net/blog/aboutme"
+    },
+    "publisher": {
+        "@type": "Organization",
+        "name": "mostlylucid",
+        "logo": {
+            "@type": "ImageObject",
+            "url": "https://mostlylucid.net/img/logo.svg"
+        }
+    },
+    "mainEntityOfPage": {
+        "@type": "WebPage",
+        "@id": "https://mostlylucid.net/blog/sidecar-architecture"
+    },
+    "wordCount": 3612,
+    "inLanguage": "en",
+    "keywords": "Architecture, ASP.NET Core, Go, gRPC, StyloBot",
+    "image": "https://mostlylucid.net/img/social2.jpg"
+}
+</script>
+
+<title>StyloBot Release Series: The Sidecar Architecture (English)</title>
+<div class="pt-2 lg:pt-2" id="blogpost" hx-boost="true"  hx-target="#contentcontainer" hx-swap="show:window:top">
+    <div class="border-b border-grey-lighter pb-3 sm:pb-3">
+
+        <h2 class="pb-2 block font-body text-3xl font-semibold leading-tight text-primary dark:text-white">
+            StyloBot Release Series: The Sidecar Architecture
+        </h2>
+
+            <div class="pb-2">
+                
+    <div class="hidden sm:inline-flex items-center gap-0 px-1.5 py-0.5 bg-grey-lighter/50 dark:bg-gray-800 rounded-full border border-grey-light/30 dark:border-grey-dark/30">
+            <div class="tooltip" data-tip="English">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('en')" class="inline-block rounded opacity-100 ring-1 ring-blue-500 dark:ring-blue-400 scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/en/sidecar-architecture">
+                    <img src="/img/flags/en.svg?v=yL4ecgh5ikrmku4ek3Bl1Ji7KedBlD9hcrKRGLjtgGY" width="18" height="12" alt="English" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="&#x939;&#x93F;&#x928;&#x94D;&#x926;&#x940; (Hindi)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('hi')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/hi/sidecar-architecture">
+                    <img src="/img/flags/hi.svg?v=rESQMRf7z5Ixlo1-x4jPPHUz8iSxJJwAzvTQxk6zfww" width="18" height="12" alt="&#x939;&#x93F;&#x928;&#x94D;&#x926;&#x940; (Hindi)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Suomi (Finnish)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('fi')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/fi/sidecar-architecture">
+                    <img src="/img/flags/fi.svg?v=ZEotabGpf05xtKg0GRajIe-bJmZ3TT4Sp8DZX1bn8rM" width="18" height="12" alt="Suomi (Finnish)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Fran&#xE7;ais (French)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('fr')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/fr/sidecar-architecture">
+                    <img src="/img/flags/fr.svg?v=JB2sfanSeC9Ywv_cBQkKxIa0nN4UnIeWddGJ3uZq7fY" width="18" height="12" alt="Fran&#xE7;ais (French)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Nederlands (Dutch)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('nl')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/nl/sidecar-architecture">
+                    <img src="/img/flags/nl.svg?v=SUh0oFxAfPsjFfaqj8BW5i-31bbYzeB2G7u0rUd8n7s" width="18" height="12" alt="Nederlands (Dutch)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Svenska (Swedish)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('sv')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/sv/sidecar-architecture">
+                    <img src="/img/flags/sv.svg?v=NQ-p1QI94u0v1_0PnQ3gTiVVHWFUqrhZlJu3yBVD8Qs" width="18" height="12" alt="Svenska (Swedish)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Deutsch (German)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('de')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/de/sidecar-architecture">
+                    <img src="/img/flags/de.svg?v=66IzwWTwOMXGBliJ-EyE_RkzJd0TtvxzT-MO9PNKgIE" width="18" height="12" alt="Deutsch (German)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Espa&#xF1;ol (Spanish)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('es')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/es/sidecar-architecture">
+                    <img src="/img/flags/es.svg?v=kF8zEzWPMRMooB8S-k52nnLcCdhxksCPDtL8zfa7Edw" width="18" height="12" alt="Espa&#xF1;ol (Spanish)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="&#x423;&#x43A;&#x440;&#x430;&#x457;&#x43D;&#x441;&#x44C;&#x43A;&#x430; (Ukrainian)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('uk')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/uk/sidecar-architecture">
+                    <img src="/img/flags/uk.svg?v=LYacI-v--yrgpjMpfBHe4G_LZmzns8p166Cbeho6A6w" width="18" height="12" alt="&#x423;&#x43A;&#x440;&#x430;&#x457;&#x43D;&#x441;&#x44C;&#x43A;&#x430; (Ukrainian)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Italiano (Italian)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('it')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/it/sidecar-architecture">
+                    <img src="/img/flags/it.svg?v=yTnlBgXFoI3xqvGYGPdNKRmp08O3qnzZBSC4v8nF3dw" width="18" height="12" alt="Italiano (Italian)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="&#x4E2D;&#x6587; (Chinese Simplified)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('zh')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/zh/sidecar-architecture">
+                    <img src="/img/flags/zh.svg?v=cfYvsW3Zuj8LAuuxkPShFJmQdn2CvQp8mPJRLhkPnIg" width="18" height="12" alt="&#x4E2D;&#x6587; (Chinese Simplified)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="&#x627;&#x644;&#x639;&#x631;&#x628;&#x64A;&#x629; (Arabic)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('ar')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/ar/sidecar-architecture">
+                    <img src="/img/flags/ar.svg?v=GpMiNAdKXAW_8aIuQ2FfYADu45Uoai3EI99TU9aZMI8" width="18" height="12" alt="&#x627;&#x644;&#x639;&#x631;&#x628;&#x64A;&#x629; (Arabic)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="&#x3B5;&#x3BB;&#x3BB;&#x3B7;&#x3BD;&#x3B9;&#x3BA;&#x3AC; (Greek)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('el')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/el/sidecar-architecture">
+                    <img src="/img/flags/el.svg?v=1luCYU8M0WenZ6v9oavB75nofvSOV1Xz0z5FJuPK02U" width="18" height="12" alt="&#x3B5;&#x3BB;&#x3BB;&#x3B7;&#x3BD;&#x3B9;&#x3BA;&#x3AC; (Greek)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Portugu&#xEA;s (Portuguese)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('pt')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/pt/sidecar-architecture">
+                    <img src="/img/flags/pt.svg?v=5aZEMsqQJuMmPU0ZuVtsNOyqnfSOfkGTMDrOzCnyhzs" width="18" height="12" alt="Portugu&#xEA;s (Portuguese)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Polski (Polish)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('pl')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/pl/sidecar-architecture">
+                    <img src="/img/flags/pl.svg?v=xqUTGr_W7t4sYytbBC5lgmZnb9ByKVrNTqpt69U3Va8" width="18" height="12" alt="Polski (Polish)" class="rounded shadow-sm" />
+                </a>
+            </div>
+    </div>
+
+<script>
+function saveLanguagePreference(lang) {
+    try {
+        localStorage.setItem('preferredLanguage', lang);
+        const expires = new Date();
+        expires.setFullYear(expires.getFullYear() + 1);
+        document.cookie = `preferredLanguage=${lang}; path=/; expires=${expires.toUTCString()}; SameSite=Lax`;
+    } catch(e) {
+        console.warn('Could not save language preference:', e);
+    }
+}
+</script>
+
+            </div>
+
+        <div class="flex flex-wrap border-b border-grey-lighter items-center gap-x-2 gap-y-1 pb-2 pt-1 sm:pt-1">
+            <p class="pr-2 font-body text-sm font-light text-primary dark:text-white">
+                Monday, 01 June 2026
+            </p>
+            <span class="dark:text-white font-body text-grey text-sm">//</span>
+            <p class="pl-2 font-body text-sm font-light text-primary dark:text-white">
+                18 minute read
+            </p>
+            <div class="pl-4 flex flex-wrap gap-2 items-center print:hidden">
+                <a href="#commentsection" class="btn btn-outline btn-xs inline-flex items-center">
+                    <i class="bx bx-mail-send"></i> Comments
+                </a>
+
+                <a href="/api/raw/sidecar-architecture?language=en"
+                   target="_blank" rel="noopener"
+                   class="btn btn-outline btn-xs inline-flex items-center"
+                   title="View raw Markdown">
+                    <i class="bx bx-code-alt"></i> Raw
+                </a>
+
+                <a class="btn btn-outline btn-xs btn-primary inline-flex items-center" href="/editor/edit?slug=sidecar-architecture&amp;language=en">
+                    <i class="bx bx-edit"></i> Edit
+                </a>
+            </div>
+        </div>
+            <nav class="flex items-center justify-between text-sm text-primary dark:text-white my-2 print:hidden" aria-label="Post navigation">
+                <div>
+                            <a href="/blog/stylobot-release-nondeterministic-testing" hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" class="inline-flex items-center hover:text-secondary" hx-get="/blog/stylobot-release-nondeterministic-testing">
+                                <i class='bx bx-left-arrow-alt text-xl mr-1'></i>
+                                <span>Newer: StyloBot Release Series: Testing the Thing That Won&#x27;t Sit Still</span>
+                            </a>
+                </div>
+                <div>
+                            <a href="/blog/stylobot-release-reliability" hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" class="inline-flex items-center hover:text-secondary" hx-get="/blog/stylobot-release-reliability">
+                                <span>Older: StyloBot Release Series: Finding and Fixing Unbounded Growth in Long-Running .NET Services</span>
+                                <i class='bx bx-right-arrow-alt text-xl ml-1'></i>
+                            </a>
+                </div>
+            </nav>
+        <div class="pb-2 pt-2 print:hidden flex flex-wrap gap-1.5">
+                <a hx-get="/blog/category/Architecture" hx-push-url="true" hx-target="#contentcontainer" onclick="event.stopPropagation();" class="inline-block rounded-full bg-blue-light dark:bg-gray-800 bg-opacity-20 px-2 py-0.5 font-body text-xs text-black dark:text-white outline-1 outline outline-blue-light dark:outline-slate-700 cursor-pointer hover:bg-opacity-30 transition-all">
+    Architecture
+</a>
+                <a hx-get="/blog/category/ASP.NET%20Core" hx-push-url="true" hx-target="#contentcontainer" onclick="event.stopPropagation();" class="inline-block rounded-full bg-blue-light dark:bg-gray-800 bg-opacity-20 px-2 py-0.5 font-body text-xs text-black dark:text-white outline-1 outline outline-blue-light dark:outline-slate-700 cursor-pointer hover:bg-opacity-30 transition-all">
+    ASP.NET Core
+</a>
+                <a hx-get="/blog/category/Go" hx-push-url="true" hx-target="#contentcontainer" onclick="event.stopPropagation();" class="inline-block rounded-full bg-blue-light dark:bg-gray-800 bg-opacity-20 px-2 py-0.5 font-body text-xs text-black dark:text-white outline-1 outline outline-blue-light dark:outline-slate-700 cursor-pointer hover:bg-opacity-30 transition-all">
+    Go
+</a>
+                <a hx-get="/blog/category/gRPC" hx-push-url="true" hx-target="#contentcontainer" onclick="event.stopPropagation();" class="inline-block rounded-full bg-blue-light dark:bg-gray-800 bg-opacity-20 px-2 py-0.5 font-body text-xs text-black dark:text-white outline-1 outline outline-blue-light dark:outline-slate-700 cursor-pointer hover:bg-opacity-30 transition-all">
+    gRPC
+</a>
+                <a hx-get="/blog/category/StyloBot" hx-push-url="true" hx-target="#contentcontainer" onclick="event.stopPropagation();" class="inline-block rounded-full bg-blue-light dark:bg-gray-800 bg-opacity-20 px-2 py-0.5 font-body text-xs text-black dark:text-white outline-1 outline outline-blue-light dark:outline-slate-700 cursor-pointer hover:bg-opacity-30 transition-all">
+    StyloBot
+</a>
+        </div>
+
+    </div>
+    <div class="prose  dark:text-white text-black  max-w-none  py-2 mt-4 sm:py-2" >
+        <p><em>StyloBot's detection engine is ASP.NET Core. This post explains how that engine connects to Go gateways, Node.js applications, and any other stack via a gRPC sidecar, a typed Go SDK, and a Caddy plugin, without any of those consumers needing to know anything about the .NET internals.</em></p>
+<p><a href="https://www.stylobot.net"><img src="/articleimages/stylobot-logo.svg" alt="StyloBot" width="120" /></a></p>
+<blockquote>
+<p><strong>The <code>github.com/scottgal/stylobot-go</code> SDK, the <code>github.com/scottgal/caddy-stylobot</code> plugin, and the <code>Mostlylucid.BotDetection.Sidecar</code> container will be published shortly.</strong> Everything below describes the surface they will expose.</p>
+</blockquote>
+<blockquote>
+<p><strong>StyloBot Release Series</strong></p>
+<ol>
+<li><a href="/blog/stylobot-fingerprint"><strong>Behaviour, Not Identity</strong></a>: why StyloBot models clients behaviourally</li>
+<li><a href="/blog/behaviour-aware-ux"><strong>Behaviour-Aware ASP.NET UI</strong></a>: the server-rendered surface for .NET applications</li>
+<li><a href="/blog/stylobot-release-reliability"><strong>Finding and Fixing Unbounded Growth in Long-Running .NET Services</strong></a>: the reliability discipline that keeps the engine boring in production</li>
+<li><a href="/blog/typescript-sdk"><strong>Behaviour-Aware TypeScript UI</strong></a>: Express, Fastify, and browser components</li>
+<li><strong>The Sidecar Architecture</strong>: this article</li>
+<li><a href="/blog/stylobot-release-learning"><strong>Learning to Get Faster</strong></a>: the adaptive learning system, four-tier memory, and the verdict cache</li>
+<li><a href="/blog/stylobot-release-nondeterministic-testing"><strong>Testing the Thing That Won't Sit Still</strong></a>: the verification discipline: one BDF file drives regression, load, and calibration</li>
+<li><a href="/blog/stylobot-release-styloextract"><strong>StyloExtract - a local learning HTML to Markdown converter</strong></a>: the HTML→Markdown layer that pairs with the detector, the walker bug lucidVIEW caught, and the dogfood loop that made it honest</li>
+</ol>
+</blockquote>
+<h1 id="why-a-sidecar">Why a sidecar</h1>
+<p>A reverse proxy is the obvious place to run bot detection: it sits in front of everything, sees every request, and can block before any application code runs. That logic holds right up until you ask what your application should <em>do differently</em> based on who is making the request. A gateway that blocks outright is a gate; what most applications actually need is a verdict they can act on in multiple ways at once: throttle the API, personalise the UI, exclude traffic from analytics, add a friction step at checkout. A gate cannot do any of that. A verdict pipeline can.</p>
+<p>The sidecar pattern separates the two concerns. The gateway stays fast and stateless. The sidecar maintains the session state, archetype anchors, drift state, and verdict cache that make detection accurate (the archetype-anchor model, the per-fingerprint verdict cache, and the four-tier learning system are covered in <a href="/blog/stylobot-release-learning">Learning to Get Faster</a>). The two communicate over the local network (same host or same Pod) so the round-trip is microseconds to single-digit milliseconds, not the 50-200ms of a remote API call. That latency budget is what makes per-request detection practical at all.</p>
+<p>This is not a novel pattern. <a href="https://www.envoyproxy.io/">Envoy Proxy</a> does exactly this for service-mesh concerns (mTLS, retries, circuit breaking); <a href="https://dapr.io/">Dapr</a> does it for state and pub/sub; the <a href="https://opentelemetry.io/docs/collector/">OpenTelemetry Collector</a> does it for telemetry. Linkerd, Consul Connect, and AWS App Mesh all follow the same model. The pattern keeps appearing because it solves a real problem: you want complex stateful behaviour that crosses language boundaries without reimplementing it in every language.</p>
+<nav class="ml_toc" aria-label="Table of Contents">
+<ul>
+<li><a href="#why-a-sidecar">Why a sidecar</a><ul>
+<li><a href="#why-not-just-embed-it-as-a-library">Why not just embed it as a library?</a></li>
+</ul>
+</li>
+<li><a href="#the-sidecar">The sidecar</a><ul>
+<li><a href="#grpc">gRPC</a></li>
+<li><a href="#the-grpc-interface">The gRPC interface</a></li>
+<li><a href="#what-happens-inside-a-detect-call">What happens inside a Detect call</a></li>
+</ul>
+</li>
+<li><a href="#the-go-sdk">The Go SDK</a><ul>
+</ul>
+</li>
+<li><a href="#the-caddy-plugin">The Caddy plugin</a><ul>
+<li><a href="#what-the-middleware-does-on-every-request">What the middleware does on every request</a></li>
+<li><a href="#building-with-xcaddy">Building with xcaddy</a><ul>
+<li><a href="#the-xcaddy-replace-directive">The xcaddy replace directive</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a href="#renderwidget-liquid-templates-over-grpc">RenderWidget: Liquid templates over gRPC</a><ul>
+</ul>
+</li>
+<li><a href="#production-layout">Production layout</a><ul>
+<li><a href="#fail-open-at-every-layer">Fail-open at every layer</a></li>
+</ul>
+</li>
+</ul>
+</nav>
+<h2 id="why-not-just-embed-it-as-a-library">Why not just embed it as a library?</h2>
+<p>The alternative is compiling detection directly into the gateway. For Go that means a pure-Go reimplementation or a CGo binding to a C library. For Node it means running detection in-process alongside the application.</p>
+<p>Neither is realistic for an engine of this complexity. StyloBot has 49 detectors organised across four execution <strong>waves</strong> (later waves fire only when earlier signals warrant it; a credential-stuffing attempt triggers different detectors than a Googlebot crawl). It maintains per-session <strong>Markov chain vectors</strong> in a 129-dimensional space. A Markov chain is just a probability model over &quot;given the last thing this session did, what comes next?&quot;, and 129 dimensions captures enough page-transition shape to tell humans and bots apart. It runs <strong>Leiden community detection</strong> over those vectors: a graph-clustering algorithm that groups sessions behaving alike, which is how StyloBot spots a bot network even when individual sessions look fine. And it persists all of this to SQLite between requests. That state needs an independent lifecycle. It cannot restart with the Node process or get torn down when the gateway reloads its config.</p>
+<p>A sidecar lets each component do what it is good at:</p>
+<pre class="mermaid">graph TD
+    classDef input fill:none,stroke:#3b82f6,stroke-width:2px
+    classDef async fill:none,stroke:#a855f7,stroke-width:2px
+    classDef good fill:none,stroke:#22c55e,stroke-width:2px
+    classDef store fill:none,stroke:#f59e0b,stroke-width:2px
+
+    GW["Gateway&lt;br/>Caddy / YARP / nginx"]:::input
+    SD["StyloBot Sidecar · ASP.NET Core&lt;br/>gRPC :5090 · REST :5091&lt;br/>≤50ms per Detect RPC"]:::async
+    APP["Upstream Application&lt;br/>Node / Go / ASP.NET&lt;br/>reads req.stylobot.verdict"]:::good
+    DB[("SQLite&lt;br/>sessions · signatures · reputation")]:::store
+
+    GW --> SD
+    SD &lt;--> DB
+    GW --> APP
+</pre>
+<p>The gateway calls the sidecar, injects the result as HTTP headers, and optionally blocks. The upstream application reads the headers and acts on the verdict. The sidecar persists state between requests. The detection pipeline runs inside the single gRPC call and its result propagates as nine HTTP headers.</p>
+<h1 id="the-sidecar">The sidecar</h1>
+<p><code>Mostlylucid.BotDetection.Sidecar</code> is a minimal ASP.NET Core process. It has no UI, no static file serving, and no routing beyond the gRPC and REST endpoints. It starts the full detection engine and exposes two ports:</p>
+<ul>
+<li><strong>:5090</strong>: HTTP/2 for gRPC clients (gateways, Go proxies, the Node gRPC client)</li>
+<li><strong>:5091</strong>: HTTP/1.1 for REST clients, re-exporting <code>/api/v1/*</code> endpoints</li>
+</ul>
+<h2 id="grpc">gRPC</h2>
+<p><a href="https://grpc.io/">gRPC</a> is a high-performance remote procedure call framework developed at Google. It uses <a href="https://protobuf.dev/">Protocol Buffers</a> (protobuf) as its wire format: a compact binary encoding that is faster to serialise and smaller on the wire than JSON. gRPC runs over HTTP/2, which means it gets multiplexing (multiple requests over one TCP connection) for free.</p>
+<p>The interface is defined in a <code>.proto</code> file. From that file, code generators produce typed client and server stubs in any supported language. StyloBot publishes <code>.proto</code> files so any language with a gRPC implementation can call the sidecar: Go, Node, Python, Rust, Java, and many others.</p>
+<h2 id="the-grpc-interface">The gRPC interface</h2>
+<p>The service has three RPCs:</p>
+<pre><code class="language-protobuf">service DetectionService {
+  rpc Detect(DetectRequest)             returns (DetectResponse);
+  rpc DetectBatch(DetectBatchRequest)   returns (DetectBatchResponse);
+  rpc RenderWidget(RenderWidgetRequest) returns (RenderWidgetResponse);
+}
+</code></pre>
+<p><strong><code>Detect</code></strong> is the per-request hot path. Pass it method, path, headers, remote IP, and optional TLS fingerprint data. It runs the wave pipeline (only the detectors that the request's signals warrant), updates the session vector, scores against the reputation store, and returns a verdict.</p>
+<p><strong><code>DetectBatch</code></strong> runs multiple requests sequentially. Used for log replay and offline analysis, not per-request gateway use.</p>
+<p><strong><code>RenderWidget</code></strong> accepts a Liquid template string, an optional verdict, and a key-value map of additional variables, then renders the template server-side and returns HTML. This is how non-.NET callers produce bot-aware HTML without standing up a separate render process; details in the RenderWidget section below.</p>
+<h2 id="what-happens-inside-a-detect-call">What happens inside a Detect call</h2>
+<p>A quick glossary before the diagram, since these names will appear:</p>
+<ul>
+<li><strong>Blackboard</strong>: a per-request key-value bag (e.g. <code>request.ip.is_datacenter</code>, <code>detection.useragent.confidence</code>). Detectors write signals to it; later detectors in the same wave read them. Lives only for the duration of one request. Raw PII (IP, UA string) stays in the request context and never lands on the blackboard.</li>
+<li><strong>Synthetic HttpContext</strong>: a stand-in <code>HttpContext</code> the gRPC service builds from the proto request fields. The detection engine was designed for ASP.NET middleware and expects to read from <code>HttpContext</code>; synthesising one lets the same engine run unchanged inside a gRPC call.</li>
+<li><strong>DetectionContributions</strong> / <strong>AggregatedEvidence</strong>: detector outputs (signal writes + confidence deltas) and their merged result.</li>
+</ul>
+<pre class="mermaid">sequenceDiagram
+    participant GW as Gateway (Caddy)
+    participant SD as gRPC Service
+    participant ORC as BlackboardOrchestrator
+    participant DET as Detectors (up to 49, 4 waves)
+    participant DB as SQLite
+
+    GW->>SD: Detect RPC { method, path, headers, remoteIp }
+    SD->>ORC: DetectAsync(syntheticHttpContext)
+    ORC->>DET: Wave 0 - Identity + ContentSequence
+    ORC->>DET: Wave 1 - Fast path &lt;1ms: UA, Header, IP, Heuristic ...
+    ORC->>DET: Wave 2 - Session vectors, Behavioural waveform
+    ORC->>DET: Wave 3 - Slow path: DNS, advanced fingerprinting
+    DET-->>ORC: DetectionContributions (signals, confidence deltas)
+    ORC->>DB: update session vector and reputation score
+    DB-->>ORC: ok
+    ORC-->>SD: AggregatedEvidence { botProbability, riskBand, ... }
+    SD-->>GW: DetectResponse { isBot, riskBand, recommendedAction, ... }
+</pre>
+<p>The entire pipeline runs inside the single gRPC call. There is no async work after the response returns.</p>
+<h1 id="the-go-sdk">The Go SDK</h1>
+<p>Gateway code in Go cannot import the ASP.NET sidecar. What it can do is call it over gRPC. The Go SDK (<code>github.com/scottgal/stylobot-go</code>) provides a typed interface that hides the generated protobuf types from callers entirely.</p>
+<h3 id="why-the-sdk-hides-protobuf-types">Why the SDK hides protobuf types</h3>
+<p>Protobuf-generated code is verbose and has an unusual API. Enums are represented as integers. Strings come as raw proto enum names (<code>RISK_BAND_HIGH</code>, not <code>&quot;High&quot;</code>). Field names are camelCase in some generators and snake_case in others. Exposing proto types in your public API means your callers have to understand all of this.</p>
+<p>The SDK translates once at the boundary (proto enums to canonical strings, proto structs to plain Go structs) and callers never see it.</p>
+<pre><code class="language-go">// the only interface you depend on: no proto imports required
+type Client interface {
+    Detect(ctx context.Context, req DetectRequest) (*Verdict, error)
+    DetectBatch(ctx context.Context, reqs []DetectRequest) ([]*Verdict, error)
+    RenderWidget(ctx context.Context, req RenderRequest) (*RenderResponse, error)
+    Close() error
+}
+</code></pre>
+<p><code>DetectRequest</code> and <code>Verdict</code> are plain Go structs:</p>
+<pre><code class="language-go">type DetectRequest struct {
+    Method   string
+    Path     string
+    Headers  map[string]string
+    RemoteIP string
+    Protocol string  // &quot;http&quot; or &quot;https&quot;; defaults to &quot;https&quot; if empty
+    TLS      *TLSInfo
+}
+
+type Verdict struct {
+    IsBot             bool
+    BotProbability    float32
+    Confidence        float32
+    BotType           string   // &quot;AiBot&quot;, &quot;Scraper&quot;, &quot;GoodBot&quot;, ...
+    BotName           string
+    RiskBand          string   // &quot;VeryLow&quot;, &quot;Low&quot;, &quot;Elevated&quot;, &quot;Medium&quot;, &quot;High&quot;, &quot;VeryHigh&quot;
+    RecommendedAction string   // &quot;Allow&quot;, &quot;Throttle&quot;, &quot;Challenge&quot;, &quot;Block&quot;
+    ThreatScore       float32
+    ThreatBand        string
+    ProcessingTimeMs  float32
+    DetectorsRun      int32
+    Reasons           []Reason
+}
+</code></pre>
+<p>Creating a client and running detection:</p>
+<pre><code class="language-go">import (
+    stylobot &quot;github.com/scottgal/stylobot-go&quot;
+    &quot;context&quot;
+    &quot;time&quot;
+)
+
+client, err := stylobot.NewClient(
+    &quot;localhost:5090&quot;,
+    stylobot.WithTimeout(50 * time.Millisecond),
+    stylobot.WithAPIKey(os.Getenv(&quot;SB_API_KEY&quot;)),
+)
+if err != nil {
+    log.Fatal(err)
+}
+defer client.Close()
+
+verdict, err := client.Detect(ctx, stylobot.DetectRequest{
+    Method:   r.Method,
+    Path:     r.URL.RequestURI(),
+    RemoteIP: r.RemoteAddr,
+    Headers:  extractHeaders(r),
+    Protocol: &quot;https&quot;,
+})
+if err != nil {
+    // fail open: log and continue
+    log.Printf(&quot;stylobot detect failed: %v&quot;, err)
+    return next(w, r)
+}
+
+if verdict.RecommendedAction == &quot;Block&quot; {
+    http.Error(w, &quot;Forbidden&quot;, http.StatusForbidden)
+    return
+}
+</code></pre>
+<h3 id="lazy-connection-and-startup-safety">Lazy connection and startup safety</h3>
+<p><code>grpc.NewClient</code> creates a client channel but does not establish a TCP connection immediately. The connection happens on the first RPC call. This means your gateway process starts successfully even if the sidecar has not started yet. The first request after startup may fail (and should be handled with fail-open), but every subsequent request works normally once the sidecar is running.</p>
+<p>This is different from HTTP clients, where you typically connect on creation. The <a href="https://pkg.go.dev/google.golang.org/grpc#NewClient">gRPC Go documentation</a> covers the lifecycle in detail.</p>
+<h3 id="timeout-interaction">Timeout interaction</h3>
+<p><code>WithTimeout</code> on <code>NewClient</code> sets a default per-call deadline applied inside each <code>Detect</code> call. If your calling code (or middleware such as the Caddy plugin) already derives a deadline-bounded context from the incoming request, the SDK applies whichever deadline expires first. When the Caddy plugin is in use, the plugin owns the 50ms deadline; you can omit <code>WithTimeout</code> from <code>NewClient</code> and let the plugin control it. For standalone use (a handler calling the SDK directly), set it on <code>NewClient</code> as shown above.</p>
+<h1 id="the-caddy-plugin">The Caddy plugin</h1>
+<p><a href="https://caddyserver.com/">Caddy</a> is a Go-based web server and reverse proxy with automatic HTTPS. Its plugin system is compile-time: you use <a href="https://github.com/caddyserver/xcaddy">xcaddy</a> to build a custom Caddy binary that includes your plugins, producing a single self-contained binary with no runtime dependency on shared libraries. This is different from nginx's dynamic module system (<code>.so</code> files loaded at runtime). The StyloBot plugin (<code>github.com/scottgal/caddy-stylobot</code>) registers a middleware handler that calls the Go SDK on every request.</p>
+<p>The Caddyfile configuration:</p>
+<pre><code class="language-caddy">{
+    order stylobot before respond
+}
+
+:80 {
+    stylobot {
+        endpoint localhost:5090   # gRPC host:port of the sidecar
+        timeout   50ms            # per-request deadline; fails open on expiry
+        # on_block 503            # optional: change the block status code (default: 403)
+    }
+    reverse_proxy upstream:3000
+}
+</code></pre>
+<p>The plugin injects nine verdict headers onto every forwarded request:</p>
+<table>
+<thead>
+<tr>
+<th>Header</th>
+<th>Source field</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>X-StyloBot-IsBot</code></td>
+<td><code>isBot</code> (bool)</td>
+</tr>
+<tr>
+<td><code>X-StyloBot-Probability</code></td>
+<td><code>botProbability</code> (0.0-1.0)</td>
+</tr>
+<tr>
+<td><code>X-StyloBot-Confidence</code></td>
+<td><code>confidence</code> (0.0-1.0)</td>
+</tr>
+<tr>
+<td><code>X-StyloBot-BotType</code></td>
+<td>e.g. <code>AiBot</code>, <code>Scraper</code>, <code>GoodBot</code></td>
+</tr>
+<tr>
+<td><code>X-StyloBot-BotName</code></td>
+<td>e.g. <code>GPTBot</code>, <code>Googlebot</code></td>
+</tr>
+<tr>
+<td><code>X-StyloBot-RiskBand</code></td>
+<td><code>VeryLow</code> ... <code>VeryHigh</code></td>
+</tr>
+<tr>
+<td><code>X-StyloBot-Action</code></td>
+<td><code>Allow</code> / <code>Throttle</code> / <code>Challenge</code> / <code>Block</code></td>
+</tr>
+<tr>
+<td><code>X-StyloBot-ThreatScore</code></td>
+<td>numeric</td>
+</tr>
+<tr>
+<td><code>X-StyloBot-ThreatBand</code></td>
+<td><code>None</code> ... <code>Critical</code></td>
+</tr>
+</tbody>
+</table>
+<p>Requests where <code>isBot=true</code> and <code>Action=Block</code> are stopped at the gateway with a 403 and never reach the upstream. Everything else (including bots with a <code>Throttle</code> or <code>Challenge</code> recommendation) is forwarded with all nine headers intact. That is the intended split: the gateway handles hard blocks; the upstream handles nuance.</p>
+<p><code>on_block</code> changes the status code used when the gateway blocks (default: 403). Set <code>on_block 503</code> to suppress retry logic in scrapers that treat 403 as retryable.</p>
+<h2 id="what-the-middleware-does-on-every-request">What the middleware does on every request</h2>
+<pre class="mermaid">flowchart TD
+    classDef input fill:none,stroke:#3b82f6,stroke-width:2px
+    classDef async fill:none,stroke:#a855f7,stroke-width:2px
+    classDef good fill:none,stroke:#22c55e,stroke-width:2px
+
+    A["1. Strip inbound X-StyloBot-* headers"]:::input
+    B["2. context.WithTimeout(r.Context(), 50ms)"]:::input
+    C["3. sbClient.Detect(ctx, DetectRequest)"]:::async
+    D{error?}
+    E["log warn - fail open&lt;br/>forward unchanged"]:::good
+    F["4. injectHeaders&lt;br/>X-StyloBot-IsBot, Probability, Confidence,&lt;br/>BotType, BotName, RiskBand, Action,&lt;br/>ThreatScore, ThreatBand"]:::input
+    I["next.ServeHTTP - forward to upstream&lt;br/>with all verdict headers injected"]:::good
+
+    A --> B --> C --> D
+    D -->|yes| E --> I
+    D -->|no| F --> I
+</pre>
+<p><strong>Step 1, strip inbound headers.</strong> A client that knows the <code>X-StyloBot-*</code> header names could self-inject a favourable verdict and have it survive the fail-open path. Stripping them first means the verdict the upstream sees always came from the sidecar.</p>
+<p><strong>Step 2, context deadline.</strong> The timeout is derived from <code>r.Context()</code> using <code>context.WithTimeout</code> (which takes a relative duration; <code>context.WithDeadline</code> takes an absolute time; they are equivalent). Deriving from <code>r.Context()</code> rather than <code>context.Background()</code> is the key point: if the client disconnects before the gRPC call completes, the cancellation propagates through and the sidecar stops processing early.</p>
+<p><strong>Steps 3 and 4, detect and inject.</strong> The nine verdict fields become nine <code>X-StyloBot-*</code> headers. Headers are set before the block check, so the upstream reads them via <code>styloBotMiddleware({ mode: 'headers' })</code> for all non-blocked requests. Requests where <code>isBot=true</code> and <code>recommendedAction=Block</code> are returned as 403 at the gateway; everything else forwards with the full verdict headers attached.</p>
+<p>The implementation:</p>
+<pre><code class="language-go">// from sdk/caddy/stylobot.go
+func (s *StyloBot) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+    for _, name := range stylobotHeaders {
+        r.Header.Del(name)
+    }
+
+    ctx, cancel := context.WithTimeout(r.Context(), s.timeout)
+    defer cancel()
+
+    verdict, err := s.sbClient.Detect(ctx, sb.DetectRequest{
+        Method:   r.Method,
+        Path:     r.URL.RequestURI(),
+        RemoteIP: ExtractIP(r),
+        Protocol: r.Proto,
+        Headers:  ExtractHeaders(r),
+    })
+    if err != nil {
+        s.logger.Warn(&quot;stylobot detect failed, failing open&quot;, zap.Error(err))
+        return next.ServeHTTP(w, r)
+    }
+
+    injectHeaders(r, verdict)
+
+    if verdict.IsBot &amp;&amp; s.OnBlock &gt; 0 &amp;&amp; verdict.RecommendedAction == &quot;Block&quot; {
+        http.Error(w, &quot;Forbidden&quot;, s.OnBlock)
+        return nil
+    }
+    return next.ServeHTTP(w, r)
+}
+</code></pre>
+<h2 id="building-with-xcaddy">Building with xcaddy</h2>
+<p>Caddy plugins must be compiled into the binary using <a href="https://github.com/caddyserver/xcaddy">xcaddy</a>. The Dockerfile in the integration tests shows the pattern:</p>
+<pre><code class="language-dockerfile"># from tests/integration/caddy-sidecar/Dockerfile
+FROM caddy:2-builder AS builder
+
+WORKDIR /build
+COPY sdk/caddy/ caddy-plugin/
+COPY sdk/go/    go/
+
+WORKDIR /build/caddy-plugin
+
+RUN xcaddy build \
+    --with github.com/scottgal/caddy-stylobot=/build/caddy-plugin \
+    --with github.com/scottgal/stylobot-go=/build/go
+
+FROM caddy:2
+COPY --from=builder /build/caddy-plugin/caddy /usr/bin/caddy
+COPY tests/integration/caddy-sidecar/Caddyfile /etc/caddy/Caddyfile
+</code></pre>
+<h3 id="the-xcaddy-replace-directive">The xcaddy replace directive</h3>
+<p>The plugin's <code>go.mod</code> contains:</p>
+<pre><code>replace github.com/scottgal/stylobot-go =&gt; ../go
+</code></pre>
+<p>This tells the Go toolchain &quot;when you see <code>stylobot-go</code>, use the local directory instead of fetching from the module proxy.&quot; It works for <code>go build</code> and <code>go test</code> in the plugin directory.</p>
+<p>xcaddy creates a fresh temporary Go module for its build. That module does not inherit <code>replace</code> directives from the plugin's <code>go.mod</code>. Without the second <code>--with</code> argument, xcaddy would try to download <code>stylobot-go</code> from <code>pkg.go.dev</code> (where it is not yet published) and fail.</p>
+<p>The <code>--with module=path</code> argument is xcaddy's native equivalent of a <code>replace</code> directive: it maps a module path to a local directory at build time. Both local modules must be named explicitly.</p>
+<h1 id="renderwidget-liquid-templates-over-grpc">RenderWidget: Liquid templates over gRPC</h1>
+<p><code>RenderWidget</code> is a gRPC RPC on the sidecar that accepts a Liquid template string, renders it with the detection context, and returns HTML. This lets any caller (Go proxy, Node SSR layer, batch pipeline) produce bot-aware HTML without running a separate render process.</p>
+<h3 id="liquid-templates">Liquid templates</h3>
+<p><a href="https://shopify.github.io/liquid/">Liquid</a> is a templating language created by Shopify, used by Shopify themes, Jekyll, GitHub Pages, and many other systems. Its key properties: safe to run with user-supplied templates (no arbitrary code execution), simple enough for non-developers to write, and widely understood. StyloBot uses <a href="https://github.com/sebastienros/fluid">Fluid.Core</a>, a high-performance .NET implementation of Liquid, to render templates server-side.</p>
+<p>The sidecar implementation:</p>
+<pre><code class="language-csharp">// from src/Mostlylucid.BotDetection.Sidecar/Services/DetectionGrpcService.cs
+private static readonly FluidParser Parser = new();  // static, shared, compiled templates cached
+
+public override async Task&lt;Proto.RenderWidgetResponse&gt; RenderWidget(
+    Proto.RenderWidgetRequest request, ServerCallContext context)
+{
+    if (!Parser.TryParse(request.Template, out var template, out var error))
+        return new Proto.RenderWidgetResponse { Success = false, Error = error };
+
+    var ctx = new TemplateContext();
+    if (request.Verdict is { } v)
+    {
+        ctx.SetValue(&quot;isBot&quot;,             v.IsBot);
+        ctx.SetValue(&quot;botProbability&quot;,    (double)v.BotProbability);
+        ctx.SetValue(&quot;botType&quot;,           v.BotType);
+        ctx.SetValue(&quot;botName&quot;,           v.BotName);
+        ctx.SetValue(&quot;riskBand&quot;,          v.RiskBand.ToString());
+        ctx.SetValue(&quot;recommendedAction&quot;, v.RecommendedAction.ToString());
+        ctx.SetValue(&quot;threatScore&quot;,       (double)v.ThreatScore);
+        ctx.SetValue(&quot;threatBand&quot;,        v.ThreatBand.ToString());
+    }
+    foreach (var kv in request.Vars)
+        ctx.SetValue(kv.Key, kv.Value);
+
+    var html = await template.RenderAsync(ctx);
+    return new Proto.RenderWidgetResponse { Html = html, Success = true };
+}
+</code></pre>
+<p>Fluid.Core maintains an internal compiled template cache. Repeated renders of the same template string skip re-parsing. The <code>FluidParser</code> is static and shared across all gRPC calls.</p>
+<p>The Node <code>StyloBotGrpcClient.renderWidget()</code> example and the full template variable reference are in the <a href="/blog/typescript-sdk">TypeScript SDK article</a>.</p>
+<p>Calling it from Go:</p>
+<pre><code class="language-go">rendered, err := client.RenderWidget(ctx, stylobot.RenderRequest{
+    Template: `{% if isBot %}&lt;p class=&quot;warning&quot;&gt;Bot: {{ botType }}&lt;/p&gt;{% endif %}`,
+    Verdict:  verdict,
+    Vars:     map[string]string{&quot;locale&quot;: &quot;en-GB&quot;},
+})
+if err == nil &amp;&amp; rendered.Success {
+    fmt.Fprint(w, rendered.HTML)
+}
+</code></pre>
+<p>The template syntax is identical whether you call <code>RenderWidget</code> from Go, Node, or use <code>&lt;sb-widget&gt;</code> in the browser: the same Liquid engine, the same variable names, the same rendering path.</p>
+<h1 id="production-layout">Production layout</h1>
+<pre class="mermaid">graph LR
+    classDef input fill:none,stroke:#3b82f6,stroke-width:2px
+    classDef async fill:none,stroke:#a855f7,stroke-width:2px
+    classDef good fill:none,stroke:#22c55e,stroke-width:2px
+    classDef store fill:none,stroke:#f59e0b,stroke-width:2px
+
+    INT([Internet])
+    CF["Cloudflare&lt;br/>Tunnel / CDN"]
+    CA["Caddy&lt;br/>+ caddy-stylobot"]:::input
+    SD["StyloBot Sidecar&lt;br/>:5090 gRPC  ·  :5091 REST"]:::async
+    WEB["Upstream App&lt;br/>Node / Go / ASP.NET"]:::good
+    DB[("SQLite&lt;br/>sessions · reputation")]:::store
+
+    INT --> CF --> CA
+    CA -->|"gRPC Detect&lt;br/>≤50ms"| SD
+    SD &lt;-->|"persist"| DB
+    CA -->|"X-StyloBot-* headers"| WEB
+    WEB -->|"/_stylobot/partials/render&lt;br/>(widget rendering)"| SD
+</pre>
+<p>The upstream application calls the sidecar directly for widget rendering, bypassing the gateway. Widget rendering needs the full verdict context and happens after the request has already passed gateway detection, so there is no detection duplication.</p>
+<h2 id="fail-open-at-every-layer">Fail-open at every layer</h2>
+<p>Caddy plugin, Node middleware, and Go SDK all fail open: a sidecar timeout or error becomes a warning log and a permissive empty verdict, not a 5xx. The 50ms Caddy deadline is a cold-start safety margin; the steady-state cost on a warm connection is 1–5ms.</p>
+<p>The trade-off this encodes: blocking legitimate traffic because detection is unavailable is worse than missing bot traffic during a sidecar outage.</p>
+<hr />
+<p>The release series continues. More posts on detection internals, deployment patterns, observability, and the commercial topology are still to come. The arc so far:</p>
+<ul>
+<li><a href="/blog/stylobot-fingerprint">Behaviour, Not Identity</a>: why detection has to be behavioural, not identity-based</li>
+<li><a href="/blog/behaviour-aware-ux">Behaviour-Aware ASP.NET UI</a>: turning the verdict into Razor / controller policy</li>
+<li><a href="/blog/stylobot-release-reliability">Finding and Fixing Unbounded Growth in Long-Running .NET Services</a>: the reliability discipline that keeps the engine boring under sustained traffic</li>
+<li><a href="/blog/typescript-sdk">Behaviour-Aware TypeScript UI</a>: the same verdict surfaced in Express, Fastify, and the browser</li>
+<li><strong>The Sidecar Architecture</strong> (this article): how the engine plugs into any stack via gRPC, the Go SDK, and the Caddy plugin</li>
+</ul>
+<p>Source for the implementation: <a href="https://github.com/scottgal/stylobot">github.com/scottgal/stylobot</a>. Live engine, dashboard, and commercial controls at <a href="https://www.stylobot.net">stylobot.net</a>.</p>
+
+    </div>
+        <nav class="flex items-center justify-between text-sm text-primary dark:text-white mb-2 print:hidden" aria-label="Post navigation">
+            <div>
+                        <a href="/blog/stylobot-release-nondeterministic-testing" hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" class="inline-flex items-center hover:text-secondary" hx-get="/blog/stylobot-release-nondeterministic-testing">
+                            <i class='bx bx-left-arrow-alt text-xl mr-1'></i>
+                            <span>Newer: StyloBot Release Series: Testing the Thing That Won&#x27;t Sit Still</span>
+                        </a>
+            </div>
+            <div>
+                        <a href="/blog/stylobot-release-reliability" hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" class="inline-flex items-center hover:text-secondary" hx-get="/blog/stylobot-release-reliability">
+                            <span>Older: StyloBot Release Series: Finding and Fixing Unbounded Growth in Long-Running .NET Services</span>
+                            <i class='bx bx-right-arrow-alt text-xl ml-1'></i>
+                        </a>
+            </div>
+        </nav>
+        <div class="print:hidden" hx-get="/search/related/sidecar-architecture/en" hx-trigger="load delay:300ms" hx-target="this" hx-swap="innerHTML">
+            <div class="mt-6 mb-6">
+                <div class="border border-base-300 rounded-lg overflow-hidden bg-gradient-to-r from-base-200/80 to-base-200/40">
+                    <div class="flex items-center gap-2 px-4 py-2.5">
+                        <span class="loading loading-spinner loading-xs text-secondary"></span>
+                        <span class="text-sm opacity-60">Finding related posts...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    <div x-data="{ showNewElement: false }" x-init="
+    document.addEventListener('htmx:afterSwap', (event) => {
+        if (event.detail.target.id === 'contentformarea') {
+            $data.showNewElement = true;  // Use $data to reference Alpine component's state
+        }
+    });
+"  class="pt-6 print:!hidden" id="commentsection">
+        <!-- Button that will disappear once showNewElement is true -->
+        <a x-show="!showNewElement" class="btn btm-sm btn-outline mb-6" href="javascript:void(0)" role="button" x-on:click.prevent hx-boost="false" hx-push-url="false" hx-swap="innerHTML" hx-target="#contentformarea" hx-get="/comment/get-commentform?postId=580005">
+            <i class='bx bx-message-rounded-add'></i> Add Comment
+        </a>
+
+        <!-- The target for HTMX content swap -->
+        <div id="contentformarea"
+             x-show="showNewElement"
+             class="border border-b-neutral-600 border-1 rounded-xl p-4 mb-4">
+        </div>
+    </div>
+
+    <div id="commentlist">
+        
+    
+        
+
+
+    </div>
+ 
+</div>
+</div>
+<div class="container pb-8 mx-auto print:hidden">
+    <div
+        class="flex flex-col items-center justify-between  sm:flex-row sm:py-2">
+        <div class="mr-auto flex flex-col items-center sm:flex-row">
+            <a href="/" hx-swap="show:window:top" hx-target="#contentcontainer" hx-push-url="true" hx-headers='{"homerequest": "true"}' class="mr-auto sm:mr-6" hx-get="/">
+                <div class="svg-container">
+                    <img src="/img/logo.svg?v=kUkb5rVbYNGnG7rw9AdiyMbnZiU7-WEYHK40rbEZwtA" width="180px" height="30px" alt="logo" :class="{ 'img-filter-dark': !isDarkMode }" />
+                </div>
+            </a>
+<p class="pt-5 font-body font-light text-primary dark:text-white sm:pt-0">
+    &copy; 2026 Scott Galloway — 
+    <a href="https://unlicense.org" target="_blank" rel="noopener noreferrer">Unlicense</a> — 
+    All content and source code on this site is free to use, copy, modify, and sell.
+</p>
+
+        </div>
+        <div class="mr-auto flex items-center pt-6 sm:mr-0 sm:pt-0 space-x-3 text-2xl ">
+
+    <a href="https://github.com/scottgal/" target="_blank">
+        <i class="text-primary dark:text-white hover:text-secondary dark:hover:text-secondary transition-colors bx bxl-github"></i>
+    </a>
+
+    <a href="https://hachyderm.io/@scottgal@hachyderm.io" target="_blank">
+        <i class=" text-primary dark:text-white hover:text-secondary dark:hover:text-secondary transition-colors bx bxl-mastodon"></i>
+    </a>
+
+    <a href="https://www.linkedin.com/in/scott-galloway-91608691/" target="_blank">
+        <i class=" text-primary dark:text-white hover:text-secondary dark:hover:text-secondary transition-colors bx bxl-linkedin"></i>
+    </a>
+
+</div>
+    </div>
+
+</div>
+<noscript>
+    <style>
+        [x-cloak] {
+            display: block !important;
+        }
+    </style>
+</noscript>
+<script src="/js/dist/main.js?v=HObCvVQfPxNDvaYnRAXVFxrFJeDJL3tEH_EhVNsGKcI" data-cfasync="false"> </script>
+<script src="https://umami.mostlylucid.net/getinfo" data-website-id="1e3b7657-9487-4857-a9e9-4e1920aa8c42"></script>
+
+
+	<script>'serviceWorker'in navigator&&navigator.serviceWorker.register('/serviceworker', { scope: '/' })</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a11d68589826cbb1',t:'MTc4MjQ4OTQ0NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>

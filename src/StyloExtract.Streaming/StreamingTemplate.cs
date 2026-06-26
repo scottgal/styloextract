@@ -10,4 +10,5 @@ public sealed record StreamingTemplate
     public required int BailoutBytes { get; init; }
     public required int MaxCaptureBytes { get; init; }
     public required int WindowSize { get; init; }
+    public required int MaxEventsWithoutTransition { get; init; }
 }
