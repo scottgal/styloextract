@@ -23,3 +23,6 @@ training/.venv/
 training/*.tsv
 training/*.txt
 !training/requirements.txt
+
+# Local worktrees (created by tooling)
+.worktrees/
