@@ -1,3 +1,37 @@
+StyloExtract 1.8.0-alpha.14 - 2026-06-26
+=========================================
+
+Sitemap CLI end-to-end regression + LLM nav few-shot
+-----------------------------------------------------
+
+1. Sitemap CLI test suite
+
+The alpha.11 stylo-extract sitemap verb has been working on real sites
+since alpha.13 (heuristic nav-classification tightening), but nothing
+caught regressions. Added 5 end-to-end tests in
+StyloExtract.Core.Tests/SitemapCommandTests.cs that invoke the
+SitemapCommand.CrawlAsync handler against the mostlylucid-home.html.gz
+fixture (real captured homepage, shared with the heuristics suite) plus
+a stub HttpMessageHandler and assert: real nav links emitted under
+# www.mostlylucid.net, --max-depth 0 emits only the seed Title row,
+off-host links are not followed, --max-pages cap honoured exactly, and
+--delay-ms enforced with a stopwatch floor. No network access required.
+
+2. LLM induction prompt — nav-classification few-shot
+
+LlmInducerPrompts.System and SystemRepair now include a second worked
+example: a blog homepage with header <nav>, breadcrumb,
+MainContent + RepeatedItem post cards, and footer <nav>. Mirrors the
+patterns the alpha.13 NavPreDetector heuristic correctly classifies.
+Rule 6 (RepeatedItem usage) tightened with explicit guidance that
+header/footer nav lists are PrimaryNavigation / SecondaryNavigation at
+the parent <ul>/<nav> level, NOT RepeatedItem at the <li> level —
+closes a known LLM confusion mode.
+
+Tests: snapshot tests in StyloExtract.Core.Tests/LlmInducerPromptsTests.cs
+verify the prompt extensions land verbatim so future prompt edits don't
+accidentally regress.
+
 StyloExtract 1.8.0-alpha.13 - 2026-06-26
 =========================================
 

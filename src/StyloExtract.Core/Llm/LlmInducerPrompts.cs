@@ -60,6 +60,11 @@ public static class LlmInducerPrompts
              product reviews, search results), not the container itself.
           5. Output the YAML INSIDE a fenced code block tagged `yaml`. No
              prose before or after. The block is your entire reply.
+          6. Use RepeatedItem for list-of-things blocks (forum posts, product
+             reviews, search results, blog-post cards), not the container itself.
+             Do NOT use RepeatedItem for header/footer navigation lists — those
+             are PrimaryNavigation / SecondaryNavigation at the <ul>/<nav> level,
+             even when they contain many <li> children.
 
         IMPORTANT — auxiliary UI is NOT MainContent. The following patterns
         commonly appear next to the real content and MUST NOT be classified as
@@ -108,6 +113,39 @@ public static class LlmInducerPrompts
           - role: Footer
             selectors:
               - footer.site-footer
+        ```
+
+        Example output for a blog homepage with header nav and footer:
+
+        ```yaml
+        host: example-blog.com
+        description: Blog homepage with header navigation, post list, and footer.
+        version: 1
+        rules:
+          - role: PrimaryNavigation
+            selectors:
+              - body > header > nav
+              - body > header > ul
+            confidence: 0.9
+          - role: Breadcrumb
+            selectors:
+              - nav[aria-label='breadcrumb']
+            confidence: 0.95
+          - role: MainContent
+            selectors:
+              - main
+              - article
+            confidence: 0.92
+          - role: RepeatedItem
+            selectors:
+              - main > ul > li
+              - main article.post-card
+            confidence: 0.85
+          - role: SecondaryNavigation
+            selectors:
+              - body > footer > nav
+              - body > footer > ul
+            confidence: 0.85
         ```
         """;
 
@@ -192,6 +230,11 @@ public static class LlmInducerPrompts
              reviews, search results), not the container itself.
           5. Output the YAML INSIDE a fenced code block tagged `yaml`. No
              prose before or after. The block is your entire reply.
+          6. Use RepeatedItem for list-of-things blocks (forum posts, product
+             reviews, search results, blog-post cards), not the container itself.
+             Do NOT use RepeatedItem for header/footer navigation lists — those
+             are PrimaryNavigation / SecondaryNavigation at the <ul>/<nav> level,
+             even when they contain many <li> children.
 
         IMPORTANT — auxiliary UI is NOT MainContent. The previous template
         likely failed because its MainContent selector matched a wrapper that
@@ -217,6 +260,39 @@ public static class LlmInducerPrompts
         selector you chose as MainContent. If it reads like a list of language
         names, a filter UI, "Page 1 of N", or a bio blurb — it's wrong. Pick
         a different (usually deeper) container.
+
+        Example output for a blog homepage with header nav and footer:
+
+        ```yaml
+        host: example-blog.com
+        description: Blog homepage with header navigation, post list, and footer.
+        version: 1
+        rules:
+          - role: PrimaryNavigation
+            selectors:
+              - body > header > nav
+              - body > header > ul
+            confidence: 0.9
+          - role: Breadcrumb
+            selectors:
+              - nav[aria-label='breadcrumb']
+            confidence: 0.95
+          - role: MainContent
+            selectors:
+              - main
+              - article
+            confidence: 0.92
+          - role: RepeatedItem
+            selectors:
+              - main > ul > li
+              - main article.post-card
+            confidence: 0.85
+          - role: SecondaryNavigation
+            selectors:
+              - body > footer > nav
+              - body > footer > ul
+            confidence: 0.85
+        ```
         """;
 
     /// <summary>
