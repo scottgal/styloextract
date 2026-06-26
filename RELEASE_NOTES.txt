@@ -1,3 +1,30 @@
+StyloExtract 1.8.0-alpha.15 - 2026-06-26
+=========================================
+
+RenderOptions.WaitUntil — opt out of NetworkIdle for SPA routing
+-----------------------------------------------------------------
+
+PlaywrightHtmlFetcher previously hardcoded WaitUntilState.NetworkIdle
+for the primary GotoAsync. On sites with aggressive client-side
+routing (BBC News auto-navigates /news → /articles/<id> in the
+post-load JS phase), this means the fetcher returns the post-routing
+DOM, not the page the user requested.
+
+RenderOptions now exposes a WaitUntil property (PlaywrightWaitUntil
+enum: Load / DOMContentLoaded / NetworkIdle / Commit). Default stays
+NetworkIdle for backwards compatibility. Consumers fetching SPA-heavy
+sites should set Load to capture the initial DOM before the router
+fires.
+
+The secondary WaitForLoadStateAsync(NetworkIdle, ...) drain remains —
+it's independently bounded by WaitForNetworkIdleTimeout and serves as
+a best-effort late-XHR catch-up; safe even with the primary returning
+on Load.
+
+PlaywrightWaitUntil is a small enum (not Microsoft.Playwright.WaitUntilState
+direct) so consumers don't take a transitive dependency on
+Microsoft.Playwright just to pick a strategy.
+
 StyloExtract 1.8.0-alpha.14 - 2026-06-26
 =========================================
 

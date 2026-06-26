@@ -35,7 +35,13 @@ public sealed class PlaywrightHtmlFetcher : IRenderedHtmlFetcher, IAsyncDisposab
         var response = await page.GotoAsync(uri.ToString(), new PageGotoOptions
         {
             Timeout = (float)options.NavigationTimeout.TotalMilliseconds,
-            WaitUntil = WaitUntilState.NetworkIdle
+            WaitUntil = options.WaitUntil switch
+            {
+                PlaywrightWaitUntil.Load => WaitUntilState.Load,
+                PlaywrightWaitUntil.DOMContentLoaded => WaitUntilState.DOMContentLoaded,
+                PlaywrightWaitUntil.Commit => WaitUntilState.Commit,
+                _ => WaitUntilState.NetworkIdle,
+            },
         }).ConfigureAwait(false);
 
         try
