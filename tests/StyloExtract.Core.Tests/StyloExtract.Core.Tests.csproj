@@ -26,5 +26,6 @@
     <ProjectReference Include="..\..\src\StyloExtract.Markdown\StyloExtract.Markdown.csproj" />
     <ProjectReference Include="..\..\src\StyloExtract.Templates\StyloExtract.Templates.csproj" />
     <ProjectReference Include="..\..\src\StyloExtract.AspNetCore\StyloExtract.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\StyloExtract.Cli.Shared\StyloExtract.Cli.Shared.csproj" />
   </ItemGroup>
 </Project>

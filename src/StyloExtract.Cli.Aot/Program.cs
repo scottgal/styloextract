@@ -14,4 +14,5 @@ root.Add(ImportCommand.Build());
 root.Add(MonitorCommand.Build());
 root.Add(TemplateCommand.Build());
 root.Add(ExtractFeaturesCommand.Build());
+root.Add(SitemapCommand.Build());
 return await root.Parse(args).InvokeAsync();
