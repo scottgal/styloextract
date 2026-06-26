@@ -16,7 +16,13 @@ StyloExtract is not an HTML-to-Markdown converter. Generic tools like Trafilatur
 
 StyloExtract treats page structure as a fingerprint. The first time it sees a layout it induces an extractor (a set of CSS selectors and block roles) directly from the DOM. Every subsequent page that matches the same layout fingerprint reuses that extractor rather than re-running heuristics from scratch. The extractor is a learned centroid that drifts and refits as the site evolves. When the centroid drift crosses a threshold, the refit is recorded as a version event, giving you site-template-version monitoring as a side effect of extraction.
 
-Most generic extraction tools do not expose reusable same-template clustering as the primary abstraction. Trafilatura, Mercury, Readability, and DOM Distiller all operate single-page. StyloExtract fills that gap. It is built for RAG pipelines, content monitoring, and any scenario where you hit the same site repeatedly and want consistent, low-latency extraction with observable version history.
+Three pillars sit alongside each other:
+
+1. **Fingerprint matching** — LSH + pq-gram match against learned layout templates; the fast path.
+2. **Template induction** — heuristic or LLM-driven inducers produce a reusable extractor on first encounter; deterministic templates persist alongside LLM-induced ones as auditable `<host>-deterministic.yaml`.
+3. **Streaming gateway scan** (alpha.16+) — a zero-allocation fence scanner that rides alongside the byte stream and emits a `Captured` / `Bailout` / `NoTemplate` verdict in bounded memory, before the full extraction pipeline ever has to decide whether to buffer the response. See [`docs/streaming.md`](docs/streaming.md).
+
+Most generic extraction tools do not expose reusable same-template clustering as the primary abstraction. Trafilatura, Mercury, Readability, and DOM Distiller all operate single-page. StyloExtract fills that gap. It is built for RAG pipelines, content monitoring, gateway-position filtering, and any scenario where you hit the same site repeatedly and want consistent, low-latency extraction with observable version history.
 
 ---
 
@@ -25,10 +31,17 @@ Most generic extraction tools do not expose reusable same-template clustering as
 - Fast-path LSH match under 1ms for known templates (measured: ProbeFastPath = 16 µs)
 - Slow-path pq-gram cosine fallback for structurally similar but previously unseen layouts
 - Novel template induction: first encounter induces an extractor from the DOM automatically
+- Distinct `Title` BlockRole separates the page-level H1 from intra-content H2/H3 headings
+- `Sitemap` ExtractionProfile emits Title + Heading + nav + breadcrumb (no body) for crawler / outline use cases
+- Deterministic-template YAML persistence: `<host>-deterministic.yaml` written alongside the LLM-induced `<host>.yaml` for auditing and hand-editing
+- `NavPreDetector` heuristic correctly classifies header / footer `<nav>`, header / footer `<ul>`-of-links, `aria-label="breadcrumb"`, and `role="navigation"` patterns
+- `RenderOptions.WaitUntil` (alpha.15) — opt out of NetworkIdle for SPAs with aggressive client-side routing
+- Streaming gateway scan (alpha.16+) — bounded-memory fence scanner with host-keyed templates and naive auto-induction (`StyloExtract.Streaming`)
 - Centroid-style learned extractors that drift and refit as site templates evolve
 - Refit-as-version-event: template version changes emit structured `TemplateVersionDiff` events
 - JSON export/import for portable template bundles (migrate templates across environments)
 - Site-template-version monitoring via `stylo-extract monitor` with webhook delivery
+- `stylo-extract sitemap` CLI verb — crawl seed URLs and emit a markdown tree of titles + internal nav links
 - StyloFlow signal integration: 11 extraction signals flow into any `TypedSignalSink` consumer
 - AOT-compatible core stack (8 packages); Playwright is the explicit opt-in non-AOT path
 
@@ -106,6 +119,7 @@ dotnet run --project src/StyloExtract.Cli -- <subcommand> [options]
 | Subcommand | Description |
 |---|---|
 | `extract` | Extract a single page (file or URL) to Markdown or JSON |
+| `sitemap` | Crawl seed URLs and emit a markdown tree of page titles + internal nav links (uses the `Sitemap` extraction profile) |
 | `install-browsers` | Download Playwright browser binaries |
 | `export` | Export a host's learned templates to a portable JSON bundle |
 | `import` | Import a JSON template bundle into a store |
@@ -118,7 +132,7 @@ dotnet run --project src/StyloExtract.Cli -- <subcommand> [options]
 | Option | Default | Description |
 |---|---|---|
 | `<source>` | (required) | Path to an HTML file or an `https://` URL |
-| `--profile` | `RagFull` | Extraction profile: `RagFull`, `Title`, `Minimal` |
+| `--profile` | `RagFull` | Extraction profile: `MainContentOnly`, `RagFull`, `AgentNavigation`, `DebugFull`, `Wcxb`, `Sitemap` |
 | `--json` | false | Output JSON instead of Markdown |
 | `--store` | `styloextract-templates.db` | Path to the SQLite template store |
 | `--host-hash-key` | (none) | Base64 HMAC key for host hashing; required for cross-process template matching |
@@ -159,6 +173,17 @@ dotnet run --project src/StyloExtract.Cli -- <subcommand> [options]
 | `--webhook <url>` | no | URL to POST each NDJSON event to |
 | `--pretty` | false | Write indented JSON (one event per call) instead of compact NDJSON |
 
+**`sitemap <urls…>`**
+
+| Option | Default | Description |
+|---|---|---|
+| `<urls>` | (required) | One or more starting URLs |
+| `--out <file>` | (stdout) | Write the markdown tree to a file instead of stdout |
+| `--max-depth <n>` | `3` | Maximum crawl depth from each starting URL |
+| `--max-pages <n>` | `50` | Maximum pages fetched across the whole crawl |
+| `--delay-ms <n>` | `1000` | Politeness delay between requests in milliseconds |
+| `--store <path>` | `styloextract-sitemap.db` | Path to the SQLite template store |
+
 ### Worked examples
 
 ```bash
@@ -195,6 +220,12 @@ stylo-extract monitor \
   --interval 00:30:00 \
   --webhook https://hooks.example.com/styloextract \
   --host-hash-key "$(cat /etc/styloextract/hmac.key)"
+
+# Build a sitemap tree from a couple of seed URLs (titles + internal nav)
+stylo-extract sitemap https://example.com https://example.com/blog \
+  --max-depth 2 \
+  --max-pages 100 \
+  --out example-sitemap.md
 ```
 
 **`--host-hash-key` note:** The host dimension of the template store is keyed by an HMAC hash of the hostname. If you omit `--host-hash-key`, a random key is generated at startup and discarded on exit. Templates stored without a key will not be found in a subsequent process invocation. Pass the same stable key to every process that needs to share templates from the same store.
@@ -207,25 +238,32 @@ For the full CLI reference including exit codes and edge cases, see [`docs/cli.m
 
 | Package | Purpose |
 |---|---|
-| `Mostlylucid.StyloExtract.Abstractions` | Interfaces, records, signal catalog (zero runtime deps) |
+| `Mostlylucid.StyloExtract.Abstractions` | Interfaces, records, signal catalog, `RenderOptions` / `PlaywrightWaitUntil` (zero runtime deps) |
 | `Mostlylucid.StyloExtract.Html` | AngleSharp DOM parser and cleaner |
 | `Mostlylucid.StyloExtract.Fingerprint` | MinHash, pq-grams, LSH, anchor-path fingerprinting |
-| `Mostlylucid.StyloExtract.Templates` | SQLite template store via ephemeral `SqliteSingleWriter` |
-| `Mostlylucid.StyloExtract.Heuristics` | YAML-driven block classifier and extractor inducer/applicator |
-| `Mostlylucid.StyloExtract.Markdown` | Profile-aware Markdown renderer |
-| `Mostlylucid.StyloExtract.Core` | Orchestration: `ILayoutExtractor.ExtractAsync` |
-| `Mostlylucid.StyloExtract.AspNetCore` | `AddStyloExtract()` DI extensions; `IResponsePolicy` framework for composable response transformation; Markdown content negotiation and cache-hint emission as the first two built-in policies; MVC attribute, Minimal API extension, and `IDistributedCache` support |
-| `Mostlylucid.StyloExtract.Playwright` | **Optional, non-AOT.** Rendered-DOM fetcher for SPA pages |
+| `Mostlylucid.StyloExtract.Templates` | SQLite template store via ephemeral `SqliteSingleWriter`; `RefitOrchestrator` |
+| `Mostlylucid.StyloExtract.Templates.Postgres` | Postgres template-index implementation for multi-process / shared deployments |
+| `Mostlylucid.StyloExtract.Heuristics` | YAML-driven block classifier, extractor inducer / applicator; `NavPreDetector` for header / footer / breadcrumb nav |
+| `Mostlylucid.StyloExtract.Markdown` | `TypedMarkdownRenderer` with `ExtractionProfile`-aware role filtering |
+| `Mostlylucid.StyloExtract.Core` | Orchestration: `ILayoutExtractor.ExtractAsync`, `AddStyloExtract()` DI extension (app-safe, no AspNetCore dependency) |
+| `Mostlylucid.StyloExtract.AspNetCore` | `IResponsePolicy` framework for composable response transformation; Markdown content negotiation and cache-hint emission as the first two built-in policies; MVC attribute, Minimal API extension, and `IDistributedCache` support |
+| `Mostlylucid.StyloExtract.Llm.Ollama` | LLM template inducer + repair backed by an Ollama server |
+| `Mostlylucid.StyloExtract.Llm.LlamaSharp` | In-process CPU LLM template inducer backed by LLamaSharp (GGUF) — no separate daemon |
+| `Mostlylucid.StyloExtract.Playwright` | **Optional, non-AOT.** Rendered-DOM fetcher for SPA pages with `RenderOptions.WaitUntil` |
+| `Mostlylucid.StyloExtract.Streaming` | Bounded-memory gateway fence scanner — `Captured` / `Bailout` verdict in flight; host-keyed templates and naive auto-induction. See [`docs/streaming.md`](docs/streaming.md). |
+| `Mostlylucid.StyloExtract.Ml` | ML feature-extraction harness (experimental; pairs with the `extract-features` CLI verb) |
+| `Mostlylucid.StyloExtract.Cli` (`stylo-extract-playwright`) | Full CLI: `extract` / `sitemap` / `monitor` / `export` / `import` / `install-browsers` / `template` / `extract-features`. Includes Playwright. |
+| `Mostlylucid.StyloExtract.Cli.Aot` (`stylo-extract`) | AOT-published CLI without Playwright — same subcommands minus `install-browsers` and `--rendered` |
 
-Most consumers need only `Mostlylucid.StyloExtract.AspNetCore`, which pulls in Core, Html, Fingerprint, Templates, Heuristics, and Markdown transitively. Add `Mostlylucid.StyloExtract.Playwright` explicitly only when you need JS-rendered HTML fetching.
+Most consumers need only `Mostlylucid.StyloExtract.AspNetCore`, which pulls in Core, Html, Fingerprint, Templates, Heuristics, and Markdown transitively. Add `Mostlylucid.StyloExtract.Playwright` explicitly only when you need JS-rendered HTML fetching, `Mostlylucid.StyloExtract.Streaming` for the gateway scanner, and one of `Mostlylucid.StyloExtract.Llm.*` when you want LLM-driven template induction.
 
 ---
 
 ## AOT compatibility
 
-The eight core packages (`Abstractions`, `Html`, `Fingerprint`, `Templates`, `Heuristics`, `Markdown`, `Core`, `AspNetCore`) are marked `IsAotCompatible=true` and are verified by the CI AOT canary step on every push to `main`. No reflection-based code paths exist in any of them.
+The core packages (`Abstractions`, `Html`, `Fingerprint`, `Templates`, `Heuristics`, `Markdown`, `Core`, `AspNetCore`, `Streaming`) are marked `IsAotCompatible=true` and are verified by the CI AOT canary step on every push to `main`. No reflection-based code paths exist in any of them; `Streaming` in particular has zero per-request GC-tracked allocations on the hot path.
 
-`Mostlylucid.StyloExtract.Playwright` is the explicit opt-in non-AOT path. Playwright uses reflection extensively. Keeping it in a separate package means the core stack remains fully AOT-publishable for gateway and sidecar scenarios; only the Playwright package brings in the restriction.
+`Mostlylucid.StyloExtract.Playwright` is the explicit opt-in non-AOT path. Playwright uses reflection extensively. Keeping it in a separate package means the core stack remains fully AOT-publishable for gateway and sidecar scenarios; only the Playwright package brings in the restriction. The LLM packages (`Llm.Ollama`, `Llm.LlamaSharp`) ship native dependencies and are similarly opt-in.
 
 ---
 
