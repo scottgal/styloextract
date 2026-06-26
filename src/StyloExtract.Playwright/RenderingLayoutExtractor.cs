@@ -63,7 +63,7 @@ public sealed class RenderingLayoutExtractor : ILayoutExtractor
 
         var contentTextLen = first.Blocks
             .Where(b => b.Role is BlockRole.MainContent or BlockRole.Article
-                or BlockRole.Heading or BlockRole.Summary or BlockRole.Table
+                or BlockRole.Title or BlockRole.Heading or BlockRole.Summary or BlockRole.Table
                 or BlockRole.CodeBlock or BlockRole.RepeatedItem)
             .Sum(b => b.Text.Length);
         if (contentTextLen >= CatastrophicContentTextLength) return first;
@@ -95,7 +95,7 @@ public sealed class RenderingLayoutExtractor : ILayoutExtractor
         var second = await _inner.ExtractAsync(rendered.Html, sourceUri, options, cancellationToken).ConfigureAwait(false);
         var secondContentLen = second.Blocks
             .Where(b => b.Role is BlockRole.MainContent or BlockRole.Article
-                or BlockRole.Heading or BlockRole.Summary or BlockRole.Table
+                or BlockRole.Title or BlockRole.Heading or BlockRole.Summary or BlockRole.Table
                 or BlockRole.CodeBlock or BlockRole.RepeatedItem)
             .Sum(b => b.Text.Length);
         if (secondContentLen <= contentTextLen)

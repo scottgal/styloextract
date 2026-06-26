@@ -35,11 +35,14 @@ public static class LlmInducerPrompts
               confidence: <0.0-1.0>
 
         BlockRole values you may use (case-sensitive):
-          MainContent, Article, Heading, Summary,
+          MainContent, Article, Title, Heading, Summary,
           PrimaryNavigation, SecondaryNavigation, Breadcrumb,
           Sidebar, RelatedLinks, Footer, Header,
           Advertisement, CookieBanner, Form, Table, CodeBlock,
           Boilerplate, RepeatedItem
+
+        Title is the page-level <h1> the rest of the page is "about" (one per page);
+        Heading is an intra-content H2/H3/H4 inside the body.
 
         Rules:
           1. Emit AT MOST 6 rules. Fewer is better. Skip a role rather than guess.
@@ -163,11 +166,14 @@ public static class LlmInducerPrompts
               confidence: <0.0-1.0>
 
         BlockRole values you may use (case-sensitive):
-          MainContent, Article, Heading, Summary,
+          MainContent, Article, Title, Heading, Summary,
           PrimaryNavigation, SecondaryNavigation, Breadcrumb,
           Sidebar, RelatedLinks, Footer, Header,
           Advertisement, CookieBanner, Form, Table, CodeBlock,
           Boilerplate, RepeatedItem
+
+        Title is the page-level <h1> the rest of the page is "about" (one per page);
+        Heading is an intra-content H2/H3/H4 inside the body.
 
         Rules:
           1. Emit AT MOST 6 rules. Fewer is better. Skip a role rather than guess.

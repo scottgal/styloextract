@@ -73,6 +73,7 @@ public sealed class ExtractorApplicator : IExtractorApplicator
         or BlockRole.Article
         or BlockRole.RepeatedItem
         or BlockRole.Summary
+        or BlockRole.Title
         or BlockRole.Heading
         or BlockRole.Table
         or BlockRole.CodeBlock

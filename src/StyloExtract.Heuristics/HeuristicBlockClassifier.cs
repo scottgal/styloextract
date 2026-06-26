@@ -15,6 +15,7 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
     {
         BlockRole.MainContent,
         BlockRole.Article,
+        BlockRole.Title,
         BlockRole.Heading,
         BlockRole.Summary,
         BlockRole.Breadcrumb,
@@ -470,7 +471,7 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         foreach (var (el, role, _) in accepted)
         {
             if (role is BlockRole.MainContent or BlockRole.Article
-                or BlockRole.Heading or BlockRole.Summary or BlockRole.Breadcrumb
+                or BlockRole.Title or BlockRole.Heading or BlockRole.Summary or BlockRole.Breadcrumb
                 or BlockRole.RepeatedItem)
             {
                 IntraBlockCleaner.Clean(el);
@@ -564,6 +565,7 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
         or BlockRole.Article
         or BlockRole.RepeatedItem
         or BlockRole.Summary
+        or BlockRole.Title
         or BlockRole.Heading
         or BlockRole.Table
         or BlockRole.CodeBlock
@@ -592,6 +594,9 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
             BlockRole.MainContent or BlockRole.Article => 500.0,
             BlockRole.Table or BlockRole.CodeBlock => 200.0,
             BlockRole.Form or BlockRole.Summary => 100.0,
+            // Title is page-level (one per page) and a high-signal anchor for sitemap /
+            // outline use cases; rank above intra-content Heading.
+            BlockRole.Title => 75.0,
             BlockRole.Heading => 50.0,
             BlockRole.PrimaryNavigation or BlockRole.SecondaryNavigation
                 or BlockRole.Breadcrumb => 50.0,

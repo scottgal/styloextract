@@ -35,23 +35,24 @@ public sealed class TypedMarkdownRenderer : IMarkdownRenderer
         return p switch
         {
             ExtractionProfile.MainContentOnly => b.Role is BlockRole.MainContent or BlockRole.Article
-                or BlockRole.Heading or BlockRole.Summary or BlockRole.Table or BlockRole.CodeBlock
-                or BlockRole.RepeatedItem,
+                or BlockRole.Title or BlockRole.Heading or BlockRole.Summary or BlockRole.Table
+                or BlockRole.CodeBlock or BlockRole.RepeatedItem,
             // RagFull is for LLM ingestion. Site navigation (primary/secondary nav) is noise,
             // not signal; drop it. Breadcrumb and RelatedLinks stay because they carry
-            // article-context useful for retrieval.
+            // article-context useful for retrieval. Title stays (it's signal, not chrome).
             ExtractionProfile.RagFull => b.Role is not (BlockRole.Footer or BlockRole.Header
                 or BlockRole.Advertisement or BlockRole.CookieBanner or BlockRole.Boilerplate
                 or BlockRole.Unknown or BlockRole.PrimaryNavigation or BlockRole.SecondaryNavigation),
-            // AgentNavigation: RepeatedItem is content, not navigation - exclude it.
-            ExtractionProfile.AgentNavigation => b.Role is BlockRole.PrimaryNavigation or BlockRole.SecondaryNavigation
-                or BlockRole.Breadcrumb or BlockRole.Form,
+            // AgentNavigation: RepeatedItem is content, not navigation - exclude it. Title
+            // is included because crawler / sitemap consumers want the page-level title.
+            ExtractionProfile.AgentNavigation => b.Role is BlockRole.Title or BlockRole.PrimaryNavigation
+                or BlockRole.SecondaryNavigation or BlockRole.Breadcrumb or BlockRole.Form,
             // Wcxb: same role-set as MainContentOnly so we benchmark like-for-like
             // against word-overlap ground truth; the difference vs MainContentOnly
             // is in the render step (plain Text, not GFM Markdown).
             ExtractionProfile.Wcxb => b.Role is BlockRole.MainContent or BlockRole.Article
-                or BlockRole.Heading or BlockRole.Summary or BlockRole.Table or BlockRole.CodeBlock
-                or BlockRole.RepeatedItem,
+                or BlockRole.Title or BlockRole.Heading or BlockRole.Summary or BlockRole.Table
+                or BlockRole.CodeBlock or BlockRole.RepeatedItem,
             _ => true
         };
     }

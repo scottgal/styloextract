@@ -18,6 +18,10 @@ internal static class BlockRoleRenderers
         {
             BlockRole.MainContent or BlockRole.Article => MarkdownEscaper.Escape(block.Text),
             BlockRole.RepeatedItem => MarkdownEscaper.Escape(block.Text),
+            // Page-level title gets H1 (one per page); intra-content headings stay at H1
+            // in this fallback path. Producers should populate Markdown with the correct
+            // level when known.
+            BlockRole.Title => "# " + MarkdownEscaper.Escape(block.Text),
             BlockRole.Heading => "# " + MarkdownEscaper.Escape(block.Text),
             BlockRole.PrimaryNavigation or BlockRole.SecondaryNavigation =>
                 block.Links.Any() ? string.Join("\n", block.Links.Select(l => $"- [{l.Text}]({l.Href})")) : MarkdownEscaper.Escape(block.Text),

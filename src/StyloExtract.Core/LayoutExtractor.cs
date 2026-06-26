@@ -202,7 +202,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
 
             var contentText = applied.Blocks
                 .Where(b => b.Role is BlockRole.MainContent or BlockRole.Article
-                    or BlockRole.Heading or BlockRole.Summary or BlockRole.Table
+                    or BlockRole.Title or BlockRole.Heading or BlockRole.Summary or BlockRole.Table
                     or BlockRole.CodeBlock or BlockRole.RepeatedItem)
                 .Sum(b => b.Text.Length);
             // Lots of total text, almost none of it in content roles: the
@@ -410,7 +410,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
         // from firing.
         var combinedText = blocks
             .Where(b => b.Role is BlockRole.MainContent or BlockRole.Article
-                or BlockRole.Heading or BlockRole.Summary or BlockRole.Table
+                or BlockRole.Title or BlockRole.Heading or BlockRole.Summary or BlockRole.Table
                 or BlockRole.CodeBlock or BlockRole.RepeatedItem)
             .Sum(b => b.Text.Length);
         if (combinedText < FallbackMinTextLength)
