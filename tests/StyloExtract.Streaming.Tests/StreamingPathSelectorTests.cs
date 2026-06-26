@@ -26,13 +26,44 @@ public sealed class StreamingPathSelectorTests
         var store = new InMemoryStreamingTemplateStore();
         store.Register(template);
 
-        var selector = new StreamingPathSelector(store, windowSize: 4);
+        var selector = new StreamingPathSelector(store);
 
         ReadOnlySpan<byte> html =
             "<body><header>x</header><article>YES</article><footer>z</footer></body>"u8;
         var result = selector.Scan(templateId, html);
 
         result.Should().Be(ScanVerdict.Captured);
+    }
+
+    [Fact]
+    public void Selector_uses_each_template_WindowSize_not_a_global()
+    {
+        // Two templates with different fence sizes — both must scan to Captured.
+        var smallTemplate = new StreamingTemplate
+        {
+            TemplateId = Guid.NewGuid(),
+            PrefixFence = TemplateFence.BuildFromEvents(TagEvents("<a>", "</a>", "<b>"), requiredDepth: 0),
+            ContentStartFence = TemplateFence.BuildFromEvents(TagEvents("</a>", "<b>", "</b>"), requiredDepth: 0),
+            ContentEndFence = TemplateFence.BuildFromEvents(TagEvents("<b>", "</b>", "<c>"), requiredDepth: 0),
+            MinContentDepth = 0,
+            BailoutBytes = 100_000,
+            MaxCaptureBytes = 100_000,
+            WindowSize = 3,
+        };
+        var bigTemplate = BuildBodyHeaderArticleFooterTemplate(out var bigId);
+
+        var store = new InMemoryStreamingTemplateStore();
+        store.Register(smallTemplate);
+        store.Register(bigTemplate);
+
+        var selector = new StreamingPathSelector(store);
+
+        ReadOnlySpan<byte> smallHtml = "<a></a><b></b><c></c>"u8;
+        selector.Scan(smallTemplate.TemplateId, smallHtml).Should().Be(ScanVerdict.Captured);
+
+        ReadOnlySpan<byte> bigHtml =
+            "<body><header>x</header><article>YES</article><footer>z</footer></body>"u8;
+        selector.Scan(bigId, bigHtml).Should().Be(ScanVerdict.Captured);
     }
 
     private static StreamingTemplate BuildBodyHeaderArticleFooterTemplate(out Guid templateId)
@@ -53,6 +84,7 @@ public sealed class StreamingPathSelectorTests
             MinContentDepth = 0,
             BailoutBytes = 100_000,
             MaxCaptureBytes = 100_000,
+            WindowSize = 4,
         };
     }
 

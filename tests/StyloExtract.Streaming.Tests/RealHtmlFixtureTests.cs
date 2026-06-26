@@ -32,11 +32,12 @@ public sealed class RealHtmlFixtureTests
             MinContentDepth = 0,
             BailoutBytes = 1_000_000,
             MaxCaptureBytes = 1_000_000,
+            WindowSize = 4,
         };
 
         var store = new InMemoryStreamingTemplateStore();
         store.Register(template);
-        var selector = new StreamingPathSelector(store, windowSize: 4);
+        var selector = new StreamingPathSelector(store);
 
         var result = selector.Scan(template.TemplateId, html);
 

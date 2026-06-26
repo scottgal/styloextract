@@ -104,6 +104,7 @@ public sealed class FenceScannerTests
         MinContentDepth = 0,
         BailoutBytes = 1_000_000,
         MaxCaptureBytes = 1_000_000,
+        WindowSize = 8,
     };
 
     private static (ulong tagHash, ulong classHash)[] MakeEvents(int seed, int count)
