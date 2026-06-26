@@ -18,53 +18,71 @@ public ref struct MinimalHtmlTokenizer
 
     public bool TryReadTag(out TagEvent evt)
     {
+        while (_position < _input.Length)
+        {
+            var remaining = _input.Slice(_position);
+            var ltIdx = remaining.IndexOf((byte)'<');
+            if (ltIdx < 0)
+            {
+                _position = _input.Length;
+                break;
+            }
+
+            var afterLt = _position + ltIdx + 1;
+            if (afterLt >= _input.Length) break;
+
+            if (IsCommentStart(afterLt))
+            {
+                _position = afterLt + 3;
+                var rest = _input.Slice(_position);
+                var endIdx = rest.IndexOf("-->"u8);
+                if (endIdx < 0) { _position = _input.Length; break; }
+                _position += endIdx + 3;
+                continue;
+            }
+
+            var isClose = _input[afterLt] == (byte)'/';
+            var nameStart = isClose ? afterLt + 1 : afterLt;
+            if (nameStart >= _input.Length) break;
+
+            var tagContent = _input.Slice(nameStart);
+            var gtIdx = tagContent.IndexOf((byte)'>');
+            if (gtIdx < 0) break;
+
+            var inner = tagContent.Slice(0, gtIdx);
+
+            int nameLen = 0;
+            while (nameLen < inner.Length)
+            {
+                var ch = inner[nameLen];
+                if (ch == (byte)' ' || ch == (byte)'\t' || ch == (byte)'\n'
+                    || ch == (byte)'\r' || ch == (byte)'/') break;
+                nameLen++;
+            }
+
+            var nameHash = XxHash3.HashToUInt64(inner.Slice(0, nameLen));
+            var classHash = isClose ? 0UL : ExtractClassHash(inner.Slice(nameLen));
+            var tagStart = _position + ltIdx;
+            var tagEnd = nameStart + gtIdx + 1;
+            evt = new TagEvent(nameHash, classHash, ByteLength: tagEnd - tagStart, IsClose: isClose);
+            _position = tagEnd;
+
+            if (!isClose)
+            {
+                if (nameHash == s_scriptHash) SkipBodyTo("</script>"u8);
+                else if (nameHash == s_styleHash) SkipBodyTo("</style>"u8);
+            }
+            return true;
+        }
         evt = default;
-        if (_position >= _input.Length) return false;
-
-        var remaining = _input.Slice(_position);
-        var ltIdx = remaining.IndexOf((byte)'<');
-        if (ltIdx < 0)
-        {
-            _position = _input.Length;
-            return false;
-        }
-
-        var afterLt = _position + ltIdx + 1;
-        if (afterLt >= _input.Length) return false;
-
-        var isClose = _input[afterLt] == (byte)'/';
-        var nameStart = isClose ? afterLt + 1 : afterLt;
-        if (nameStart >= _input.Length) return false;
-
-        var tagContent = _input.Slice(nameStart);
-        var gtIdx = tagContent.IndexOf((byte)'>');
-        if (gtIdx < 0) return false;
-
-        var inner = tagContent.Slice(0, gtIdx);
-
-        int nameLen = 0;
-        while (nameLen < inner.Length)
-        {
-            var ch = inner[nameLen];
-            if (ch == (byte)' ' || ch == (byte)'\t' || ch == (byte)'\n'
-                || ch == (byte)'\r' || ch == (byte)'/') break;
-            nameLen++;
-        }
-
-        var nameHash = XxHash3.HashToUInt64(inner.Slice(0, nameLen));
-        var classHash = isClose ? 0UL : ExtractClassHash(inner.Slice(nameLen));
-        var tagStart = _position + ltIdx;
-        var tagEnd = nameStart + gtIdx + 1;
-        evt = new TagEvent(nameHash, classHash, ByteLength: tagEnd - tagStart, IsClose: isClose);
-        _position = tagEnd;
-
-        if (!isClose)
-        {
-            if (nameHash == s_scriptHash) SkipBodyTo("</script>"u8);
-            else if (nameHash == s_styleHash) SkipBodyTo("</style>"u8);
-        }
-        return true;
+        return false;
     }
+
+    private readonly bool IsCommentStart(int afterLt) =>
+        afterLt + 2 < _input.Length
+        && _input[afterLt] == (byte)'!'
+        && _input[afterLt + 1] == (byte)'-'
+        && _input[afterLt + 2] == (byte)'-';
 
     private void SkipBodyTo(ReadOnlySpan<byte> closeTag)
     {

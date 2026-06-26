@@ -127,6 +127,28 @@ public sealed class MinimalHtmlTokenizerTests
     }
 
     [Fact]
+    public void Skips_html_comment_does_not_emit_tag()
+    {
+        ReadOnlySpan<byte> bytes = "<!-- nav was here --><p></p>"u8;
+        var tokenizer = new MinimalHtmlTokenizer(bytes);
+
+        tokenizer.TryReadTag(out var p).Should().BeTrue();
+        p.TagNameHash.Should().Be(XxHash3.HashToUInt64("p"u8));
+        p.IsClose.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Skips_comment_containing_tag_like_syntax()
+    {
+        ReadOnlySpan<byte> bytes = "<!-- <fake></fake> --><p></p>"u8;
+        var tokenizer = new MinimalHtmlTokenizer(bytes);
+
+        tokenizer.TryReadTag(out var first).Should().BeTrue();
+        first.TagNameHash.Should().Be(XxHash3.HashToUInt64("p"u8));
+        first.IsClose.Should().BeFalse();
+    }
+
+    [Fact]
     public void Skips_style_body_does_not_emit_inner_tags()
     {
         ReadOnlySpan<byte> bytes = "<style>.a { content: \"<x>\"; }</style><p></p>"u8;
