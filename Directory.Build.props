@@ -17,8 +17,15 @@
          Every NuGet package therefore ships the same notes block, visible on
          nuget.org under the "Release notes" tab and surfaced by `dotnet add package`
          tooling. Update RELEASE_NOTES.txt with each release; the file is also
-         packaged into the .nupkg so consumers offline can still read it. -->
-    <PackageReleaseNotes Condition="Exists('$(MSBuildThisFileDirectory)RELEASE_NOTES.txt')">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)RELEASE_NOTES.txt'))</PackageReleaseNotes>
+         packaged into the .nupkg so consumers offline can still read it.
+         NuGet caps PackageReleaseNotes at 35000 chars; we truncate the inlined
+         property to ~30000 to stay safely under the limit. The full file is
+         still packed at the package root for offline reading. -->
+    <_FullReleaseNotes Condition="Exists('$(MSBuildThisFileDirectory)RELEASE_NOTES.txt')">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)RELEASE_NOTES.txt'))</_FullReleaseNotes>
+    <PackageReleaseNotes Condition="'$(_FullReleaseNotes)' != '' AND $(_FullReleaseNotes.Length) &gt; 30000">$(_FullReleaseNotes.Substring(0, 30000))
+
+[truncated — see RELEASE_NOTES.txt packaged at root for full history]</PackageReleaseNotes>
+    <PackageReleaseNotes Condition="'$(_FullReleaseNotes)' != '' AND '$(PackageReleaseNotes)' == ''">$(_FullReleaseNotes)</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(IsPackable)' == 'true'">
