@@ -245,6 +245,60 @@ public class HeuristicBlockClassifierTests
     }
 
     [Fact]
+    public void Classify_SingleH1_InMain_EmitsTitleAndHeadingDistinct()
+    {
+        // The single H1 inside <main> is the page's Title; H2s inside the body are Headings.
+        var html = "<html><body><main><h1>The Page Title</h1>" +
+                   "<h2>Section A</h2><p>" + new string('x', 400) + "</p>" +
+                   "<h2>Section B</h2><p>" + new string('y', 400) + "</p>" +
+                   "</main></body></html>";
+        var (blocks, _) = Classify(html);
+
+        var titleBlocks = blocks.Where(b => b.Role == BlockRole.Title).ToList();
+        titleBlocks.Should().HaveCount(1, "exactly one H1 lives inside <main>; it is the page Title");
+        titleBlocks[0].Text.Should().Be("The Page Title");
+        titleBlocks[0].Confidence.Should().BeGreaterThanOrEqualTo(0.9,
+            "a single H1 in <main> is a high-confidence Title");
+    }
+
+    [Fact]
+    public void Classify_MultipleH1_PicksOneInMain_AsTitle()
+    {
+        // Two H1s on the page: one in a header banner, one inside <main>. The Title
+        // should be the one inside <main>, not the header H1.
+        var html = "<html><body>" +
+                   "<header><h1>Banner Heading</h1></header>" +
+                   "<main><h1>Actual Page Title</h1>" +
+                   "<p>" + new string('x', 400) + "</p></main>" +
+                   "</body></html>";
+        var (blocks, _) = Classify(html);
+
+        var titleBlocks = blocks.Where(b => b.Role == BlockRole.Title).ToList();
+        titleBlocks.Should().HaveCount(1,
+            "the Title role is singleton: only one Title per page");
+        titleBlocks[0].Text.Should().Be("Actual Page Title",
+            "the H1 inside <main> wins over the banner H1");
+    }
+
+    [Fact]
+    public void Classify_MultipleH1_NoMain_PicksEarliestInDocument_AsTitle()
+    {
+        // Two H1s; no <main>/<article>. The earliest in document order is the Title.
+        var html = "<html><body>" +
+                   "<div><h1>First H1</h1>" +
+                   "<p>" + new string('x', 400) + "</p></div>" +
+                   "<div><h1>Second H1</h1>" +
+                   "<p>" + new string('y', 400) + "</p></div>" +
+                   "</body></html>";
+        var (blocks, _) = Classify(html);
+
+        var titleBlocks = blocks.Where(b => b.Role == BlockRole.Title).ToList();
+        titleBlocks.Should().HaveCount(1);
+        titleBlocks[0].Text.Should().Be("First H1",
+            "fallback when no <main>/<article> is earliest-in-document order");
+    }
+
+    [Fact]
     public void Classify_MultipleForms_AllEmitted()
     {
         // Forms are NOT singleton — a page can legitimately have a search form and a
