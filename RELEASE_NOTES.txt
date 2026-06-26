@@ -1,3 +1,53 @@
+StyloExtract 1.8.0-alpha.18 - 2026-06-26
+=========================================
+
+Streaming: true chunked tokenization + refit/versioning + bench update
+-----------------------------------------------------------------------
+
+1. IncrementalHtmlTokenizer + IncrementalFenceScanner
+   Stateful tokenizer that survives chunk boundaries. A partial tag at
+   the end of one chunk is held in an internal buffer and completed when
+   the next Feed call arrives. Pairs with IncrementalFenceScanner —
+   callers Feed chunks as they arrive from the network, get a verdict
+   per chunk, bail early on Captured / Bailout.
+
+   Trade-off vs MinimalHtmlTokenizer's span path: one buffer allocation
+   per request (not per chunk). Use the span path for whole-buffer
+   scans, the incremental path for streaming gateways where bytes
+   arrive in chunks. Hard cap of 1 MiB on the internal buffer — feed
+   throws InvalidOperationException on pathological input that never
+   closes a tag, surfacing the failure rather than silently dropping
+   bytes.
+
+   Architectural note: FenceScanner stays a ref struct (zero-alloc hot
+   path); IncrementalFenceScanner is a heap-backed class that ports the
+   same tick logic. The two are kept in lockstep — any drift between
+   them is a correctness bug surface and is covered by cross-validation
+   tests that feed the same bytes both ways.
+
+2. Streaming-template refit + versioning
+   StreamingTemplate gains a Version field (defaults to 1; persists
+   across alpha.17 templates without migration). New
+   StreamingRefitOrchestrator observes captured-scan output per host
+   and kicks off-hot-path refits when either:
+     - capture-region EWMA drift exceeds 30% on N consecutive scans, OR
+     - every 10th captured scan re-induces and finds different fences
+   On refit: version bumps, store is upserted, the new
+   IStreamingTemplateVersionSink fires a StreamingTemplateRefitEvent
+   (Host, Old/New TemplateId, Old/New Version, Reason, DetectedAt).
+   Default sink is a no-op; consumers wire UI telemetry to it.
+
+3. Bench update
+   ExtractionComparisonBench gains a New_StreamingScanByHost variant so
+   the host-keyed hot-path is benchmarked alongside the original
+   GUID-keyed scan. Pre-populates the in-memory store with the
+   host="www.mostlylucid.net" template that lucidview FULL hits in
+   production.
+
+Migration: additive APIs. Alpha.17 consumers using ScanByHost continue
+to work; the incremental tokenizer and the refit orchestrator are
+opt-in (use them when feeding chunks / when wiring drift telemetry).
+
 StyloExtract 1.8.0-alpha.17 - 2026-06-26
 =========================================
 

@@ -20,4 +20,12 @@ public sealed record StreamingTemplate
     public required int MaxCaptureBytes { get; init; }
     public required int WindowSize { get; init; }
     public required int MaxEventsWithoutTransition { get; init; }
+
+    /// <summary>
+    /// Monotonically increasing version for this host's streaming template.
+    /// Starts at 1 on initial induction; <see cref="StreamingRefitOrchestrator"/>
+    /// bumps it whenever drift triggers a re-induction. Defaults to 1 so
+    /// pre-alpha.18 templates loaded from persistence read as version 1.
+    /// </summary>
+    public int Version { get; init; } = 1;
 }

@@ -14,6 +14,13 @@ public class ExtractionComparisonBench
     [Params("home.html", "blog-sidecar.html", "blog-styloextract.html", "blog-fingerprint.html")]
     public string Fixture { get; set; } = "";
 
+    /// <summary>
+    /// Host the bench registers the streaming template against. Matches a
+    /// real mostlylucid.net page so the host-keyed hot-path is exercised
+    /// the same way lucidview FULL hits it in production.
+    /// </summary>
+    private const string BenchHost = "www.mostlylucid.net";
+
     private byte[] _htmlBytes = null!;
     private string _htmlString = null!;
     private StreamingPathSelector _selector = null!;
@@ -32,9 +39,12 @@ public class ExtractionComparisonBench
         // === Streaming path: hand-built template likely to match SOMETHING on a mostlylucid page ===
         // mostlylucid pages: <header>…</header><nav>…</nav>… <ul><li><a>…</a></li>… <p>…</p>
         // Fences picked to hit common structural runs across the fetched fixtures.
+        // alpha.18: register BOTH a GUID-keyed template (for the legacy Scan bench)
+        // AND a host-keyed template under "www.mostlylucid.net" so the new
+        // ScanByHost bench exercises the host hot-path that lucidview FULL uses.
         var store = new InMemoryStreamingTemplateStore();
         _templateId = Guid.NewGuid();
-        var template = new StreamingTemplate
+        var guidKeyedTemplate = new StreamingTemplate
         {
             TemplateId = _templateId,
             Host = "",
@@ -53,7 +63,15 @@ public class ExtractionComparisonBench
             WindowSize = 4,
             MaxEventsWithoutTransition = 256,
         };
-        await store.RegisterAsync(template);
+        await store.RegisterAsync(guidKeyedTemplate);
+
+        var hostKeyedTemplate = guidKeyedTemplate with
+        {
+            TemplateId = Guid.NewGuid(),
+            Host = BenchHost,
+        };
+        await store.UpsertAsync(hostKeyedTemplate);
+
         _selector = new StreamingPathSelector(store);
 
         // === Current path: full LayoutExtractor with warmed fast-path cache ===
@@ -73,6 +91,18 @@ public class ExtractionComparisonBench
     [Benchmark]
     public ScanVerdict New_StreamingScan()
         => _selector.Scan(_templateId, _htmlBytes);
+
+    /// <summary>
+    /// alpha.18: benchmarks the host-keyed hot-path that
+    /// <c>StreamingPathSelector.ScanByHost</c> exposes — the same code path
+    /// lucidview FULL hits on every fetch. Should produce a verdict
+    /// indistinguishable in wall-time from <see cref="New_StreamingScan"/> on
+    /// the GUID-keyed path; if it diverges the host index has a cost worth
+    /// surfacing.
+    /// </summary>
+    [Benchmark]
+    public ScanVerdict New_StreamingScanByHost()
+        => _selector.ScanByHost(BenchHost, _htmlBytes);
 
     private static (ulong tagHash, ulong classHash)[] TagEvents(params string[] tags)
     {
