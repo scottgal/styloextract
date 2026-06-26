@@ -125,4 +125,31 @@ public class MarkdownRendererTests
         md.Should().NotContain("Related posts",
             because: "Sidebar role is excluded from MainContentOnly + Wcxb identically");
     }
+
+    [Fact]
+    public void Render_Sitemap_KeepsTitleAndNav_DropsBody()
+    {
+        IMarkdownRenderer r = new TypedMarkdownRenderer();
+        var blocks = new[]
+        {
+            Block(BlockRole.Title, "The Page Title"),
+            Block(BlockRole.PrimaryNavigation, "Home About Blog Archive Contact Us Pages More Links Here"),
+            Block(BlockRole.Heading, "Section One"),
+            Block(BlockRole.MainContent, "The article body contains substantial prose text the sitemap profile must omit."),
+            Block(BlockRole.Footer, "Copyright 2026 Example Corp. All rights reserved worldwide."),
+        };
+
+        var md = r.Render(blocks, ExtractionProfile.Sitemap);
+
+        md.Should().Contain("The Page Title",
+            because: "Sitemap profile must surface the page title");
+        md.Should().Contain("Home About Blog",
+            because: "Sitemap profile must surface PrimaryNavigation");
+        md.Should().Contain("Section One",
+            because: "Sitemap profile must surface intra-content Headings as outline anchors");
+        md.Should().NotContain("The article body",
+            because: "Sitemap profile must exclude MainContent body");
+        md.Should().NotContain("Copyright 2026",
+            because: "Sitemap profile must exclude Footer chrome");
+    }
 }

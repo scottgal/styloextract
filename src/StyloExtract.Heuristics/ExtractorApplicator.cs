@@ -19,6 +19,20 @@ public sealed class ExtractorApplicator : IExtractorApplicator
         int i = 0;
         int rulesApplied = 0;
         int rulesMissed = 0;
+        // Title detection runs independently of the extractor's role-based selectors:
+        // the page's primary <h1> is a stable, structural fact regardless of the
+        // learned template. Surface it first so the Sitemap profile sees it on the
+        // applicator path too — matches the heuristic-classifier output shape.
+        var titleBlock = PageTitleDetector.Detect(document);
+        if (titleBlock is not null)
+        {
+            // Skip Title injection when a rule already targets the Title role to avoid
+            // duplicate Title blocks if an operator hand-authored one explicitly.
+            if (!extractor.Rules.Any(r => r.Role == BlockRole.Title))
+            {
+                result.Add(titleBlock with { Id = $"b{i++:D4}" });
+            }
+        }
         foreach (var rule in extractor.Rules)
         {
             // A rule "matched" when at least one of its selectors produced an element.

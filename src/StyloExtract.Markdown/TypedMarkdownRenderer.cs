@@ -30,7 +30,10 @@ public sealed class TypedMarkdownRenderer : IMarkdownRenderer
         if (p == ExtractionProfile.DebugFull) return true;
 
         // Quality gate: drop blocks with no meaningful content unless they carry links.
-        if (b.Text.Trim().Length < 40 && b.Links.Count == 0) return false;
+        // Title and Heading bypass the gate: page titles are intentionally short
+        // ("Home", "About"), and consumers want them surfaced regardless.
+        if (b.Text.Trim().Length < 40 && b.Links.Count == 0
+            && b.Role is not (BlockRole.Title or BlockRole.Heading)) return false;
 
         return p switch
         {
@@ -47,6 +50,12 @@ public sealed class TypedMarkdownRenderer : IMarkdownRenderer
             // is included because crawler / sitemap consumers want the page-level title.
             ExtractionProfile.AgentNavigation => b.Role is BlockRole.Title or BlockRole.PrimaryNavigation
                 or BlockRole.SecondaryNavigation or BlockRole.Breadcrumb or BlockRole.Form,
+            // Sitemap: page title + nav structure only, no body. For sitemap / outline
+            // builders that walk a site collecting titles and links without pulling the
+            // article body. Headings give per-section anchors for the outline.
+            ExtractionProfile.Sitemap => b.Role is BlockRole.Title or BlockRole.Heading
+                or BlockRole.PrimaryNavigation or BlockRole.SecondaryNavigation
+                or BlockRole.Breadcrumb,
             // Wcxb: same role-set as MainContentOnly so we benchmark like-for-like
             // against word-overlap ground truth; the difference vs MainContentOnly
             // is in the render step (plain Text, not GFM Markdown).

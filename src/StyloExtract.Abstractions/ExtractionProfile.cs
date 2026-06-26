@@ -23,4 +23,11 @@ public enum ExtractionProfile
     /// comparison without forcing the runtime output to lose its structure.
     /// </summary>
     Wcxb,
+
+    /// <summary>
+    /// For sitemap / outline builders that want the page title and navigation
+    /// structure but not body content. Includes Title, Heading, PrimaryNavigation,
+    /// SecondaryNavigation, and Breadcrumb.
+    /// </summary>
+    Sitemap,
 }

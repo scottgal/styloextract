@@ -530,59 +530,18 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
             return ai.CompareTo(bi);
         });
 
-        // Step 4b: Title detection.
-        // The page's single <h1> the rest of the page is "about" surfaces here as its
-        // own block. The Title is distinct from intra-content Heading (H2/H3/H4 inside
-        // body) so consumers like sitemap / outline builders can ask for just the
-        // page title. Selection prefers the H1 inside (or closest to) <main>/<article>;
-        // with multiple H1s elsewhere, the earliest-in-document wins. The H1 may live
-        // inside an accepted MainContent block — that's fine; the Title block is a
-        // separate logical projection of the H1's text, not a competing extraction.
-        IElement? titleElement = null;
-        double titleConfidence = 0.0;
-        var bodyForTitle = elements.Count > 0 ? elements[0].Owner?.Body : null;
-        if (bodyForTitle is not null)
-        {
-            var allH1 = bodyForTitle.QuerySelectorAll("h1")
-                .Where(h => !string.IsNullOrWhiteSpace(h.TextContent))
-                .ToList();
-            if (allH1.Count > 0)
-            {
-                // Prefer an H1 that sits inside <main>/<article>; fall back to earliest in document.
-                var inSemantic = allH1.FirstOrDefault(h =>
-                    HasAncestorTag(h, "main") || HasAncestorTag(h, "article"));
-                if (inSemantic is not null)
-                {
-                    titleElement = inSemantic;
-                    titleConfidence = allH1.Count == 1 ? 0.95 : 0.85;
-                }
-                else
-                {
-                    titleElement = allH1[0];
-                    titleConfidence = allH1.Count == 1 ? 0.95 : 0.7;
-                }
-            }
-        }
-
         // Step 5: Construct ExtractedBlock records from the accepted, ordered set.
         var result = new List<ExtractedBlock>(accepted.Count + 1);
         int blockIndex = 0;
-        if (titleElement is not null)
+        // Title detection: surface the page's single <h1> (the one the rest of the
+        // page is "about") as a distinct Title block. Prefer the H1 inside / closest
+        // to <main>/<article>; with multiple H1s elsewhere, the earliest-in-document
+        // wins. The H1 may live inside an accepted MainContent block — that's fine;
+        // the Title block is a separate logical projection of the H1's text.
+        var titleBlock = PageTitleDetector.Detect(elements);
+        if (titleBlock is not null)
         {
-            var titleText = titleElement.TextContent.Trim();
-            result.Add(new ExtractedBlock
-            {
-                Id = $"b{blockIndex:D4}",
-                Role = BlockRole.Title,
-                Confidence = titleConfidence,
-                Text = titleText,
-                Markdown = "# " + titleText,
-                XPath = XPathBuilder.ComputeXPath(titleElement),
-                CssSelector = null,
-                TextLength = titleText.Length,
-                LinkDensity = 0.0,
-                Links = ExtractLinks(titleElement)
-            });
+            result.Add(titleBlock with { Id = $"b{blockIndex:D4}" });
             blockIndex++;
         }
         foreach (var (element, role, confidence) in accepted)
