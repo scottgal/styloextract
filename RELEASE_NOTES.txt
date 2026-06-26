@@ -1,3 +1,21 @@
+StyloExtract 1.8.0-alpha.12 - 2026-06-26
+=========================================
+
+DI wire-up fix for deterministic-template YAML persistence
+-----------------------------------------------------------
+
+alpha.11 introduced DeterministicTemplateYamlSink + the
+AddStyloExtractOperatorTemplates registration, but AddStyloExtract's
+LayoutExtractor construction did not pass the sink through to the
+extractor — so even when the sink was registered in DI, LayoutExtractor's
+optional ctor parameter defaulted to null and no `<host>-deterministic.yaml`
+file was ever written.
+
+Fixed by threading `sp.GetService<DeterministicTemplateYamlSink>()` to the
+LayoutExtractor constructor in AddStyloExtract. No API change; consumers
+who already called AddStyloExtractOperatorTemplates start seeing
+deterministic YAML files immediately after upgrading.
+
 StyloExtract 1.8.0-alpha.11 - 2026-06-26
 =========================================
 

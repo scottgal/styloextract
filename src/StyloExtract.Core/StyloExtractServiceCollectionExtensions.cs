@@ -92,7 +92,13 @@ public static class StyloExtractServiceCollectionExtensions
             // LLM enrichment job; the background coordinator drains and writes
             // the induced template into the operator-template root.
             sp.GetService<StyloExtract.Abstractions.TemplateEnrichment.ITemplateEnrichmentQueue>(),
-            sp.GetService<StyloExtract.Core.Skeleton.DomSkeletonRenderer>()));
+            sp.GetService<StyloExtract.Core.Skeleton.DomSkeletonRenderer>(),
+            // Deterministic-template YAML sink (alpha.11+). Optional — when
+            // AddStyloExtractOperatorTemplates is called it registers the sink
+            // here so LayoutExtractor writes <host>-deterministic.yaml on each
+            // induced extractor. alpha.11 introduced the sink but forgot to
+            // pass it through here; fixed in alpha.12.
+            sp.GetService<StyloExtract.Core.OperatorTemplates.DeterministicTemplateYamlSink>()));
 
         return services;
     }
