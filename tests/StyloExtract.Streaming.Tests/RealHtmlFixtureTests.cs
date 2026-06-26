@@ -8,7 +8,7 @@ namespace StyloExtract.Streaming.Tests;
 public sealed class RealHtmlFixtureTests
 {
     [Fact]
-    public void Scans_real_article_fixture_to_Captured()
+    public async Task Scans_real_article_fixture_to_Captured()
     {
         var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "article.html");
         File.Exists(path).Should().BeTrue("article fixture should be copied to output");
@@ -36,7 +36,7 @@ public sealed class RealHtmlFixtureTests
         };
 
         var store = new InMemoryStreamingTemplateStore();
-        store.Register(template);
+        await store.RegisterAsync(template);
         var selector = new StreamingPathSelector(store);
 
         var result = selector.Scan(template.TemplateId, html);

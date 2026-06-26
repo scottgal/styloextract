@@ -10,13 +10,28 @@ public sealed class StreamingPathSelector
         _store = store;
     }
 
+    /// <summary>
+    /// Synchronous hot-path scan. Looks up the template via the store's hot cache only;
+    /// returns NoTemplate on miss (caller should WarmAsync first if needed).
+    /// </summary>
     public ScanVerdict Scan(Guid templateId, ReadOnlySpan<byte> html)
     {
-        var template = _store.Get(templateId);
+        var template = _store.TryGetHot(templateId);
         if (template is null) return ScanVerdict.NoTemplate;
+        return ScanCore(template, html);
+    }
+
+    /// <summary>
+    /// Bring a template into the hot cache by going through the durable tier if needed.
+    /// </summary>
+    public async ValueTask<bool> WarmAsync(Guid templateId, CancellationToken cancellationToken = default) =>
+        await _store.GetAsync(templateId, cancellationToken).ConfigureAwait(false) is not null;
+
+    private static ScanVerdict ScanCore(StreamingTemplate template, ReadOnlySpan<byte> html)
+    {
         if (template.WindowSize <= 0 || template.WindowSize > MaxWindowSize)
             throw new InvalidOperationException(
-                $"Template {templateId} has invalid WindowSize {template.WindowSize}; must be 1..{MaxWindowSize}.");
+                $"Template {template.TemplateId} has invalid WindowSize {template.WindowSize}; must be 1..{MaxWindowSize}.");
 
         Span<uint> signature = stackalloc uint[128];
         Span<EventSlot> windowBuffer = stackalloc EventSlot[MaxWindowSize];

@@ -20,11 +20,11 @@ public sealed class StreamingPathSelectorTests
     }
 
     [Fact]
-    public void Drives_full_stack_to_Captured_when_template_matches_html()
+    public async Task Drives_full_stack_to_Captured_when_template_matches_html()
     {
         var template = BuildBodyHeaderArticleFooterTemplate(out var templateId);
         var store = new InMemoryStreamingTemplateStore();
-        store.Register(template);
+        await store.RegisterAsync(template);
 
         var selector = new StreamingPathSelector(store);
 
@@ -36,7 +36,7 @@ public sealed class StreamingPathSelectorTests
     }
 
     [Fact]
-    public void Selector_uses_each_template_WindowSize_not_a_global()
+    public async Task Selector_uses_each_template_WindowSize_not_a_global()
     {
         // Two templates with different fence sizes — both must scan to Captured.
         var smallTemplate = new StreamingTemplate
@@ -53,8 +53,8 @@ public sealed class StreamingPathSelectorTests
         var bigTemplate = BuildBodyHeaderArticleFooterTemplate(out var bigId);
 
         var store = new InMemoryStreamingTemplateStore();
-        store.Register(smallTemplate);
-        store.Register(bigTemplate);
+        await store.RegisterAsync(smallTemplate);
+        await store.RegisterAsync(bigTemplate);
 
         var selector = new StreamingPathSelector(store);
 
