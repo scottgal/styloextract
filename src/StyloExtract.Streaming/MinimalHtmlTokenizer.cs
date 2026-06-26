@@ -4,6 +4,9 @@ namespace StyloExtract.Streaming;
 
 public ref struct MinimalHtmlTokenizer
 {
+    private static readonly ulong s_scriptHash = XxHash3.HashToUInt64("script"u8);
+    private static readonly ulong s_styleHash = XxHash3.HashToUInt64("style"u8);
+
     private readonly ReadOnlySpan<byte> _input;
     private int _position;
 
@@ -49,10 +52,58 @@ public ref struct MinimalHtmlTokenizer
         }
 
         var nameHash = XxHash3.HashToUInt64(inner.Slice(0, nameLen));
+        var classHash = isClose ? 0UL : ExtractClassHash(inner.Slice(nameLen));
         var tagStart = _position + ltIdx;
         var tagEnd = nameStart + gtIdx + 1;
-        evt = new TagEvent(nameHash, ClassHash: 0, ByteLength: tagEnd - tagStart, IsClose: isClose);
+        evt = new TagEvent(nameHash, classHash, ByteLength: tagEnd - tagStart, IsClose: isClose);
         _position = tagEnd;
+
+        if (!isClose)
+        {
+            if (nameHash == s_scriptHash) SkipBodyTo("</script>"u8);
+            else if (nameHash == s_styleHash) SkipBodyTo("</style>"u8);
+        }
         return true;
+    }
+
+    private void SkipBodyTo(ReadOnlySpan<byte> closeTag)
+    {
+        var remaining = _input.Slice(_position);
+        var idx = remaining.IndexOf(closeTag);
+        if (idx < 0) _position = _input.Length;
+        else _position += idx;
+    }
+
+    private static ulong ExtractClassHash(ReadOnlySpan<byte> attrs)
+    {
+        int i = 0;
+        while (i < attrs.Length)
+        {
+            var slice = attrs.Slice(i);
+            var idx = slice.IndexOf("class="u8);
+            if (idx < 0) return 0;
+            int abs = i + idx;
+            if (IsAttrBoundary(attrs, abs))
+            {
+                int valStart = abs + 6;
+                if (valStart >= attrs.Length) return 0;
+                var quote = attrs[valStart];
+                if (quote != (byte)'"' && quote != (byte)'\'') return 0;
+                valStart++;
+                var rest = attrs.Slice(valStart);
+                int valEnd = rest.IndexOf(quote);
+                if (valEnd < 0) return 0;
+                return XxHash3.HashToUInt64(rest.Slice(0, valEnd));
+            }
+            i = abs + 6;
+        }
+        return 0;
+    }
+
+    private static bool IsAttrBoundary(ReadOnlySpan<byte> attrs, int pos)
+    {
+        if (pos == 0) return true;
+        var prev = attrs[pos - 1];
+        return prev == (byte)' ' || prev == (byte)'\t' || prev == (byte)'\n' || prev == (byte)'\r';
     }
 }
