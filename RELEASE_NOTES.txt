@@ -1,3 +1,44 @@
+StyloExtract 1.8.0-alpha.13 - 2026-06-26
+=========================================
+
+Heuristic nav-classification tightening
+----------------------------------------
+
+HeuristicBlockClassifier was under-classifying real-world nav patterns
+on server-rendered sites — header <nav> strips, header <ul>-of-links,
+breadcrumb lists, role="navigation" attributes, footer nav — all landed
+as Boilerplate (or weren't extracted at all). Result: the alpha.11
+Sitemap profile and stylo-extract sitemap CLI verb produced a one-line
+tree even on sites with rich nav, because the classifier didn't surface
+PrimaryNavigation / SecondaryNavigation / Breadcrumb roles for them.
+
+Tightened patterns now produce definite role classifications:
+  1. <header> <nav> -> PrimaryNavigation (0.9)
+  2. Top-of-document <nav> -> PrimaryNavigation (0.85)
+  3. <footer> <nav> -> SecondaryNavigation (0.9)
+  4. <nav aria-label="breadcrumb"> / class~="breadcrumb" -> Breadcrumb (0.95)
+  5. <* role="navigation"> -> PrimaryNavigation (0.95)
+  6. Header <ul> of mostly-link <li>s -> PrimaryNavigation (0.85) at
+     the <ul> level, suppress descent (was emitting deep Boilerplate)
+  7. Footer <ul> of mostly-link <li>s -> SecondaryNavigation (0.85)
+
+Implementation: a new NavPreDetector runs after per-element classification
+and injects each detected nav container as a high-score (50000) candidate
+at the parent level, then demotes any descendant candidates so greedy
+selection picks the nav parent and stops descending into its noise.
+Containers nested inside <main>/<article> are skipped — IntraBlockCleaner
+already strips them as intra-block contaminants; hoisting would steal
+the article's selection win.
+
+Regression fixtures captured from mostlylucid.net + wikipedia.org under
+tests/StyloExtract.Heuristics.Tests/Fixtures so the next time a
+classifier change regresses real-world nav detection, the bench catches
+it before it ships.
+
+Downstream impact: the Sitemap ExtractionProfile and stylo-extract
+sitemap CLI verb now produce real nav trees on these sites - see the
+lucidview FULL dogfood smoke for evidence.
+
 StyloExtract 1.8.0-alpha.12 - 2026-06-26
 =========================================
 

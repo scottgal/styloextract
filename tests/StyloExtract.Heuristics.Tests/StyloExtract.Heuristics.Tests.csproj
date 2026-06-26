@@ -15,4 +15,9 @@
     <ProjectReference Include="..\..\src\StyloExtract.Heuristics\StyloExtract.Heuristics.csproj" />
     <ProjectReference Include="..\..\src\StyloExtract.Html\StyloExtract.Html.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="Fixtures\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

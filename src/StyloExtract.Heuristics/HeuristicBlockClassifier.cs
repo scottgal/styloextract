@@ -107,6 +107,72 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
             candidates.Add((element, role, confidence, score));
         }
 
+        // Step 1.nav: Pre-detect nav containers and inject them as high-score candidates.
+        // Real-world server-rendered sites commonly have nav shapes the per-element
+        // classifier misses or under-classifies:
+        //   - <header><nav> wrapped in extra <div>s. The classifier rule `tag == "nav"`
+        //     would fire, but deep descendants (link cards, mega-menu divs) outscore
+        //     the <nav> on text length and win greedy selection, leaving the <nav>
+        //     rejected as ancestor.
+        //   - <header><ul> of <li>-of-links with no <nav> tag at all. The <ul> is not
+        //     in the segmenter set, and the descendant <div> wrappers fall through to
+        //     Boilerplate, producing a deep noise output (the mostlylucid.net pattern).
+        //   - <nav aria-label='breadcrumb'> or <ol class='breadcrumb'> — pre-fix these
+        //     classified as PrimaryNavigation (any nav) or Boilerplate (the <ol>),
+        //     losing the Breadcrumb distinction the Sitemap profile needs.
+        //   - <* role='navigation'> on a generic <div> — classifier had no rule.
+        //
+        // The pre-pass walks header/footer/top-of-doc looking for these patterns,
+        // injects each as a high-score (50000) candidate at the container level
+        // (<nav>/<ul>/<ol>), and demotes any existing candidates that are descendants
+        // of an injected container so greedy selection can't pick the inner noise.
+        if (elements.Count > 0)
+        {
+            var body = elements[0].Owner?.Body;
+            if (body is not null)
+            {
+                var navGroups = NavPreDetector.Detect(body);
+                if (navGroups.Count > 0)
+                {
+                    var navContainers = new HashSet<IElement>(
+                        navGroups.Select(g => g.Container),
+                        ReferenceEqualityComparer.Instance);
+
+                    // Demote any existing candidate that is a descendant of a nav container.
+                    // The greedy selector would otherwise pick a high-scoring deep <div>
+                    // over the nav parent; demoting forces the nav parent to win.
+                    for (int i = 0; i < candidates.Count; i++)
+                    {
+                        var el = candidates[i].Element;
+                        if (navContainers.Contains(el)) continue; // the container itself
+                        if (HasAncestorIn(el, navContainers))
+                        {
+                            candidates[i] = (el, BlockRole.Boilerplate, 0.1, -9999.0);
+                        }
+                    }
+
+                    // Inject (or override) each nav container as a high-score candidate.
+                    foreach (var group in navGroups)
+                    {
+                        bool alreadyPresent = false;
+                        for (int i = 0; i < candidates.Count; i++)
+                        {
+                            if (ReferenceEquals(candidates[i].Element, group.Container))
+                            {
+                                candidates[i] = (group.Container, group.Role, group.Confidence, 50000.0);
+                                alreadyPresent = true;
+                                break;
+                            }
+                        }
+                        if (!alreadyPresent)
+                        {
+                            candidates.Add((group.Container, group.Role, group.Confidence, 50000.0));
+                        }
+                    }
+                }
+            }
+        }
+
         // Step 1a: Suppress wrapper <div>/<section> candidates that ANCESTOR a semantic
         // <main>/<article> present in the candidate set. The wrapper's textLength includes
         // the chrome around the semantic element (top nav, footer, mega-menu), so its
@@ -988,5 +1054,22 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
             current = current.ParentElement;
         }
         return null;
+    }
+
+    /// <summary>
+    /// Returns true if any ancestor of <paramref name="element"/> is contained in
+    /// <paramref name="set"/>. O(depth) — used by the nav pre-detector to demote
+    /// descendant candidates whose nav container was injected as a high-score block.
+    /// </summary>
+    private static bool HasAncestorIn(IElement element, HashSet<IElement> set)
+    {
+        if (set.Count == 0) return false;
+        var current = element.ParentElement;
+        while (current is not null)
+        {
+            if (set.Contains(current)) return true;
+            current = current.ParentElement;
+        }
+        return false;
     }
 }
