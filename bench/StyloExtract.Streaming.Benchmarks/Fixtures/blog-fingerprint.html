@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta content="IE=edge,chrome=1" http-equiv="X-UA-Compatible" />
+    <meta
+        content="width=device-width, initial-scale=1, shrink-to-fit=no"
+        name="viewport"
+    />
+    <title>StyloBot Release Series: Behaviour, Not Identity (English)</title>
+
+    <!-- RSS Feed Autodiscovery -->
+    <link rel="alternate" type="application/rss+xml"
+          title="mostlylucid.net RSS Feed"
+          href="https://mostlylucid.net/rss" />
+    <link rel="alternate" type="application/atom+xml"
+          title="mostlylucid.net Atom Feed"
+          href="https://mostlylucid.net/atom" />
+
+    <link rel="prefetch" href="https://accounts.google.com/gsi/client"/>
+
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://mostlylucid.net/blog/stylobot-fingerprint" />
+
+    <!-- Facebook Meta Tags -->
+    <meta property="og:url" content="https://mostlylucid.net/blog/stylobot-fingerprint" id="metaOgUrl">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="StyloBot Release Series: Behaviour, Not Identity (English)">
+    <meta property="og:description" content="Identity-based bot detection (IPs, user-agents, headers) collapses the moment automation starts rotating identities. StyloBot models clients as behavioural...">
+    <meta property="og:image" content="https://mostlylucid.net/img/social2.jpg">
+    <meta property="og:locale" content="en_GB" />
+    <meta property="og:site_name" content="mostlylucid" />
+
+    <!-- Twitter Meta Tags -->
+    <meta name="twitter:card" content="summary">
+    <meta property="twitter:domain" content="mostlylucid.net">
+    <meta property="twitter:url" content="https://mostlylucid.net/blog/stylobot-fingerprint" id="metaTwitterUrl">
+    <meta name="twitter:title" content="StyloBot Release Series: Behaviour, Not Identity (English)">
+    <meta name="twitter:description" content="Identity-based bot detection (IPs, user-agents, headers) collapses the moment automation starts rotating identities. StyloBot models clients as behavioural...">
+    <meta name="twitter:image" content="https://mostlylucid.net/img/social2.jpg">
+
+    <!-- Meta Description -->
+    <meta name="description" content="Identity-based bot detection (IPs, user-agents, headers) collapses the moment automation starts rotating identities. StyloBot models clients as behavioural..." />
+
+    <!-- Site-wide Structured Data -->
+    <script type="application/ld&#x2B;json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "mostlylucid",
+        "url": "https://www.mostlylucid.net",
+        "description": "Technical blog covering ASP.NET Core, C#, Entity Framework, HTMX, Docker, and modern web development.",
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": "https://www.mostlylucid.net/search?query={search_term_string}"
+            },
+            "query-input": "required name=search_term_string"
+        },
+        "publisher": {
+            "@type": "Person",
+            "name": "Scott Galloway",
+            "url": "https://www.mostlylucid.net/blog/aboutme",
+            "sameAs": [
+                "https://github.com/scottgal",
+                "https://twitter.com/scottgal",
+                "https://www.linkedin.com/in/scottgalloway/"
+            ]
+        }
+    }
+    </script>
+
+    <!-- Article metadata for blog posts -->
+        <meta property="article:published_time" content="2026-06-01T10:30:00Z" />
+        <meta property="article:author" content="Scott Galloway" />
+    <link rel="icon" type="image/png" href="/img/smalllogo.svg" />
+
+    <script src="https://accounts.google.com/gsi/client"  data-cfasync="false" async defer></script>
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css"
+    />
+    <link rel="prefetch" href="/css/dist/main.css?v=h8ZrcL9u5gI5dLW0irFjSt0k6JDuVdD_MOBoiqY934c">
+    <link href="/css/dist/main.css?v=h8ZrcL9u5gI5dLW0irFjSt0k6JDuVdD_MOBoiqY934c" media="screen, print" rel="stylesheet" />
+    <!-- Highlight.js themes now bundled in main.css - no separate requests needed -->
+    <link rel="manifest" href="/manifest.json" />
+</head>
+<body x-data="globalSetup()" x-init="themeInit()" :class="isMobileMenuOpen ? 'max-h-screen overflow-hidden relative' : ''" class="bg-custom-light-bg dark:bg-custom-dark-bg ">
+<div id="toast" class="toast toast-bottom fixed z-50 hidden ">
+    <div id="toast-message" class="alert ">
+        <div>
+            <span id="toast-text" class="font-bold dark:text-white text-black">Notification message</span>
+        </div>
+    </div>
+    <p class="hidden right-1 bx-copy  cursor-pointer alert-success alert-warning alert-error alert-info overflow-y-hidden"></p>
+</div>
+<header class="sticky top-0 z-40 bg-white  dark:bg-custom-dark-bg shadow-md  container mx-auto flex flex-wrap items-center justify-between px-4 mb-3 py-1 w-full rounded border-b border-x border-l-neutral-600 border-r-neutral-600 border-b-neutral-600 print:!hidden" id="header">
+
+    <ul class="flex items-center w-full print:hidden gap-1 sm:gap-2">
+        <!-- Logo + Home Icon - Always visible (last to hide) -->
+        <li>
+            <a href="/" hx-swap="show:window:top" hx-target="#contentcontainer" hx-push-url="true" hx-headers='{"homerequest": "true"}' class="flex items-center" hx-get="/">
+                <span class="bx bx-home-alt-2 text-xl lg:text-2xl font-semibold mr-1 sm:mr-2 transition-colors group-hover:text-green dark:text-white dark:group-hover:text-secondary print:hidden"></span>
+
+                <div class="svg-container">
+                    <!-- Large screen logo (shown on large screens) -->
+                    <img src="/img/logo.svg?v=kUkb5rVbYNGnG7rw9AdiyMbnZiU7-WEYHK40rbEZwtA" width="180px" height="30px" alt="mostlylucid limited" class="hidden lg:block img-filter-dark" :class="{ 'img-filter-dark': !isDarkMode }" />
+
+                    <!-- Small screen logo (shown on small/medium screens) -->
+                    <img src="/img/smalllogo.svg?v=DwnIOiZqr44gIunxm1XFuIQgKTa_KzF_8n3xsNUZmkQ" width="30px" height="20px" alt="mostlylucid limited" class="block lg:hidden" />
+                </div>
+            </a>
+        </li>
+
+        <!-- Search Typeahead - Expands to fill available space -->
+        <li class="group relative mb-1 hidden lg:flex flex-1 mx-4 max-w-xl">
+            <div x-data="typeahead()" class="relative w-full" id="searchelement" x-on:click.outside="results = []">
+    <form x-on:submit.prevent="goToSearch" class="flex items-center gap-1 w-full">
+        <label class="input input-sm bg-neutral-500 bg-opacity-10 input-bordered flex items-center gap-2 flex-1">
+            <input
+                type="text"
+                x-model="query"
+                x-on:input.debounce.200ms="search"
+                x-on:keydown.down.prevent="moveDown"
+                x-on:keydown.up.prevent="moveUp"
+                x-on:keydown.tab.prevent="completeWithHighlighted"
+                x-on:keydown.enter.prevent="completeAndSearch"
+                placeholder="Search..."
+                class="border-0 grow input-sm text-black dark:text-white bg-transparent w-full"/>
+        </label>
+        <button type="submit" class="btn btn-sm btn-primary" title="Search">
+            <i class="bx bx-search text-lg"></i>
+        </button>
+    </form>
+    <!-- Dropdown showing matching articles -->
+    <ul x-show="results.length > 0"
+        id="searchresults"
+        class="absolute z-100 my-2 left-0 right-0 w-full min-w-[280px] bg-white dark:bg-custom-dark-bg border border-1 text-black dark:text-white border-neutral-600 rounded-lg shadow-lg overflow-hidden">
+        <template x-for="(article, index) in results" :key="article.slug">
+            <li x-on:click="window.location.href = '/blog/' + article.slug"
+                x-on:mouseenter="highlightedIndex = index"
+                :class="{
+                    'dark:bg-blue-dark bg-blue-light': index === highlightedIndex,
+                    'dark:hover:bg-blue-dark hover:bg-blue-light': true
+                }"
+                class="cursor-pointer text-sm p-2 m-2"><span x-text="article.title" class="block"></span></li>
+        </template>
+    </ul>
+</div>
+        </li>
+
+        <li class="ml-auto lg:hidden"></li>
+
+        <!-- Login/User Avatar - Hide on medium screens (lg+) -->
+        <li class="group relative mb-1 hidden lg:block">
+            <div class="flex items-center">
+                    <div class="w-[32px] h-[32px] rounded-full overflow-hidden flex items-center justify-center [&_iframe]:!rounded-full" title="Sign in with Google">
+                        <div id="google_button" class="scale-[1.3] -m-1"></div>
+                    </div>
+            </div>
+        </li>
+
+        <!-- Social Icons - Hide on medium screens (lg+) -->
+        <li class="group relative my-1 px-2 hidden lg:block border-neutral-400 dark:border-neutral-600 border rounded-lg">
+            <div class="mr-auto flex items-center pt-6 sm:mr-0 sm:pt-0 space-x-3 text-2xl ">
+
+    <a href="https://github.com/scottgal/" target="_blank">
+        <i class="text-primary dark:text-white hover:text-secondary dark:hover:text-secondary transition-colors bx bxl-github"></i>
+    </a>
+
+    <a href="https://hachyderm.io/@scottgal@hachyderm.io" target="_blank">
+        <i class=" text-primary dark:text-white hover:text-secondary dark:hover:text-secondary transition-colors bx bxl-mastodon"></i>
+    </a>
+
+    <a href="https://www.linkedin.com/in/scott-galloway-91608691/" target="_blank">
+        <i class=" text-primary dark:text-white hover:text-secondary dark:hover:text-secondary transition-colors bx bxl-linkedin"></i>
+    </a>
+
+</div>
+        </li>
+
+        <!-- RSS - Icon only -->
+        <li class="group relative mb-1 hidden md:block">
+            <a href="/rss" target="_blank" class="flex items-center text-lg hover:text-secondary dark:hover:text-secondary transition-colors" title="RSS Feed">
+                <i class="text-xl bx bx-rss"></i>
+            </a>
+        </li>
+
+        <!-- NuGet - Icon always visible, text on lg+ -->
+        <li class="group relative mb-1">
+            <a href="https://www.nuget.org/profiles/mostlylucid" class="broken-link" title="This link may be broken" target="_blank" rel="noopener noreferrer" class="flex items-center px-1 lg:px-2 font-body text-base font-medium text-primary transition-colors group-hover:text-green dark:text-white dark:group-hover:text-secondary" data-umami-event="NuGet Click">
+                <i class="bx bxl-nuget text-xl"></i>
+                <span class="ml-0.5 hidden lg:inline">NuGet</span>
+            </a>
+        </li>
+
+        <!-- Software - Icon always visible, text on lg+ -->
+        <li class="group relative mb-1">
+            <a href="/software" hx-boost="true" hx-target="#contentcontainer" hx-swap="show:window:top" class="flex items-center px-1 lg:px-2 font-body text-base font-medium text-primary transition-colors group-hover:text-green dark:text-white dark:group-hover:text-secondary" data-umami-event="Software Click">
+                <i class="bx bx-code-block text-xl"></i>
+                <span class="ml-0.5 hidden lg:inline">Software</span>
+            </a>
+        </li>
+
+        <!-- Contact - Icon always visible, text on lg+ -->
+        <li class="group relative mb-1">
+            <a hx-boost="true" hx-swap="show:window:top" hx-target="#contentcontainer" class="flex items-center px-1 lg:px-2 font-body text-base font-medium text-primary transition-colors group-hover:text-green dark:text-white dark:group-hover:text-secondary" data-umami-event="Contact Click" href="/contact">
+                <i class="bx bx-mail-send text-xl"></i>
+                <span class="ml-0.5 hidden lg:inline">Contact</span>
+            </a>
+        </li>
+
+        <!-- Theme Toggle - Always visible -->
+        <li class="group relative mb-1">
+            <div class="flex items-center">
+                <i class="bx cursor-pointer text-xl lg:text-3xl text-primary dark:text-white transition-colors" x-on:click="themeSwitch()" :class="isDarkMode ? 'bxs-sun' : 'bxs-moon'"></i>
+            </div>
+        </li>
+    </ul>
+
+</header>
+<div id="announcement-container" hx-get="/announcement/banner" hx-trigger="load" hx-swap="innerHTML"></div>
+<span class="hidden btn btn-sm btn-active btn-disabled select select-primary select-sm
+        text-sm text-gray-600 text-neutral-500 border rounded flex items-center
+        justify-center min-w-[80px] pr-4 pt-0 mt-0 mr-2 btn-primary btn-outline
+bg-white    dark:border-gray-600 dark:bg-gray-800 bg-gray-800
+        dark:bg-blue-500 dark:border-blue-400 dark:text-white dark:hover:bg-blue-600 
+        dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700
+        dark:btn-accent dark:btn-outline dark:btn-disabled dark:btn-primary dark:btn-active gap-2 whitespace-nowrap cursor-pointer">
+</span>
+<div class="container mx-auto" id="contentcontainer" hx-history-elt>
+    
+
+<!-- JSON-LD Structured Data for Blog Post -->
+<script type="application/ld&#x2B;json">
+{
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    "headline": "StyloBot Release Series: Behaviour, Not Identity",
+    "description": "Identity-based bot detection (IPs, user-agents, headers) collapses the moment automation starts rotating identities. StyloBot models clients as behavioural...",
+    "datePublished": "2026-06-01T10:30:00Z",
+        "dateModified": "2026-06-02T13:42:08Z",
+    "author": {
+        "@type": "Person",
+        "name": "Scott Galloway",
+        "url": "https://mostlylucid.net/blog/aboutme"
+    },
+    "publisher": {
+        "@type": "Organization",
+        "name": "mostlylucid",
+        "logo": {
+            "@type": "ImageObject",
+            "url": "https://mostlylucid.net/img/logo.svg"
+        }
+    },
+    "mainEntityOfPage": {
+        "@type": "WebPage",
+        "@id": "https://mostlylucid.net/blog/stylobot-fingerprint"
+    },
+    "wordCount": 4609,
+    "inLanguage": "en",
+    "keywords": "Architecture, ASP.NET, Bot Detection, Caddy, Security, TypeScript",
+    "image": "https://mostlylucid.net/img/social2.jpg"
+}
+</script>
+
+<title>StyloBot Release Series: Behaviour, Not Identity (English)</title>
+<div class="pt-2 lg:pt-2" id="blogpost" hx-boost="true"  hx-target="#contentcontainer" hx-swap="show:window:top">
+    <div class="border-b border-grey-lighter pb-3 sm:pb-3">
+
+        <h2 class="pb-2 block font-body text-3xl font-semibold leading-tight text-primary dark:text-white">
+            StyloBot Release Series: Behaviour, Not Identity
+        </h2>
+
+            <div class="pb-2">
+                
+    <div class="hidden sm:inline-flex items-center gap-0 px-1.5 py-0.5 bg-grey-lighter/50 dark:bg-gray-800 rounded-full border border-grey-light/30 dark:border-grey-dark/30">
+            <div class="tooltip" data-tip="English">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('en')" class="inline-block rounded opacity-100 ring-1 ring-blue-500 dark:ring-blue-400 scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/en/stylobot-fingerprint">
+                    <img src="/img/flags/en.svg?v=yL4ecgh5ikrmku4ek3Bl1Ji7KedBlD9hcrKRGLjtgGY" width="18" height="12" alt="English" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="&#x939;&#x93F;&#x928;&#x94D;&#x926;&#x940; (Hindi)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('hi')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/hi/stylobot-fingerprint">
+                    <img src="/img/flags/hi.svg?v=rESQMRf7z5Ixlo1-x4jPPHUz8iSxJJwAzvTQxk6zfww" width="18" height="12" alt="&#x939;&#x93F;&#x928;&#x94D;&#x926;&#x940; (Hindi)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Suomi (Finnish)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('fi')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/fi/stylobot-fingerprint">
+                    <img src="/img/flags/fi.svg?v=ZEotabGpf05xtKg0GRajIe-bJmZ3TT4Sp8DZX1bn8rM" width="18" height="12" alt="Suomi (Finnish)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Fran&#xE7;ais (French)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('fr')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/fr/stylobot-fingerprint">
+                    <img src="/img/flags/fr.svg?v=JB2sfanSeC9Ywv_cBQkKxIa0nN4UnIeWddGJ3uZq7fY" width="18" height="12" alt="Fran&#xE7;ais (French)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Nederlands (Dutch)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('nl')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/nl/stylobot-fingerprint">
+                    <img src="/img/flags/nl.svg?v=SUh0oFxAfPsjFfaqj8BW5i-31bbYzeB2G7u0rUd8n7s" width="18" height="12" alt="Nederlands (Dutch)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Svenska (Swedish)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('sv')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/sv/stylobot-fingerprint">
+                    <img src="/img/flags/sv.svg?v=NQ-p1QI94u0v1_0PnQ3gTiVVHWFUqrhZlJu3yBVD8Qs" width="18" height="12" alt="Svenska (Swedish)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Deutsch (German)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('de')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/de/stylobot-fingerprint">
+                    <img src="/img/flags/de.svg?v=66IzwWTwOMXGBliJ-EyE_RkzJd0TtvxzT-MO9PNKgIE" width="18" height="12" alt="Deutsch (German)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Espa&#xF1;ol (Spanish)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('es')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/es/stylobot-fingerprint">
+                    <img src="/img/flags/es.svg?v=kF8zEzWPMRMooB8S-k52nnLcCdhxksCPDtL8zfa7Edw" width="18" height="12" alt="Espa&#xF1;ol (Spanish)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="&#x423;&#x43A;&#x440;&#x430;&#x457;&#x43D;&#x441;&#x44C;&#x43A;&#x430; (Ukrainian)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('uk')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/uk/stylobot-fingerprint">
+                    <img src="/img/flags/uk.svg?v=LYacI-v--yrgpjMpfBHe4G_LZmzns8p166Cbeho6A6w" width="18" height="12" alt="&#x423;&#x43A;&#x440;&#x430;&#x457;&#x43D;&#x441;&#x44C;&#x43A;&#x430; (Ukrainian)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Italiano (Italian)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('it')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/it/stylobot-fingerprint">
+                    <img src="/img/flags/it.svg?v=yTnlBgXFoI3xqvGYGPdNKRmp08O3qnzZBSC4v8nF3dw" width="18" height="12" alt="Italiano (Italian)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="&#x4E2D;&#x6587; (Chinese Simplified)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('zh')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/zh/stylobot-fingerprint">
+                    <img src="/img/flags/zh.svg?v=cfYvsW3Zuj8LAuuxkPShFJmQdn2CvQp8mPJRLhkPnIg" width="18" height="12" alt="&#x4E2D;&#x6587; (Chinese Simplified)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="&#x627;&#x644;&#x639;&#x631;&#x628;&#x64A;&#x629; (Arabic)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('ar')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/ar/stylobot-fingerprint">
+                    <img src="/img/flags/ar.svg?v=GpMiNAdKXAW_8aIuQ2FfYADu45Uoai3EI99TU9aZMI8" width="18" height="12" alt="&#x627;&#x644;&#x639;&#x631;&#x628;&#x64A;&#x629; (Arabic)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="&#x3B5;&#x3BB;&#x3BB;&#x3B7;&#x3BD;&#x3B9;&#x3BA;&#x3AC; (Greek)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('el')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/el/stylobot-fingerprint">
+                    <img src="/img/flags/el.svg?v=1luCYU8M0WenZ6v9oavB75nofvSOV1Xz0z5FJuPK02U" width="18" height="12" alt="&#x3B5;&#x3BB;&#x3BB;&#x3B7;&#x3BD;&#x3B9;&#x3BA;&#x3AC; (Greek)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Portugu&#xEA;s (Portuguese)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('pt')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/pt/stylobot-fingerprint">
+                    <img src="/img/flags/pt.svg?v=5aZEMsqQJuMmPU0ZuVtsNOyqnfSOfkGTMDrOzCnyhzs" width="18" height="12" alt="Portugu&#xEA;s (Portuguese)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Polski (Polish)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('pl')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/pl/stylobot-fingerprint">
+                    <img src="/img/flags/pl.svg?v=xqUTGr_W7t4sYytbBC5lgmZnb9ByKVrNTqpt69U3Va8" width="18" height="12" alt="Polski (Polish)" class="rounded shadow-sm" />
+                </a>
+            </div>
+    </div>
+
+<script>
+function saveLanguagePreference(lang) {
+    try {
+        localStorage.setItem('preferredLanguage', lang);
+        const expires = new Date();
+        expires.setFullYear(expires.getFullYear() + 1);
+        document.cookie = `preferredLanguage=${lang}; path=/; expires=${expires.toUTCString()}; SameSite=Lax`;
+    } catch(e) {
+        console.warn('Could not save language preference:', e);
+    }
+}
+</script>
+
+            </div>
+
+        <div class="flex flex-wrap border-b border-grey-lighter items-center gap-x-2 gap-y-1 pb-2 pt-1 sm:pt-1">
+            <p class="pr-2 font-body text-sm font-light text-primary dark:text-white">
+                Monday, 01 June 2026
+            </p>
+            <span class="dark:text-white font-body text-grey text-sm">//</span>
+            <p class="pl-2 font-body text-sm font-light text-primary dark:text-white">
+                23 minute read
+            </p>
+            <div class="pl-4 flex flex-wrap gap-2 items-center print:hidden">
+                <a href="#commentsection" class="btn btn-outline btn-xs inline-flex items-center">
+                    <i class="bx bx-mail-send"></i> Comments
+                </a>
+
+                <a href="/api/raw/stylobot-fingerprint?language=en"
+                   target="_blank" rel="noopener"
+                   class="btn btn-outline btn-xs inline-flex items-center"
+                   title="View raw Markdown">
+                    <i class="bx bx-code-alt"></i> Raw
+                </a>
+
+                <a class="btn btn-outline btn-xs btn-primary inline-flex items-center" href="/editor/edit?slug=stylobot-fingerprint&amp;language=en">
+                    <i class="bx bx-edit"></i> Edit
+                </a>
+            </div>
+        </div>
+            <nav class="flex items-center justify-between text-sm text-primary dark:text-white my-2 print:hidden" aria-label="Post navigation">
+                <div>
+                            <a href="/blog/typescript-sdk" hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" class="inline-flex items-center hover:text-secondary" hx-get="/blog/typescript-sdk">
+                                <i class='bx bx-left-arrow-alt text-xl mr-1'></i>
+                                <span>Newer: StyloBot Release Series: Behaviour-Aware TypeScript UI</span>
+                            </a>
+                </div>
+                <div>
+                            <a href="/blog/stylobot-release-nondeterministic-testing" hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" class="inline-flex items-center hover:text-secondary" hx-get="/blog/stylobot-release-nondeterministic-testing">
+                                <span>Older: StyloBot Release Series: Testing the Thing That Won&#x27;t Sit Still</span>
+                                <i class='bx bx-right-arrow-alt text-xl ml-1'></i>
+                            </a>
+                </div>
+            </nav>
+        <div class="pb-2 pt-2 print:hidden flex flex-wrap gap-1.5">
+                <a hx-get="/blog/category/Architecture" hx-push-url="true" hx-target="#contentcontainer" onclick="event.stopPropagation();" class="inline-block rounded-full bg-blue-light dark:bg-gray-800 bg-opacity-20 px-2 py-0.5 font-body text-xs text-black dark:text-white outline-1 outline outline-blue-light dark:outline-slate-700 cursor-pointer hover:bg-opacity-30 transition-all">
+    Architecture
+</a>
+                <a hx-get="/blog/category/ASP.NET" hx-push-url="true" hx-target="#contentcontainer" onclick="event.stopPropagation();" class="inline-block rounded-full bg-blue-light dark:bg-gray-800 bg-opacity-20 px-2 py-0.5 font-body text-xs text-black dark:text-white outline-1 outline outline-blue-light dark:outline-slate-700 cursor-pointer hover:bg-opacity-30 transition-all">
+    ASP.NET
+</a>
+                <a hx-get="/blog/category/Bot%20Detection" hx-push-url="true" hx-target="#contentcontainer" onclick="event.stopPropagation();" class="inline-block rounded-full bg-blue-light dark:bg-gray-800 bg-opacity-20 px-2 py-0.5 font-body text-xs text-black dark:text-white outline-1 outline outline-blue-light dark:outline-slate-700 cursor-pointer hover:bg-opacity-30 transition-all">
+    Bot Detection
+</a>
+                <a hx-get="/blog/category/Caddy" hx-push-url="true" hx-target="#contentcontainer" onclick="event.stopPropagation();" class="inline-block rounded-full bg-blue-light dark:bg-gray-800 bg-opacity-20 px-2 py-0.5 font-body text-xs text-black dark:text-white outline-1 outline outline-blue-light dark:outline-slate-700 cursor-pointer hover:bg-opacity-30 transition-all">
+    Caddy
+</a>
+                <a hx-get="/blog/category/Security" hx-push-url="true" hx-target="#contentcontainer" onclick="event.stopPropagation();" class="inline-block rounded-full bg-blue-light dark:bg-gray-800 bg-opacity-20 px-2 py-0.5 font-body text-xs text-black dark:text-white outline-1 outline outline-blue-light dark:outline-slate-700 cursor-pointer hover:bg-opacity-30 transition-all">
+    Security
+</a>
+                <a hx-get="/blog/category/TypeScript" hx-push-url="true" hx-target="#contentcontainer" onclick="event.stopPropagation();" class="inline-block rounded-full bg-blue-light dark:bg-gray-800 bg-opacity-20 px-2 py-0.5 font-body text-xs text-black dark:text-white outline-1 outline outline-blue-light dark:outline-slate-700 cursor-pointer hover:bg-opacity-30 transition-all">
+    TypeScript
+</a>
+        </div>
+
+    </div>
+    <div class="prose  dark:text-white text-black  max-w-none  py-2 mt-4 sm:py-2" >
+        <p><em>Identity-based bot detection (IPs, user-agents, headers) collapses the moment automation starts rotating identities. StyloBot models clients as behavioural shapes in a 130+ dimensional vector space. Here's why that's the right level of abstraction for level-4 and level-5 bots, and how the engine actually works.</em></p>
+<p><a href="https://www.stylobot.net"><img src="/articleimages/stylobot-logo.svg" alt="StyloBot" width="120" /></a></p>
+<blockquote>
+<p><strong>StyloBot Release Series</strong></p>
+<ol>
+<li><strong>Behaviour, Not Identity</strong>: why StyloBot models clients behaviourally</li>
+<li><a href="/blog/behaviour-aware-ux"><strong>Behaviour-Aware ASP.NET UI</strong></a>: the server-rendered surface over that detection result</li>
+<li><a href="/blog/stylobot-release-reliability"><strong>Finding and Fixing Unbounded Growth in Long-Running .NET Services</strong></a>: the reliability discipline that keeps the engine boring in production</li>
+<li><a href="/blog/typescript-sdk"><strong>Behaviour-Aware TypeScript UI</strong></a>: Express, Fastify, and browser components</li>
+<li><a href="/blog/sidecar-architecture"><strong>The Sidecar Architecture</strong></a>: how the detection engine connects to non-.NET stacks</li>
+<li><a href="/blog/stylobot-release-learning"><strong>Learning to Get Faster</strong></a>: the adaptive learning system, four-tier memory, and the verdict cache</li>
+<li><a href="/blog/stylobot-release-nondeterministic-testing"><strong>Testing the Thing That Won't Sit Still</strong></a>: the verification discipline: one BDF file drives regression, load, and calibration</li>
+</ol>
+</blockquote>
+<h1 id="introduction">Introduction</h1>
+<blockquote>
+<p><em>&quot;Oh what a tangled web we weave, when first we practice to deceive.&quot;</em></p>
+<p>Walter Scott</p>
+</blockquote>
+<p>StyloBot detects the maintenance cost of deception.</p>
+<p>Innocent traffic doesn't have to invent stories, lay trails, or produce exculpatory evidence. The structure that grows AROUND a deception is what you can detect; not the deception itself. That is the heart of forensics, including behavioural forensics like StyloBot.</p>
+<p>Years ago I worked in forensic psychology, classifying behavioural patterns to identify underlying dementia pathologies: specific memory loss patterns, characteristic comorbidities, the compensations people unconsciously build around the gap. Classification let you tailor a care plan to what was actually happening, not to the cover story. StyloBot applies the same technique to a new foe: AI-driven automation stealing your data, distorting your pricing, exhausting your inventory.</p>
+<p>Most bot systems are still built around identity claims: IP reputation, user-agent strings, header correctness, maybe a fingerprint if you are lucky.</p>
+<p>That works right up until the bots get good.</p>
+<p>The moment automation starts rotating identities, mimicking browsers, spreading across residential IPs, and adapting in-session, &quot;who does this request claim to be?&quot; stops being the right question. The more useful question is: &quot;what does this client behave like over time, across dozens of tells, compared to clients we already know?&quot;</p>
+<p>That is the idea behind StyloBot. It models requests, sessions, and repeat clients as behavioural shapes rather than static identities. It looks ACROSS sessions at dozens of behavioural tells and works out what type of client could plausibly produce that behaviour. Not dumb UA / IP blocking. This post is the first entry in the release series and explains that model: why it exists, why it matters, and why behaviour is a better foundation than identity when the bots get smart.</p>
+<p>This isn't theoretical. The engine is running on this page right now. Your radar is on the left; the Top Bots panel is the shapes already recorded against stylobot.net:</p>
+<p><img src="/articleimages/stylobot-live-detection.png?width=1100&amp;format=webp&amp;quality=70" alt="Live detection on this page (Human, 4% bot probability, Allow) next to the Top Bots panel listing MJ12bot, SERankingBacklinksBot, Aranet-SearchBot, bingbot and others with their bot %, confidence, threat, and recent hit count" /></p>
+<h1 id="quick-start">Quick Start</h1>
+<p>StyloBot is ENTIRELY FREE TO RUN. In future I'll sell realtime management and reporting (to try and you know...eat) but the engine in the exe IS StyloBot. Commercial just adds distributed topology, <em>realtime</em> config (no reload), and more DB options.</p>
+<p>All the source is here <a href="https://github.com/scottgal/stylobot">https://github.com/scottgal/stylobot</a></p>
+<p>To install it:
+<strong>macOS (Homebrew)</strong></p>
+<pre><code class="language-bash">brew install scottgal/stylobot/stylobot
+stylobot 5080 http://localhost:3000
+</code></pre>
+<p><strong>Linux (apt - Debian/Ubuntu)</strong></p>
+<pre><code class="language-bash">curl -1sLf 'https://dl.cloudsmith.io/public/mostlylucid/stylobot/setup.deb.sh' | sudo bash
+sudo apt update &amp;&amp; sudo apt install stylobot
+stylobot 5080 http://localhost:3000
+</code></pre>
+<p><strong>Linux (manual / ARM64)</strong></p>
+<pre><code class="language-bash"># Download from GitHub Releases: stylobot-linux-x64.tar.gz or stylobot-linux-arm64.tar.gz
+tar xzf stylobot-linux-x64.tar.gz &amp;&amp; chmod +x stylobot &amp;&amp; sudo mv stylobot /usr/local/bin/
+stylobot 5080 http://localhost:3000
+</code></pre>
+<p><strong>Docker</strong></p>
+<pre><code class="language-bash">docker run --rm -p 8080:8080 -e DEFAULT_UPSTREAM=http://host.docker.internal:3000 \
+  scottgal/stylobot-gateway:latest
+</code></pre>
+<p><strong>NuGet (embed as ASP.NET Core middleware)</strong></p>
+<pre><code class="language-bash">dotnet add package mostlylucid.botdetection
+dotnet add package mostlylucid.botdetection.ui
+</code></pre>
+<pre><code class="language-csharp">builder.Services.AddStyloBot(dashboard =&gt; {
+    dashboard.AllowUnauthenticatedAccess = true; // dev only
+});
+
+app.UseRouting();
+app.UseStyloBot();   // broadcast, detection, dashboard: correct ordering guaranteed
+app.MapControllers();
+</code></pre>
+<p>Dashboard at <code>/_stylobot</code>. Detection at <code>~150µs</code> per request from first request.</p>
+<p><img src="/articleimages/stylobot-dashboard-landing.png?width=1100&amp;format=webp&amp;quality=70" alt="StyloBot dashboard landing on a live install: traffic over time, live activity by signature, and the per-visitor verdict for the human looking at the page" /></p>
+<hr />
+<p>Then just run it <code>stylobot 5080 http://localhost:3000</code> and voila your upstream site is <em>listening</em> (use --mode block to actually block too).</p>
+<p>This post is the first entry in the current StyloBot release series. It explains the behavioural model. The next post, <a href="/blog/behaviour-aware-ux">Behaviour-Aware ASP.NET UI</a>, shows how that model becomes application logic inside Razor views and controllers.</p>
+<nav class="ml_toc" aria-label="Table of Contents">
+<ul>
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#quick-start">Quick Start</a></li>
+<li><a href="#the-threat-a-ladder-not-a-population">The Threat: a ladder, not a population</a><ul>
+</ul>
+</li>
+<li><a href="#the-defenders-the-current-market">The Defenders: the current market</a><ul>
+</ul>
+</li>
+<li><a href="#the-big-problem">THE BIG PROBLEM</a></li>
+<li><a href="#potential-solution-behavioural-inference">Potential Solution: behavioural inference</a></li>
+<li><a href="#stylobot">StyloBot</a><ul>
+<li><a href="#how-it-differs-from-the-market">How it differs from the market</a></li>
+<li><a href="#the-49-detectors-arent-49-decisions">The 49 detectors aren&#39;t 49 decisions</a></li>
+</ul>
+</li>
+<li><a href="#what-if-client-behaviour-was-a-vector">What if client behaviour was a vector?</a><ul>
+<li><a href="#bots-are-shapes">Bots are shapes</a></li>
+<li><a href="#bots-cluster-leiden-over-the-vectors">Bots cluster (Leiden over the vectors)</a></li>
+<li><a href="#odd-implications">Odd Implications</a></li>
+</ul>
+</li>
+<li><a href="#conclusion">Conclusion</a></li>
+</ul>
+</nav>
+<h1 id="the-threat-a-ladder-not-a-population">The Threat: a ladder, not a population</h1>
+<p>Before we look at what defenders have, look at what they're defending against. 'Bots' isn't one thing; it's a ladder, and every rung defeats a different layer of the stack.</p>
+<!-- IMAGE PLACEHOLDER: Bot sophistication ladder visualisation, 5 rungs from "curl scripts" up to "LLM-directed adaptive". Source: AI-generated diagram (cleanest if you ask for "5 stylised silhouettes ascending steps, each more humanoid, sci-fi engineering blueprint style"). -->
+<p><img src="/articleimages/img-placeholder-bot-ladder.png?width=900&amp;format=webp&amp;quality=40" alt="Bot sophistication ladder" /></p>
+<hr />
+<h3 id="dumb-noisy-bots">1. Dumb / noisy bots</h3>
+<p>(curl, scanners, brute force, invalid paths)</p>
+<ul>
+<li><strong>Fail2Ban:</strong> works well</li>
+<li><strong>WAF:</strong> works well</li>
+<li><strong>Bot management:</strong> trivial</li>
+<li><strong>Rate limiting:</strong> works well</li>
+</ul>
+<p><strong>Failure point:</strong> none, everything catches these.</p>
+<p>Scripts that have been around since the dawn of the web (perl FTW!); 'go to site, scrape content'. EASY to identify; single endpoint, same IP, same UA.</p>
+<hr />
+<h3 id="basic-scripted-bots">2. Basic scripted bots</h3>
+<p>(rotating UA, valid endpoints, simple scraping)</p>
+<ul>
+<li><strong>Fail2Ban:</strong> starts failing</li>
+<li><strong>WAF:</strong> still effective</li>
+<li><strong>Bot management:</strong> effective</li>
+<li><strong>Rate limiting:</strong> depends on tuning</li>
+</ul>
+<p><strong>Failure point:</strong> systems relying on obvious mistakes.</p>
+<p>Harder. You now need to identify known patterns and process traffic later.</p>
+<hr />
+<h3 id="headless-browser-bots">3. Headless browser bots</h3>
+<p>(Puppeteer/Playwright, JS execution, real flows)</p>
+<ul>
+<li><strong>Fail2Ban:</strong> ineffective</li>
+<li><strong>WAF:</strong> limited</li>
+<li><strong>Bot management:</strong> primary layer</li>
+<li><strong>Rate limiting:</strong> weakening</li>
+</ul>
+<p><strong>Failure point:</strong> anything based on request correctness or signatures.</p>
+<p>Easy ONLY because they're often used legitimately (scraping, SEO, etc); this is false-positive city. Telling legit from illegitimate is HARD.</p>
+<hr />
+<h3 id="stealth-bots">4. Stealth bots</h3>
+<p>(proxy rotation, residential IPs, fingerprint spoofing)</p>
+<ul>
+<li><strong>Fail2Ban:</strong> ineffective</li>
+<li><strong>WAF:</strong> largely ineffective</li>
+<li><strong>Bot management:</strong> starts to struggle</li>
+<li><strong>Rate limiting:</strong> ineffective if distributed</li>
+</ul>
+<p><strong>Failure point:</strong></p>
+<ul>
+<li>IP reputation</li>
+<li>static fingerprinting</li>
+<li>threshold-based controls</li>
+</ul>
+<p>This is where false positives spike. Push harder and your normal identifiers fall off; <em>you need to identify the same client through a deceptive identity</em>.</p>
+<hr />
+<h3 id="adaptive-llm-directed-bots">5. Adaptive / LLM-directed bots</h3>
+<p>(slow, distributed, learn site behaviour, adjust dynamically)</p>
+<ul>
+<li><strong>Fail2Ban:</strong> irrelevant</li>
+<li><strong>WAF:</strong> ineffective</li>
+<li><strong>Bot management:</strong> inconsistent</li>
+<li><strong>Rate limiting:</strong> ineffective</li>
+</ul>
+<p><strong>Failure point:</strong></p>
+<ul>
+<li>anything assuming repeatability</li>
+<li>anything assuming known patterns</li>
+<li>anything assuming &quot;bot-like&quot; behaviour</li>
+</ul>
+<p>These bots behave &quot;correctly&quot; and evolve. LLMs adapt to standard blocking attempts (CAPTCHA solvers, randomizers).</p>
+<p>THIS is where StyloBot is aimed. Right NOW these bots are expensive to run at scale. THAT IS CHANGING.</p>
+<hr />
+<p>We've moved through time as well as up the ladder; from simple identity (block IP) to needing to understand huge volumes of traffic and log files. <strong>To defend against INTELLIGENT scrapers at level 5 you need INTELLIGENT detection AND protection.</strong></p>
+<h1 id="the-defenders-the-current-market">The Defenders: the current market</h1>
+<p>With the ladder in mind, here's the kit defenders bring. Notice how every option is tuned for somewhere between level 1 and level 3.</p>
+<!-- IMAGE PLACEHOLDER: Heatmap, rows = the 9 market categories below, columns = bot levels 1-5, cells coloured green→red as effectiveness drops. Source: hand-drawn in something like Excalidraw / Figma; this should be a YOU diagram, not AI, since the calls are subjective. -->
+<p><img src="/articleimages/img-placeholder-defender-heatmap.png?width=900&amp;format=webp&amp;quality=40" alt="Defender effectiveness vs bot level" /></p>
+<hr />
+<h3 id="fail2ban-log-based-banning">1. Fail2Ban / log-based banning</h3>
+<ul>
+<li><strong>Mode:</strong> Post (reactive)</li>
+<li><strong>Latency:</strong> seconds → minutes</li>
+<li><strong>Cost:</strong> very low (free + ops time)</li>
+<li><strong>Complexity:</strong> low</li>
+</ul>
+<blockquote>
+<p>Cheap, simple, but always after the fact</p>
+</blockquote>
+<hr />
+<h3 id="waf-cloudflare-waf-aws-waf-azure-waf">2. WAF (Cloudflare WAF, AWS WAF, Azure WAF)</h3>
+<ul>
+<li><strong>Mode:</strong> Active (inline)</li>
+<li><strong>Latency:</strong> ~1–10 ms</li>
+<li><strong>Cost:</strong> low → medium (rules + request volume)</li>
+<li><strong>Complexity:</strong> low → medium (rule tuning)</li>
+</ul>
+<blockquote>
+<p>Fast and cheap-ish, but only for known patterns</p>
+</blockquote>
+<hr />
+<h3 id="bot-management-cloudflare-bot-mgmt-datadome-human-akamai-cheq">3. Bot Management (Cloudflare Bot Mgmt, DataDome, HUMAN, Akamai, CHEQ)</h3>
+<ul>
+<li><strong>Mode:</strong> Active (inline + challenges)</li>
+<li><strong>Latency:</strong> ~5–50 ms</li>
+<li><strong>Cost:</strong> medium → high (often traffic-based or tiered)</li>
+<li><strong>Complexity:</strong> medium → high (tuning, false positives, UX impact)</li>
+</ul>
+<blockquote>
+<p>Powerful but expensive, and can affect user experience</p>
+</blockquote>
+<hr />
+<h3 id="rate-limiting-api-gateway-controls">4. Rate Limiting / API Gateway controls</h3>
+<ul>
+<li><strong>Mode:</strong> Active (inline)</li>
+<li><strong>Latency:</strong> ~1–5 ms</li>
+<li><strong>Cost:</strong> low → medium (usually bundled but scales with usage)</li>
+<li><strong>Complexity:</strong> medium (per-endpoint tuning)</li>
+</ul>
+<blockquote>
+<p>Cheap control, but blunt instrument</p>
+</blockquote>
+<hr />
+<h3 id="ddos-protection-cloudflare-akamai-fastly-aws-shield">5. DDoS Protection (Cloudflare, Akamai, Fastly, AWS Shield)</h3>
+<ul>
+<li><strong>Mode:</strong> Active (edge/network)</li>
+<li><strong>Latency:</strong> ~1–5 ms</li>
+<li><strong>Cost:</strong> medium → very high (especially at scale / enterprise tiers)</li>
+<li><strong>Complexity:</strong> medium (mostly managed)</li>
+</ul>
+<blockquote>
+<p>Essential infra layer, but not behavioural</p>
+</blockquote>
+<hr />
+<h3 id="fraud-risk-scoring-sift-forter-riskified-stripe-radar">6. Fraud / Risk Scoring (Sift, Forter, Riskified, Stripe Radar)</h3>
+<ul>
+<li><strong>Mode:</strong> Mixed (inline + post)</li>
+<li><strong>Latency:</strong> ~50–300 ms inline</li>
+<li><strong>Cost:</strong> high (per transaction / % of revenue / SaaS pricing)</li>
+<li><strong>Complexity:</strong> high (integration + tuning + ops)</li>
+</ul>
+<blockquote>
+<p>Deep insight, but slow and expensive...used sparingly</p>
+</blockquote>
+<hr />
+<h3 id="device-fingerprinting-fingerprintjs-threatmetrix-iovation">7. Device Fingerprinting (FingerprintJS, ThreatMetrix, iovation)</h3>
+<ul>
+<li><strong>Mode:</strong> Active (client + inline)</li>
+<li><strong>Latency:</strong> ~10–100 ms</li>
+<li><strong>Cost:</strong> medium → high (per request/session pricing)</li>
+<li><strong>Complexity:</strong> high (privacy, evasion, integration)</li>
+</ul>
+<blockquote>
+<p>Identity-heavy, comes with compliance and cost baggage</p>
+</blockquote>
+<hr />
+<h3 id="siem-observability-splunk-datadog-elastic-sentinel">8. SIEM / Observability (Splunk, Datadog, Elastic, Sentinel)</h3>
+<ul>
+<li><strong>Mode:</strong> Post</li>
+<li><strong>Latency:</strong> seconds → minutes</li>
+<li><strong>Cost:</strong> very high (data ingestion is the killer)</li>
+<li><strong>Complexity:</strong> very high (queries, alerts, maintenance)</li>
+</ul>
+<blockquote>
+<p>Visibility layer...expensive but necessary</p>
+</blockquote>
+<hr />
+<h3 id="custom-glue-edge-logic-lambdas">9. Custom glue / edge logic / lambdas</h3>
+<ul>
+<li><strong>Mode:</strong> Mixed</li>
+<li><strong>Latency:</strong> varies</li>
+<li><strong>Cost:</strong> hidden but real (dev time + infra)</li>
+<li><strong>Complexity:</strong> high over time</li>
+</ul>
+<blockquote>
+<p>The &quot;we had to fix gaps&quot; layer</p>
+</blockquote>
+<hr />
+<h1 id="the-big-problem">THE BIG PROBLEM</h1>
+<p>Look at that list against the ladder. Every category needs UA / IP to remain identifiable, or needs manual config per endpoint to avoid blocking 'legitimate' traffic. They're SLOW; if every request goes through this pipeline that's a significant chunk of your time spent processing requests instead of responding to them. And no matter how much you spend, past a certain point you won't block the level-5 bots AND you'll be spending more than you save.</p>
+<p>The market covers MOST of the bases for bots at levels 1–3. It doesn't have an answer for level 5.</p>
+<h1 id="potential-solution-behavioural-inference">Potential Solution: behavioural inference</h1>
+<p>In previous articles I've written about my <a href="/blog/behavioural-inference-systems-blog">Behavioural Inference</a> systems. They're a CHEAT that became a feature.</p>
+<p>Single 'sensors' are easy to bypass now. The only constant in level 4-5 attacks is <em>how they deceive</em>; rotating headers, IPs, UAs, timings, endpoints. Any ONE sensor can be bypassed. Combining sensors raises sensitivity (catches more bots) but in static systems it also raises false positives, because if a single trigger is enough to block, every added sensor is another way to misfire.</p>
+<p>Behavioural inference does three things: <em>profile</em> -&gt; <em>characterize</em> -&gt; <em>remember</em>. That's it; whether it's lucidRAG or StyloBot. In StyloBot what gets remembered is a behavioural <em>vector</em>; that's what a client <em>behaviour</em> becomes. Note behaviour, NOT identity.</p>
+<p>To StyloBot you are a projection over a 130+ dimensional vector space.</p>
+<h1 id="stylobot">StyloBot</h1>
+<p>StyloBot is a behavioural inference engine applied to web traffic. It uses a large vector space to characterise web requests and identify automation vs humans.</p>
+<p>It's closer to a sensor fusion system than a rules engine. Detectors don't make decisions; they emit <em>signals</em>. The signals are the system. Detectors are just producers.</p>
+<h2 id="how-it-differs-from-the-market">How it differs from the market</h2>
+<p>The market leaders share one of two shapes; either they rely on simple static rules (updated constantly, like OWASP feeds) or they analyse TONS of real traffic and need a SaaS to live in.</p>
+<p>StyloBot aims for the distribution model of Fail2Ban (run an exe, point at upstream) with the power of the enterprise stacks. It downloads lists of user agents, CVEs, exploits, and other indicators of compromise to enrich detection; but those are one factor in a decision, never the verdict on their own.</p>
+<p>Under the hood StyloBot runs ~49 'contributors'; small focused bits of code that look like this:</p>
+<pre><code class="language-csharp">using Microsoft.AspNetCore.Http;
+using Mostlylucid.BotDetection.Models;
+
+namespace Mostlylucid.BotDetection.Detectors;
+
+/// &lt;summary&gt;
+///     Execution stage for detectors. Detectors in the same stage run in parallel.
+///     Higher stages wait for lower stages to complete.
+/// &lt;/summary&gt;
+public enum DetectorStage
+{
+    /// &lt;summary&gt;
+    ///     Raw signal extraction (UA, headers, IP, client-side).
+    ///     No dependencies on other detectors.
+    /// &lt;/summary&gt;
+    RawSignals = 0,
+
+    /// &lt;summary&gt;
+    ///     Behavioral analysis that may depend on raw signals.
+    ///     Runs after Stage 0 completes.
+    /// &lt;/summary&gt;
+    Behavioral = 1,
+
+    /// &lt;summary&gt;
+    ///     Meta-analysis layers (inconsistency detection, risk assessment).
+    ///     Reads signals from stages 0 and 1.
+    /// &lt;/summary&gt;
+    MetaAnalysis = 2,
+
+    /// &lt;summary&gt;
+    ///     AI/ML-based detection that can use all prior signals.
+    ///     Runs last, can learn from all other signals.
+    /// &lt;/summary&gt;
+    Intelligence = 3
+}
+
+/// &lt;summary&gt;
+///     Interface for bot detection strategies
+/// &lt;/summary&gt;
+public interface IDetector
+{
+    /// &lt;summary&gt;
+    ///     Name of the detector
+    /// &lt;/summary&gt;
+    string Name { get; }
+
+    /// &lt;summary&gt;
+    ///     Execution stage for this detector.
+    ///     Detectors in the same stage run in parallel.
+    ///     Higher stages wait for lower stages to complete.
+    /// &lt;/summary&gt;
+    DetectorStage Stage =&gt; DetectorStage.RawSignals;
+
+    /// &lt;summary&gt;
+    ///     Analyze an HTTP request for bot characteristics.
+    ///     Legacy method - prefer DetectAsync with DetectionContext.
+    /// &lt;/summary&gt;
+    /// &lt;param name=&quot;context&quot;&gt;HTTP context&lt;/param&gt;
+    /// &lt;param name=&quot;cancellationToken&quot;&gt;Cancellation token&lt;/param&gt;
+    /// &lt;returns&gt;Detection result with confidence score and reasons&lt;/returns&gt;
+    Task&lt;DetectorResult&gt; DetectAsync(HttpContext context, CancellationToken cancellationToken = default);
+
+    /// &lt;summary&gt;
+    ///     Analyze an HTTP request for bot characteristics using shared context.
+    ///     Detectors should read signals from prior stages and write their own signals.
+    /// &lt;/summary&gt;
+    /// &lt;param name=&quot;detectionContext&quot;&gt;Shared detection context with signal bus&lt;/param&gt;
+    /// &lt;returns&gt;Detection result with confidence score and reasons&lt;/returns&gt;
+    Task&lt;DetectorResult&gt; DetectAsync(DetectionContext detectionContext)
+    {
+        // Default implementation for backward compatibility
+        return DetectAsync(detectionContext.HttpContext, detectionContext.CancellationToken);
+    }
+}
+
+/// &lt;summary&gt;
+///     Result from an individual detector
+/// &lt;/summary&gt;
+public class DetectorResult
+{
+    /// &lt;summary&gt;
+    ///     Confidence score from this detector (0.0 to 1.0)
+    /// &lt;/summary&gt;
+    public double Confidence { get; set; }
+
+    /// &lt;summary&gt;
+    ///     Reasons found by this detector
+    /// &lt;/summary&gt;
+    public List&lt;DetectionReason&gt; Reasons { get; set; } = new();
+
+    /// &lt;summary&gt;
+    ///     Bot type if identified
+    /// &lt;/summary&gt;
+    public BotType? BotType { get; set; }
+
+    /// &lt;summary&gt;
+    ///     Bot name if known
+    /// &lt;/summary&gt;
+    public string? BotName { get; set; }
+}
+</code></pre>
+<p>Each detector declares what it is, what it depends on, and what it returns.</p>
+<blockquote>
+<p>NOTE: This is a core concept. StyloBot is a LARGE system with MINIMAL concepts; adding detectors is SIMPLE.</p>
+</blockquote>
+<p>That stage ordering is the discipline. Stage 0 runs in parallel and writes signals. Stage 1+ reads what came before instead of re-extracting from the raw request. Most requests never get past stage 0.</p>
+<p>Using my <a href="https://github.com/scottgal/mostlylucid.atoms">mostlylucid.ephemeral framework</a> (more on it in <a href="/blog/ephemeral-execution-library">Building a Reusable Ephemeral Execution Library</a> and <a href="/blog/ephemeral-signals">Ephemeral Signals - Turning Atoms into a Sensing Network</a>) detectors emit what I call 'signals'; tiny strings like <code>ua.score=0.75</code> that act as both metadata for the request AND logging / diagnostic data. The Code LLM (and the system itself) uses these signals to identify efficiencies; auto-tuning.</p>
+<blockquote>
+<p>Aside: Ephemeral also gives StyloBot LFU / sliding-window processing; it drops human requests while retaining a window so that if a <em>future</em> request crosses a bot threshold we can look back and reprocess the older ones for clues. That mechanism deserves its own post; for now just know it's why retention costs nothing in the steady state.</p>
+</blockquote>
+<h2 id="the-49-detectors-arent-49-decisions">The 49 detectors aren't 49 decisions</h2>
+<p>StyloBot has 49 detectors. It rarely runs more than 5-7 per request. They aren't 49 independent verdicts; they're 49 ways of observing the same underlying behaviour, each contributing evidence toward a single behavioural model.</p>
+<p>The 49 is the CAPABILITY; it only uses what it needs.</p>
+<p><strong>Fast path (the common case).</strong> 5-7 SUPER fast (sub-millisecond) initial detectors and fingerprinters. From that fingerprint it can decide what sort of thing you are AND what your next requests are likely to be (content-&gt;resource pathing). Then it predicts the next request, compares against what actually arrives, and escalates only if the shape diverges. ~150µs end to end. This is what the vast majority of human traffic ever sees.</p>
+<p><strong>Slow path (the interesting case).</strong> Crucially, <strong>the slow path runs OUT of the request pipeline</strong>. Your user's response goes out on the fast-path verdict; the slow path is enrichment for what happens next, not latency on this request.</p>
+<p>It triggers when the fast path is <em>ambiguous</em> (signals contradict each other, the shape doesn't match anything we've seen, confidence sits in the dead zone) or when the request looks novel (new attack pattern, fresh CVE probe, an LLM-driven scraper trying something we haven't fingerprinted yet). When it does, StyloBot opens the throttle. ALL 49 detectors run. The Intelligence stage consults an LLM that takes the full signal bundle and contributes another dimension of resolution; pattern-matching against threat intel, reasoning about request intent, spotting things the heuristics aren't shaped for yet.</p>
+<p>You get two escalation options:</p>
+<ul>
+<li><strong>Inline escalation</strong> (still off the request thread; runs in the background but writes a verdict before the <em>next</em> request from the same client lands). Good for short flows where you want the next click already classified.</li>
+<li><strong>Offline escalation</strong> (batched, runs on a worker; the verdict shows up seconds-to-minutes later and updates the cluster / reputation store). Good for long-tail enrichment, periodic sweeps, and the cases where you'd rather pay nothing on the hot path.</li>
+</ul>
+<p>Either way, the request that triggered the escalation already responded. There is no scenario where the slow path adds milliseconds to a user's page load.</p>
+<p>That's the deal: pay microseconds when you can, pay milliseconds when you must, never pay both, and never pay them on the user's clock. The slow path is rare by design (typically &lt;1% of traffic) but it's where StyloBot earns its keep against the level-5 adaptive bots from earlier; the ones that <em>will</em> slip past any fixed pipeline. Every slow-path verdict feeds back as new fast-path signal, so next time the cheap detectors catch what the expensive ones discovered. The full mechanics of that feedback loop (drift-tuned pattern reputation against the archetype anchors, the per-fingerprint verdict cache, the Skip/Bias/Miss/Watchdog gate that decides whether the pipeline runs at all) are covered in <a href="/blog/stylobot-release-learning">Learning to Get Faster</a>.</p>
+<p>The full set of layers (you only see all of them on a slow-path request that genuinely needs every angle):</p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Detectors</th>
+<th>What it catches</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Identity</strong></td>
+<td>Signature, HeaderCorrelation, Periodicity</td>
+<td>UA rotation, identity factors, temporal patterns</td>
+</tr>
+<tr>
+<td><strong>Protocol</strong></td>
+<td>TLS (JA3/JA4), TCP/IP (p0f), HTTP/2, HTTP/3, Transport, StreamAbuse</td>
+<td>Spoofed browser fingerprints, protocol inconsistencies</td>
+</tr>
+<tr>
+<td><strong>Behavioral</strong></td>
+<td>Waveform, SessionVector, AdvancedBehavioral, CacheBehavior, CookieBehavior, ResourceWaterfall, ContentSequence</td>
+<td>Timing patterns, Markov chains, missing assets, page-load sequence divergence</td>
+</tr>
+<tr>
+<td><strong>Content</strong></td>
+<td>UserAgent, Header, AiScraper, Haxxor, SecurityTool, VersionAge</td>
+<td>Known bots, attack payloads, impossible browser versions</td>
+</tr>
+<tr>
+<td><strong>Network</strong></td>
+<td>IP, GeoChange, ResponseBehavior, MultiLayerCorrelation, CveProbe</td>
+<td>Datacenter IPs, impossible travel, CVE scanning, cross-layer mismatches</td>
+</tr>
+<tr>
+<td><strong>Intelligence</strong></td>
+<td>FastPathReputation, ReputationBias, TimescaleReputation, Cluster, Similarity, Intent</td>
+<td>Historical reputation, Leiden clustering, HNSW similarity, threat scoring</td>
+</tr>
+<tr>
+<td><strong>Ad Fraud</strong></td>
+<td>ClickFraud, PiiQueryString</td>
+<td>IAB SIVT: datacenter/VPN/headless on paid traffic, referrer spoofing, immediate bounce</td>
+</tr>
+<tr>
+<td><strong>AI</strong></td>
+<td>Heuristic, HeuristicLate, LLM</td>
+<td>50-feature model (&lt;1ms), optional LLM for ambiguous cases</td>
+</tr>
+<tr>
+<td><strong>Client</strong></td>
+<td>ClientSide, FingerprintApproval, ChallengeVerification</td>
+<td>JS timing probes, headless detection, PoW challenges</td>
+</tr>
+</tbody>
+</table>
+<!-- IMAGE PLACEHOLDER: Fast-path / slow-path flow. CRITICAL: must show fast path returning a response in ~150µs while slow path forks OFF the request thread (dotted arrow into a separate "background / worker" lane) and eventually writes back to the cluster store. Two slow-path lanes: "inline (background, before next request)" and "offline (batched worker)". Source: Excalidraw / Mermaid swimlane diagram. Hand-made beats AI here; the routing logic is exact and the OFF-THREAD nature is the whole point. -->
+<p><img src="/articleimages/img-placeholder-fast-slow-path.png?width=900&amp;format=webp&amp;quality=40" alt="Fast path vs slow path (slow path is off the request thread)" /></p>
+<h1 id="what-if-client-behaviour-was-a-vector">What if client behaviour was a vector?</h1>
+<p>With 49 detectors and hundreds of signals we have a LOT of metadata about each client. None of it on its own is a verdict; together it's a <em>position</em> in a 130+ dimensional space.</p>
+<p>What the dashboard shows is a <em>projection</em> (<a href="https://en.wikipedia.org/wiki/Projection_(linear_algebra)">Wikipedia</a>) of that underlying vector space, collapsed onto seven axes: Network, Locale, Headers, Tool, Transport, Session, Quality. A &quot;low resolution&quot; image of the fingerprint that humans can actually read.</p>
+<p><img src="/articleimages/stylobot-human-signature.png?width=1100&amp;format=webp&amp;quality=70" alt="Human signature on stylobot.net: 0% bot probability, 100% confidence, green radar with broad Headers and Tool arms, fingerprint integrity blank, headless indicator clean" /></p>
+<h2 id="bots-are-shapes">Bots are shapes</h2>
+<p>Your bots aren't just a bunch of numbers. They're SHAPES. These shapes are DIFFERENT to human ones.</p>
+<p>Humans are noisy but <em>consistent in structure</em>. Bots are consistent but <em>wrong in structure</em>.</p>
+<p>Here's the same projection for a declared bot recorded against this site:</p>
+<p><img src="/articleimages/stylobot-bot-signature.png?width=1100&amp;format=webp&amp;quality=70" alt="MJ12bot signature on stylobot.net: 100% bot probability, 50% confidence, GoodBot policy rate-limit-search, red radar shape, risk profile VeryHigh" /></p>
+<p>Two clients, same seven axes, two different shapes. Verdict colour shifts from green to red. Risk profile shifts from Unknown to VeryHigh. The fingerprint fields underneath (TLS, HTTP protocol, headless indicator) populate with non-clean values. The verdict isn't a single signal flipping. It's the whole shape.</p>
+<p>That's the trick. Once you can see the shape, the per-detector confidence scores stop mattering individually; what matters is whether the projection looks like a human or like something pretending to be one. The maintenance cost of deception lives in the structure.</p>
+<p>Combine that with tracking across ALL sessions (the system collects ZERO PII). A single session might look totally human (it might even <em>be</em> a recording of one). HOWEVER... sensitivity across TIME, looking for automated cadences, even human fingerprints which get USED as bots later, is where the shape really gives them away.</p>
+<h2 id="bots-cluster-leiden-over-the-vectors">Bots cluster (Leiden over the vectors)</h2>
+<p>Once everything is a shape, bots stop hiding from each other. They cluster.</p>
+<p>StyloBot runs <a href="https://en.wikipedia.org/wiki/Leiden_algorithm">Leiden community detection</a> over the live vector space. This trick is borrowed wholesale from my GraphRAG work; if you've read <a href="/blog/graphrag-knowledge-graphs-for-rag">GraphRAG: Why Vector Search Breaks Down at the Corpus Level</a> and <a href="/blog/graphrag-minimum-viable-implementation">GraphRAG Part 2: Minimum Viable GraphRAG</a> you've already seen this exact pattern. There it builds <em>communities of meaning</em> over document chunks so a query can pull a whole connected idea instead of disconnected snippets. Here it does the structurally identical job over <em>behavioural</em> vectors; communities of clients that move alike. Same algorithm, same insight, different domain. A bot family is just a community in the graph; a GraphRAG topic is the same shape over text.</p>
+<p>Two concerns worth heading off if you've done graph clustering before. <strong>Doesn't Leiden slow down as |V| and |E| grow?</strong> Yes, which is why the input is not &quot;every request ever seen.&quot; It's the bounded hot signature cache (capped by <code>SignatureCacheSize</code>, default 10k, 1k on the <code>LowMemory</code> preset) plus a compacted centroid layer for the long tail. |V| is config-bounded; |E| is HNSW-bounded by <code>M</code> neighbours per node. The bounding discipline that makes that work is covered in <a href="/blog/stylobot-release-reliability">Finding and Fixing Unbounded Growth in Long-Running .NET Services</a>. <strong>Doesn't cosine collapse at 130 dimensions?</strong> It does in the naive form. StyloBot sidesteps it two ways. HNSW similarity is approximate by design (tuned via <code>M</code> and <code>ef_construct</code>), and the engine works in terms of <em>drift from a learned archetype anchor</em> rather than all-pairs distance in the raw space, so the question is always &quot;how far has this client moved from its prior?&quot; instead of &quot;where is this in 130d?&quot; The radar projection (seven axes) is for humans; the engine never clusters on the radar.</p>
+<p>Bots that share an origin (same toolkit, same operator, same scraping campaign) land in the same neighbourhood even when they've rotated IPs, headers, fingerprints and timing. They didn't co-ordinate to look the same; they look the same because they ARE the same, structurally.</p>
+<p>That gives StyloBot two superpowers for free:</p>
+<ul>
+<li><strong>A new request gets the verdict of its cluster.</strong> First-ever-seen bot from a known operator? Already inside a hostile community on arrival. No warm-up, no learning period. (This is the entity-family fallback in the verdict cache; see <a href="/blog/stylobot-release-learning">Learning to Get Faster</a> for how a rotated fingerprint inherits its family's verdict.)</li>
+<li><strong>Novel attacks make their own cluster.</strong> When something genuinely new shows up it doesn't fit anywhere; that <em>itself</em> is the signal. The slow path runs, the LLM stage labels it, and from then on the whole cluster is recognised on the fast path.</li>
+</ul>
+<p>This is also where similarity search (HNSW over the same vectors) earns its keep; &quot;show me the 20 closest things to this request right now&quot; is a constant-time question, not a scan over history.</p>
+<p>(Future UI idea shown, not currently implemented)</p>
+<p><img src="/articleimages/leiden_communities.png?width=900&amp;format=webp&amp;quality=40" alt="Leiden communities over behavioural vectors" /></p>
+<h2 id="odd-implications">Odd Implications</h2>
+<p>Note what I DIDN'T say. I didn't say 'once set up' or 'when properly configured' because that's StyloBot's secret; it has a good default set but <em>it learns</em>.</p>
+<p>As it runs it profiles <em>your traffic</em> and understands <em>your users</em>. Not creepily; it works out what request patterns, endpoints, and timings look like for your human vs your automated traffic.</p>
+<p>You can THEN decide, or let the system take care of it (set a bot threshold of say 0.8 for most and 0.6 for secure endpoints). The defaults that ship are good; the defaults that emerge after a few hours on your traffic are better.</p>
+<h1 id="conclusion">Conclusion</h1>
+<p>StyloBot is NOW live. Self-hosted bot detection. Open source. 49 detectors. Full decision trace. Privacy-aware. AI without LLMs in the hot path. The detection engine, the dashboard, the NuGet packages, the gateway exe; all of it is shipping right now and FREE to run on your own infra. Grab the source at <a href="https://github.com/scottgal/stylobot">github.com/scottgal/stylobot</a> or <code>brew install scottgal/stylobot/stylobot</code> and point it at your upstream.</p>
+<p>Commercial controls sit on top: live config without reload, central fleet dashboard, persistence, commercial LLM providers. $100/mo per domain, 30-day trial, no credit card. Open-source and charity projects get a complimentary license; <a href="https://www.stylobot.net/contact">contact us</a>. The core engine stays free, on your infra, forever.</p>
+<p>Next in the release series: <a href="/blog/behaviour-aware-ux">Behaviour-Aware ASP.NET UI</a>, which takes the behavioural classification described here and exposes it to Razor, forms, and controller policy. After that, <a href="/blog/stylobot-release-reliability">Finding and Fixing Unbounded Growth in Long-Running .NET Services</a> covers the reliability rework that lets the engine sit on a Pi forever without operator intervention, with the StyloBot vector layer as the worked example.</p>
+<p>If you want the older technical lead-up to this release series, <a href="/blog/botdetection-introduction">Part 1</a>, <a href="/blog/botdetection-part2-signature-pipeline-and-stylobot-architecture">Part 2</a>, and <a href="/blog/botdetection-part3-as-simple-as-possible">Part 3</a> cover the why, the architecture, and the two-line drop-in. The behavioural inference foundations live in <a href="/blog/behavioural-inference-systems-blog">Behavioural Inference</a>, the signal plumbing in <a href="/blog/ephemeral-signals">Ephemeral Signals</a>, and the Leiden / clustering lineage in <a href="/blog/graphrag-knowledge-graphs-for-rag">GraphRAG</a> and <a href="/blog/graphrag-minimum-viable-implementation">GraphRAG Part 2</a>.</p>
+
+    </div>
+        <nav class="flex items-center justify-between text-sm text-primary dark:text-white mb-2 print:hidden" aria-label="Post navigation">
+            <div>
+                        <a href="/blog/typescript-sdk" hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" class="inline-flex items-center hover:text-secondary" hx-get="/blog/typescript-sdk">
+                            <i class='bx bx-left-arrow-alt text-xl mr-1'></i>
+                            <span>Newer: StyloBot Release Series: Behaviour-Aware TypeScript UI</span>
+                        </a>
+            </div>
+            <div>
+                        <a href="/blog/stylobot-release-nondeterministic-testing" hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" class="inline-flex items-center hover:text-secondary" hx-get="/blog/stylobot-release-nondeterministic-testing">
+                            <span>Older: StyloBot Release Series: Testing the Thing That Won&#x27;t Sit Still</span>
+                            <i class='bx bx-right-arrow-alt text-xl ml-1'></i>
+                        </a>
+            </div>
+        </nav>
+        <div class="print:hidden" hx-get="/search/related/stylobot-fingerprint/en" hx-trigger="load delay:300ms" hx-target="this" hx-swap="innerHTML">
+            <div class="mt-6 mb-6">
+                <div class="border border-base-300 rounded-lg overflow-hidden bg-gradient-to-r from-base-200/80 to-base-200/40">
+                    <div class="flex items-center gap-2 px-4 py-2.5">
+                        <span class="loading loading-spinner loading-xs text-secondary"></span>
+                        <span class="text-sm opacity-60">Finding related posts...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    <div x-data="{ showNewElement: false }" x-init="
+    document.addEventListener('htmx:afterSwap', (event) => {
+        if (event.detail.target.id === 'contentformarea') {
+            $data.showNewElement = true;  // Use $data to reference Alpine component's state
+        }
+    });
+"  class="pt-6 print:!hidden" id="commentsection">
+        <!-- Button that will disappear once showNewElement is true -->
+        <a x-show="!showNewElement" class="btn btm-sm btn-outline mb-6" href="javascript:void(0)" role="button" x-on:click.prevent hx-boost="false" hx-push-url="false" hx-swap="innerHTML" hx-target="#contentformarea" hx-get="/comment/get-commentform?postId=526319">
+            <i class='bx bx-message-rounded-add'></i> Add Comment
+        </a>
+
+        <!-- The target for HTMX content swap -->
+        <div id="contentformarea"
+             x-show="showNewElement"
+             class="border border-b-neutral-600 border-1 rounded-xl p-4 mb-4">
+        </div>
+    </div>
+
+    <div id="commentlist">
+        
+    
+        
+
+
+    </div>
+ 
+</div>
+</div>
+<div class="container pb-8 mx-auto print:hidden">
+    <div
+        class="flex flex-col items-center justify-between  sm:flex-row sm:py-2">
+        <div class="mr-auto flex flex-col items-center sm:flex-row">
+            <a href="/" hx-swap="show:window:top" hx-target="#contentcontainer" hx-push-url="true" hx-headers='{"homerequest": "true"}' class="mr-auto sm:mr-6" hx-get="/">
+                <div class="svg-container">
+                    <img src="/img/logo.svg?v=kUkb5rVbYNGnG7rw9AdiyMbnZiU7-WEYHK40rbEZwtA" width="180px" height="30px" alt="logo" :class="{ 'img-filter-dark': !isDarkMode }" />
+                </div>
+            </a>
+<p class="pt-5 font-body font-light text-primary dark:text-white sm:pt-0">
+    &copy; 2026 Scott Galloway — 
+    <a href="https://unlicense.org" target="_blank" rel="noopener noreferrer">Unlicense</a> — 
+    All content and source code on this site is free to use, copy, modify, and sell.
+</p>
+
+        </div>
+        <div class="mr-auto flex items-center pt-6 sm:mr-0 sm:pt-0 space-x-3 text-2xl ">
+
+    <a href="https://github.com/scottgal/" target="_blank">
+        <i class="text-primary dark:text-white hover:text-secondary dark:hover:text-secondary transition-colors bx bxl-github"></i>
+    </a>
+
+    <a href="https://hachyderm.io/@scottgal@hachyderm.io" target="_blank">
+        <i class=" text-primary dark:text-white hover:text-secondary dark:hover:text-secondary transition-colors bx bxl-mastodon"></i>
+    </a>
+
+    <a href="https://www.linkedin.com/in/scott-galloway-91608691/" target="_blank">
+        <i class=" text-primary dark:text-white hover:text-secondary dark:hover:text-secondary transition-colors bx bxl-linkedin"></i>
+    </a>
+
+</div>
+    </div>
+
+</div>
+<noscript>
+    <style>
+        [x-cloak] {
+            display: block !important;
+        }
+    </style>
+</noscript>
+<script src="/js/dist/main.js?v=HObCvVQfPxNDvaYnRAXVFxrFJeDJL3tEH_EhVNsGKcI" data-cfasync="false"> </script>
+<script src="https://umami.mostlylucid.net/getinfo" data-website-id="1e3b7657-9487-4857-a9e9-4e1920aa8c42"></script>
+
+
+	<script>'serviceWorker'in navigator&&navigator.serviceWorker.register('/serviceworker', { scope: '/' })</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a11d6868083b2534',t:'MTc4MjQ4OTQ0Nw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>

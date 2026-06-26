@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta content="IE=edge,chrome=1" http-equiv="X-UA-Compatible" />
+    <meta
+        content="width=device-width, initial-scale=1, shrink-to-fit=no"
+        name="viewport"
+    />
+    <title>StyloBot Release Series: StyloExtract - a local learning HTML to Markdown converter (English)</title>
+
+    <!-- RSS Feed Autodiscovery -->
+    <link rel="alternate" type="application/rss+xml"
+          title="mostlylucid.net RSS Feed"
+          href="https://mostlylucid.net/rss" />
+    <link rel="alternate" type="application/atom+xml"
+          title="mostlylucid.net Atom Feed"
+          href="https://mostlylucid.net/atom" />
+
+    <link rel="prefetch" href="https://accounts.google.com/gsi/client"/>
+
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://mostlylucid.net/blog/stylobot-release-styloextract" />
+
+    <!-- Facebook Meta Tags -->
+    <meta property="og:url" content="https://mostlylucid.net/blog/stylobot-release-styloextract" id="metaOgUrl">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="StyloBot Release Series: StyloExtract - a local learning HTML to Markdown converter (English)">
+    <meta property="og:description" content="StyloBot v8 lets a site give AI crawlers a controlled Markdown view of its pages at its own local edge, without ceding the gateway to a CDN. This piece is...">
+    <meta property="og:image" content="https://mostlylucid.net/img/social2.jpg">
+    <meta property="og:locale" content="en_GB" />
+    <meta property="og:site_name" content="mostlylucid" />
+
+    <!-- Twitter Meta Tags -->
+    <meta name="twitter:card" content="summary">
+    <meta property="twitter:domain" content="mostlylucid.net">
+    <meta property="twitter:url" content="https://mostlylucid.net/blog/stylobot-release-styloextract" id="metaTwitterUrl">
+    <meta name="twitter:title" content="StyloBot Release Series: StyloExtract - a local learning HTML to Markdown converter (English)">
+    <meta name="twitter:description" content="StyloBot v8 lets a site give AI crawlers a controlled Markdown view of its pages at its own local edge, without ceding the gateway to a CDN. This piece is...">
+    <meta name="twitter:image" content="https://mostlylucid.net/img/social2.jpg">
+
+    <!-- Meta Description -->
+    <meta name="description" content="StyloBot v8 lets a site give AI crawlers a controlled Markdown view of its pages at its own local edge, without ceding the gateway to a CDN. This piece is..." />
+
+    <!-- Site-wide Structured Data -->
+    <script type="application/ld&#x2B;json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "mostlylucid",
+        "url": "https://www.mostlylucid.net",
+        "description": "Technical blog covering ASP.NET Core, C#, Entity Framework, HTMX, Docker, and modern web development.",
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": "https://www.mostlylucid.net/search?query={search_term_string}"
+            },
+            "query-input": "required name=search_term_string"
+        },
+        "publisher": {
+            "@type": "Person",
+            "name": "Scott Galloway",
+            "url": "https://www.mostlylucid.net/blog/aboutme",
+            "sameAs": [
+                "https://github.com/scottgal",
+                "https://twitter.com/scottgal",
+                "https://www.linkedin.com/in/scottgalloway/"
+            ]
+        }
+    }
+    </script>
+
+    <!-- Article metadata for blog posts -->
+        <meta property="article:published_time" content="2026-06-23T18:00:00Z" />
+        <meta property="article:author" content="Scott Galloway" />
+    <link rel="icon" type="image/png" href="/img/smalllogo.svg" />
+
+    <script src="https://accounts.google.com/gsi/client"  data-cfasync="false" async defer></script>
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css"
+    />
+    <link rel="prefetch" href="/css/dist/main.css?v=h8ZrcL9u5gI5dLW0irFjSt0k6JDuVdD_MOBoiqY934c">
+    <link href="/css/dist/main.css?v=h8ZrcL9u5gI5dLW0irFjSt0k6JDuVdD_MOBoiqY934c" media="screen, print" rel="stylesheet" />
+    <!-- Highlight.js themes now bundled in main.css - no separate requests needed -->
+    <link rel="manifest" href="/manifest.json" />
+</head>
+<body x-data="globalSetup()" x-init="themeInit()" :class="isMobileMenuOpen ? 'max-h-screen overflow-hidden relative' : ''" class="bg-custom-light-bg dark:bg-custom-dark-bg ">
+<div id="toast" class="toast toast-bottom fixed z-50 hidden ">
+    <div id="toast-message" class="alert ">
+        <div>
+            <span id="toast-text" class="font-bold dark:text-white text-black">Notification message</span>
+        </div>
+    </div>
+    <p class="hidden right-1 bx-copy  cursor-pointer alert-success alert-warning alert-error alert-info overflow-y-hidden"></p>
+</div>
+<header class="sticky top-0 z-40 bg-white  dark:bg-custom-dark-bg shadow-md  container mx-auto flex flex-wrap items-center justify-between px-4 mb-3 py-1 w-full rounded border-b border-x border-l-neutral-600 border-r-neutral-600 border-b-neutral-600 print:!hidden" id="header">
+
+    <ul class="flex items-center w-full print:hidden gap-1 sm:gap-2">
+        <!-- Logo + Home Icon - Always visible (last to hide) -->
+        <li>
+            <a href="/" hx-swap="show:window:top" hx-target="#contentcontainer" hx-push-url="true" hx-headers='{"homerequest": "true"}' class="flex items-center" hx-get="/">
+                <span class="bx bx-home-alt-2 text-xl lg:text-2xl font-semibold mr-1 sm:mr-2 transition-colors group-hover:text-green dark:text-white dark:group-hover:text-secondary print:hidden"></span>
+
+                <div class="svg-container">
+                    <!-- Large screen logo (shown on large screens) -->
+                    <img src="/img/logo.svg?v=kUkb5rVbYNGnG7rw9AdiyMbnZiU7-WEYHK40rbEZwtA" width="180px" height="30px" alt="mostlylucid limited" class="hidden lg:block img-filter-dark" :class="{ 'img-filter-dark': !isDarkMode }" />
+
+                    <!-- Small screen logo (shown on small/medium screens) -->
+                    <img src="/img/smalllogo.svg?v=DwnIOiZqr44gIunxm1XFuIQgKTa_KzF_8n3xsNUZmkQ" width="30px" height="20px" alt="mostlylucid limited" class="block lg:hidden" />
+                </div>
+            </a>
+        </li>
+
+        <!-- Search Typeahead - Expands to fill available space -->
+        <li class="group relative mb-1 hidden lg:flex flex-1 mx-4 max-w-xl">
+            <div x-data="typeahead()" class="relative w-full" id="searchelement" x-on:click.outside="results = []">
+    <form x-on:submit.prevent="goToSearch" class="flex items-center gap-1 w-full">
+        <label class="input input-sm bg-neutral-500 bg-opacity-10 input-bordered flex items-center gap-2 flex-1">
+            <input
+                type="text"
+                x-model="query"
+                x-on:input.debounce.200ms="search"
+                x-on:keydown.down.prevent="moveDown"
+                x-on:keydown.up.prevent="moveUp"
+                x-on:keydown.tab.prevent="completeWithHighlighted"
+                x-on:keydown.enter.prevent="completeAndSearch"
+                placeholder="Search..."
+                class="border-0 grow input-sm text-black dark:text-white bg-transparent w-full"/>
+        </label>
+        <button type="submit" class="btn btn-sm btn-primary" title="Search">
+            <i class="bx bx-search text-lg"></i>
+        </button>
+    </form>
+    <!-- Dropdown showing matching articles -->
+    <ul x-show="results.length > 0"
+        id="searchresults"
+        class="absolute z-100 my-2 left-0 right-0 w-full min-w-[280px] bg-white dark:bg-custom-dark-bg border border-1 text-black dark:text-white border-neutral-600 rounded-lg shadow-lg overflow-hidden">
+        <template x-for="(article, index) in results" :key="article.slug">
+            <li x-on:click="window.location.href = '/blog/' + article.slug"
+                x-on:mouseenter="highlightedIndex = index"
+                :class="{
+                    'dark:bg-blue-dark bg-blue-light': index === highlightedIndex,
+                    'dark:hover:bg-blue-dark hover:bg-blue-light': true
+                }"
+                class="cursor-pointer text-sm p-2 m-2"><span x-text="article.title" class="block"></span></li>
+        </template>
+    </ul>
+</div>
+        </li>
+
+        <li class="ml-auto lg:hidden"></li>
+
+        <!-- Login/User Avatar - Hide on medium screens (lg+) -->
+        <li class="group relative mb-1 hidden lg:block">
+            <div class="flex items-center">
+                    <div class="w-[32px] h-[32px] rounded-full overflow-hidden flex items-center justify-center [&_iframe]:!rounded-full" title="Sign in with Google">
+                        <div id="google_button" class="scale-[1.3] -m-1"></div>
+                    </div>
+            </div>
+        </li>
+
+        <!-- Social Icons - Hide on medium screens (lg+) -->
+        <li class="group relative my-1 px-2 hidden lg:block border-neutral-400 dark:border-neutral-600 border rounded-lg">
+            <div class="mr-auto flex items-center pt-6 sm:mr-0 sm:pt-0 space-x-3 text-2xl ">
+
+    <a href="https://github.com/scottgal/" target="_blank">
+        <i class="text-primary dark:text-white hover:text-secondary dark:hover:text-secondary transition-colors bx bxl-github"></i>
+    </a>
+
+    <a href="https://hachyderm.io/@scottgal@hachyderm.io" target="_blank">
+        <i class=" text-primary dark:text-white hover:text-secondary dark:hover:text-secondary transition-colors bx bxl-mastodon"></i>
+    </a>
+
+    <a href="https://www.linkedin.com/in/scott-galloway-91608691/" target="_blank">
+        <i class=" text-primary dark:text-white hover:text-secondary dark:hover:text-secondary transition-colors bx bxl-linkedin"></i>
+    </a>
+
+</div>
+        </li>
+
+        <!-- RSS - Icon only -->
+        <li class="group relative mb-1 hidden md:block">
+            <a href="/rss" target="_blank" class="flex items-center text-lg hover:text-secondary dark:hover:text-secondary transition-colors" title="RSS Feed">
+                <i class="text-xl bx bx-rss"></i>
+            </a>
+        </li>
+
+        <!-- NuGet - Icon always visible, text on lg+ -->
+        <li class="group relative mb-1">
+            <a href="https://www.nuget.org/profiles/mostlylucid" class="broken-link" title="This link may be broken" target="_blank" rel="noopener noreferrer" class="flex items-center px-1 lg:px-2 font-body text-base font-medium text-primary transition-colors group-hover:text-green dark:text-white dark:group-hover:text-secondary" data-umami-event="NuGet Click">
+                <i class="bx bxl-nuget text-xl"></i>
+                <span class="ml-0.5 hidden lg:inline">NuGet</span>
+            </a>
+        </li>
+
+        <!-- Software - Icon always visible, text on lg+ -->
+        <li class="group relative mb-1">
+            <a href="/software" hx-boost="true" hx-target="#contentcontainer" hx-swap="show:window:top" class="flex items-center px-1 lg:px-2 font-body text-base font-medium text-primary transition-colors group-hover:text-green dark:text-white dark:group-hover:text-secondary" data-umami-event="Software Click">
+                <i class="bx bx-code-block text-xl"></i>
+                <span class="ml-0.5 hidden lg:inline">Software</span>
+            </a>
+        </li>
+
+        <!-- Contact - Icon always visible, text on lg+ -->
+        <li class="group relative mb-1">
+            <a hx-boost="true" hx-swap="show:window:top" hx-target="#contentcontainer" class="flex items-center px-1 lg:px-2 font-body text-base font-medium text-primary transition-colors group-hover:text-green dark:text-white dark:group-hover:text-secondary" data-umami-event="Contact Click" href="/contact">
+                <i class="bx bx-mail-send text-xl"></i>
+                <span class="ml-0.5 hidden lg:inline">Contact</span>
+            </a>
+        </li>
+
+        <!-- Theme Toggle - Always visible -->
+        <li class="group relative mb-1">
+            <div class="flex items-center">
+                <i class="bx cursor-pointer text-xl lg:text-3xl text-primary dark:text-white transition-colors" x-on:click="themeSwitch()" :class="isDarkMode ? 'bxs-sun' : 'bxs-moon'"></i>
+            </div>
+        </li>
+    </ul>
+
+</header>
+<div id="announcement-container" hx-get="/announcement/banner" hx-trigger="load" hx-swap="innerHTML"></div>
+<span class="hidden btn btn-sm btn-active btn-disabled select select-primary select-sm
+        text-sm text-gray-600 text-neutral-500 border rounded flex items-center
+        justify-center min-w-[80px] pr-4 pt-0 mt-0 mr-2 btn-primary btn-outline
+bg-white    dark:border-gray-600 dark:bg-gray-800 bg-gray-800
+        dark:bg-blue-500 dark:border-blue-400 dark:text-white dark:hover:bg-blue-600 
+        dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700
+        dark:btn-accent dark:btn-outline dark:btn-disabled dark:btn-primary dark:btn-active gap-2 whitespace-nowrap cursor-pointer">
+</span>
+<div class="container mx-auto" id="contentcontainer" hx-history-elt>
+    
+
+<!-- JSON-LD Structured Data for Blog Post -->
+<script type="application/ld&#x2B;json">
+{
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    "headline": "StyloBot Release Series: StyloExtract - a local learning HTML to Markdown converter",
+    "description": "StyloBot v8 lets a site give AI crawlers a controlled Markdown view of its pages at its own local edge, without ceding the gateway to a CDN. This piece is...",
+    "datePublished": "2026-06-23T18:00:00Z",
+        "dateModified": "2026-06-23T23:53:36Z",
+    "author": {
+        "@type": "Person",
+        "name": "Scott Galloway",
+        "url": "https://mostlylucid.net/blog/aboutme"
+    },
+    "publisher": {
+        "@type": "Organization",
+        "name": "mostlylucid",
+        "logo": {
+            "@type": "ImageObject",
+            "url": "https://mostlylucid.net/img/logo.svg"
+        }
+    },
+    "mainEntityOfPage": {
+        "@type": "WebPage",
+        "@id": "https://mostlylucid.net/blog/stylobot-release-styloextract"
+    },
+    "wordCount": 5900,
+    "inLanguage": "en",
+    "keywords": "Architecture, lucidVIEW, Markdown, StyloBot, StyloExtract",
+    "image": "https://mostlylucid.net/img/social2.jpg"
+}
+</script>
+
+<title>StyloBot Release Series: StyloExtract - a local learning HTML to Markdown converter (English)</title>
+<div class="pt-2 lg:pt-2" id="blogpost" hx-boost="true"  hx-target="#contentcontainer" hx-swap="show:window:top">
+    <div class="border-b border-grey-lighter pb-3 sm:pb-3">
+
+        <h2 class="pb-2 block font-body text-3xl font-semibold leading-tight text-primary dark:text-white">
+            StyloBot Release Series: StyloExtract - a local learning HTML to Markdown converter
+        </h2>
+
+            <div class="pb-2">
+                
+    <div class="hidden sm:inline-flex items-center gap-0 px-1.5 py-0.5 bg-grey-lighter/50 dark:bg-gray-800 rounded-full border border-grey-light/30 dark:border-grey-dark/30">
+            <div class="tooltip" data-tip="English">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('en')" class="inline-block rounded opacity-100 ring-1 ring-blue-500 dark:ring-blue-400 scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/en/stylobot-release-styloextract">
+                    <img src="/img/flags/en.svg?v=yL4ecgh5ikrmku4ek3Bl1Ji7KedBlD9hcrKRGLjtgGY" width="18" height="12" alt="English" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="&#x939;&#x93F;&#x928;&#x94D;&#x926;&#x940; (Hindi)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('hi')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/hi/stylobot-release-styloextract">
+                    <img src="/img/flags/hi.svg?v=rESQMRf7z5Ixlo1-x4jPPHUz8iSxJJwAzvTQxk6zfww" width="18" height="12" alt="&#x939;&#x93F;&#x928;&#x94D;&#x926;&#x940; (Hindi)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Suomi (Finnish)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('fi')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/fi/stylobot-release-styloextract">
+                    <img src="/img/flags/fi.svg?v=ZEotabGpf05xtKg0GRajIe-bJmZ3TT4Sp8DZX1bn8rM" width="18" height="12" alt="Suomi (Finnish)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Fran&#xE7;ais (French)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('fr')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/fr/stylobot-release-styloextract">
+                    <img src="/img/flags/fr.svg?v=JB2sfanSeC9Ywv_cBQkKxIa0nN4UnIeWddGJ3uZq7fY" width="18" height="12" alt="Fran&#xE7;ais (French)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Nederlands (Dutch)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('nl')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/nl/stylobot-release-styloextract">
+                    <img src="/img/flags/nl.svg?v=SUh0oFxAfPsjFfaqj8BW5i-31bbYzeB2G7u0rUd8n7s" width="18" height="12" alt="Nederlands (Dutch)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Svenska (Swedish)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('sv')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/sv/stylobot-release-styloextract">
+                    <img src="/img/flags/sv.svg?v=NQ-p1QI94u0v1_0PnQ3gTiVVHWFUqrhZlJu3yBVD8Qs" width="18" height="12" alt="Svenska (Swedish)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Deutsch (German)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('de')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/de/stylobot-release-styloextract">
+                    <img src="/img/flags/de.svg?v=66IzwWTwOMXGBliJ-EyE_RkzJd0TtvxzT-MO9PNKgIE" width="18" height="12" alt="Deutsch (German)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Espa&#xF1;ol (Spanish)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('es')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/es/stylobot-release-styloextract">
+                    <img src="/img/flags/es.svg?v=kF8zEzWPMRMooB8S-k52nnLcCdhxksCPDtL8zfa7Edw" width="18" height="12" alt="Espa&#xF1;ol (Spanish)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="&#x423;&#x43A;&#x440;&#x430;&#x457;&#x43D;&#x441;&#x44C;&#x43A;&#x430; (Ukrainian)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('uk')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/uk/stylobot-release-styloextract">
+                    <img src="/img/flags/uk.svg?v=LYacI-v--yrgpjMpfBHe4G_LZmzns8p166Cbeho6A6w" width="18" height="12" alt="&#x423;&#x43A;&#x440;&#x430;&#x457;&#x43D;&#x441;&#x44C;&#x43A;&#x430; (Ukrainian)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Italiano (Italian)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('it')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/it/stylobot-release-styloextract">
+                    <img src="/img/flags/it.svg?v=yTnlBgXFoI3xqvGYGPdNKRmp08O3qnzZBSC4v8nF3dw" width="18" height="12" alt="Italiano (Italian)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="&#x4E2D;&#x6587; (Chinese Simplified)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('zh')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/zh/stylobot-release-styloextract">
+                    <img src="/img/flags/zh.svg?v=cfYvsW3Zuj8LAuuxkPShFJmQdn2CvQp8mPJRLhkPnIg" width="18" height="12" alt="&#x4E2D;&#x6587; (Chinese Simplified)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="&#x627;&#x644;&#x639;&#x631;&#x628;&#x64A;&#x629; (Arabic)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('ar')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/ar/stylobot-release-styloextract">
+                    <img src="/img/flags/ar.svg?v=GpMiNAdKXAW_8aIuQ2FfYADu45Uoai3EI99TU9aZMI8" width="18" height="12" alt="&#x627;&#x644;&#x639;&#x631;&#x628;&#x64A;&#x629; (Arabic)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="&#x3B5;&#x3BB;&#x3BB;&#x3B7;&#x3BD;&#x3B9;&#x3BA;&#x3AC; (Greek)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('el')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/el/stylobot-release-styloextract">
+                    <img src="/img/flags/el.svg?v=1luCYU8M0WenZ6v9oavB75nofvSOV1Xz0z5FJuPK02U" width="18" height="12" alt="&#x3B5;&#x3BB;&#x3BB;&#x3B7;&#x3BD;&#x3B9;&#x3BA;&#x3AC; (Greek)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Portugu&#xEA;s (Portuguese)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('pt')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/pt/stylobot-release-styloextract">
+                    <img src="/img/flags/pt.svg?v=5aZEMsqQJuMmPU0ZuVtsNOyqnfSOfkGTMDrOzCnyhzs" width="18" height="12" alt="Portugu&#xEA;s (Portuguese)" class="rounded shadow-sm" />
+                </a>
+            </div>
+            <div class="tooltip" data-tip="Polski (Polish)">
+                <a hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" onclick="saveLanguagePreference('pl')" class="inline-block rounded opacity-50 hover:opacity-90 hover:scale-105 transition-all duration-200 hover:-translate-y-0.5" hx-get="/blog/pl/stylobot-release-styloextract">
+                    <img src="/img/flags/pl.svg?v=xqUTGr_W7t4sYytbBC5lgmZnb9ByKVrNTqpt69U3Va8" width="18" height="12" alt="Polski (Polish)" class="rounded shadow-sm" />
+                </a>
+            </div>
+    </div>
+
+<script>
+function saveLanguagePreference(lang) {
+    try {
+        localStorage.setItem('preferredLanguage', lang);
+        const expires = new Date();
+        expires.setFullYear(expires.getFullYear() + 1);
+        document.cookie = `preferredLanguage=${lang}; path=/; expires=${expires.toUTCString()}; SameSite=Lax`;
+    } catch(e) {
+        console.warn('Could not save language preference:', e);
+    }
+}
+</script>
+
+            </div>
+
+        <div class="flex flex-wrap border-b border-grey-lighter items-center gap-x-2 gap-y-1 pb-2 pt-1 sm:pt-1">
+            <p class="pr-2 font-body text-sm font-light text-primary dark:text-white">
+                Tuesday, 23 June 2026
+            </p>
+            <span class="dark:text-white font-body text-grey text-sm">//</span>
+            <p class="pl-2 font-body text-sm font-light text-primary dark:text-white">
+                30 minute read
+            </p>
+            <div class="pl-4 flex flex-wrap gap-2 items-center print:hidden">
+                <a href="#commentsection" class="btn btn-outline btn-xs inline-flex items-center">
+                    <i class="bx bx-mail-send"></i> Comments
+                </a>
+
+                <a href="/api/raw/stylobot-release-styloextract?language=en"
+                   target="_blank" rel="noopener"
+                   class="btn btn-outline btn-xs inline-flex items-center"
+                   title="View raw Markdown">
+                    <i class="bx bx-code-alt"></i> Raw
+                </a>
+
+                <a class="btn btn-outline btn-xs btn-primary inline-flex items-center" href="/editor/edit?slug=stylobot-release-styloextract&amp;language=en">
+                    <i class="bx bx-edit"></i> Edit
+                </a>
+            </div>
+        </div>
+            <nav class="flex items-center justify-between text-sm text-primary dark:text-white my-2 print:hidden" aria-label="Post navigation">
+                <div>
+                </div>
+                <div>
+                            <a href="/blog/behaviour-aware-ux" hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" class="inline-flex items-center hover:text-secondary" hx-get="/blog/behaviour-aware-ux">
+                                <span>Older: StyloBot Release Series: Behaviour-Aware ASP.NET UI</span>
+                                <i class='bx bx-right-arrow-alt text-xl ml-1'></i>
+                            </a>
+                </div>
+            </nav>
+        <div class="pb-2 pt-2 print:hidden flex flex-wrap gap-1.5">
+                <a hx-get="/blog/category/Architecture" hx-push-url="true" hx-target="#contentcontainer" onclick="event.stopPropagation();" class="inline-block rounded-full bg-blue-light dark:bg-gray-800 bg-opacity-20 px-2 py-0.5 font-body text-xs text-black dark:text-white outline-1 outline outline-blue-light dark:outline-slate-700 cursor-pointer hover:bg-opacity-30 transition-all">
+    Architecture
+</a>
+                <a hx-get="/blog/category/lucidVIEW" hx-push-url="true" hx-target="#contentcontainer" onclick="event.stopPropagation();" class="inline-block rounded-full bg-blue-light dark:bg-gray-800 bg-opacity-20 px-2 py-0.5 font-body text-xs text-black dark:text-white outline-1 outline outline-blue-light dark:outline-slate-700 cursor-pointer hover:bg-opacity-30 transition-all">
+    lucidVIEW
+</a>
+                <a hx-get="/blog/category/Markdown" hx-push-url="true" hx-target="#contentcontainer" onclick="event.stopPropagation();" class="inline-block rounded-full bg-blue-light dark:bg-gray-800 bg-opacity-20 px-2 py-0.5 font-body text-xs text-black dark:text-white outline-1 outline outline-blue-light dark:outline-slate-700 cursor-pointer hover:bg-opacity-30 transition-all">
+    Markdown
+</a>
+                <a hx-get="/blog/category/StyloBot" hx-push-url="true" hx-target="#contentcontainer" onclick="event.stopPropagation();" class="inline-block rounded-full bg-blue-light dark:bg-gray-800 bg-opacity-20 px-2 py-0.5 font-body text-xs text-black dark:text-white outline-1 outline outline-blue-light dark:outline-slate-700 cursor-pointer hover:bg-opacity-30 transition-all">
+    StyloBot
+</a>
+                <a hx-get="/blog/category/StyloExtract" hx-push-url="true" hx-target="#contentcontainer" onclick="event.stopPropagation();" class="inline-block rounded-full bg-blue-light dark:bg-gray-800 bg-opacity-20 px-2 py-0.5 font-body text-xs text-black dark:text-white outline-1 outline outline-blue-light dark:outline-slate-700 cursor-pointer hover:bg-opacity-30 transition-all">
+    StyloExtract
+</a>
+        </div>
+
+    </div>
+    <div class="prose  dark:text-white text-black  max-w-none  py-2 mt-4 sm:py-2" >
+        <p><em>StyloBot v8 lets a site give AI crawlers a controlled Markdown view of its pages at its own local edge, without ceding the gateway to a CDN. This piece is about the extractor that does the conversion (StyloExtract): the walker bug <a href="https://github.com/scottgal/lucidview">lucidVIEW</a> caught, and the dogfood loop that made it honest.</em></p>
+<p><a href="https://www.stylobot.net"><img src="/articleimages/stylobot-logo.svg" alt="StyloBot" width="120" /></a></p>
+<p><a href="https://www.nuget.org/packages/Mostlylucid.StyloExtract.Html" class="broken-link" title="This link may be broken"><img src="https://img.shields.io/nuget/v/Mostlylucid.StyloExtract.Html?label=StyloExtract&amp;logo=nuget" alt="StyloExtract" /></a>
+<a href="https://www.nuget.org/packages/Mostlylucid.Avalonia.UITesting" class="broken-link" title="This link may be broken"><img src="https://img.shields.io/nuget/v/Mostlylucid.Avalonia.UITesting?label=Avalonia.UITesting&amp;logo=nuget" alt="Mostlylucid.Avalonia.UITesting" /></a>
+<a href="https://www.stylobot.net"><img src="https://img.shields.io/badge/StyloBot-stylobot.net-1f6feb" alt="StyloBot" /></a>
+<a href="https://github.com/scottgal/lucidview"><img src="https://img.shields.io/github/v/release/scottgal/lucidview?label=lucidVIEW&amp;logo=github" alt="lucidVIEW" /></a>
+<a href="https://www.nuget.org/packages/Mostlylucid.Naiad" class="broken-link" title="This link may be broken"><img src="https://img.shields.io/nuget/v/Mostlylucid.Naiad?label=Naiad&amp;logo=nuget&amp;include_prereleases" alt="Mostlylucid.Naiad" /></a></p>
+<blockquote>
+<p><strong>StyloBot Release Series</strong></p>
+<ol>
+<li><a href="/blog/stylobot-fingerprint"><strong>Behaviour, Not Identity</strong></a>: why StyloBot models clients behaviourally</li>
+<li><a href="/blog/behaviour-aware-ux"><strong>Behaviour-Aware ASP.NET UI</strong></a>: the server-rendered surface over that detection result</li>
+<li><a href="/blog/stylobot-release-reliability"><strong>Finding and Fixing Unbounded Growth in Long-Running .NET Services</strong></a>: the reliability discipline that keeps the engine boring in production</li>
+<li><a href="/blog/typescript-sdk"><strong>Behaviour-Aware TypeScript UI</strong></a>: Express, Fastify, and browser components</li>
+<li><a href="/blog/sidecar-architecture"><strong>The Sidecar Architecture</strong></a>: how the detection engine connects to non-.NET stacks</li>
+<li><a href="/blog/stylobot-release-learning"><strong>Learning to Get Faster</strong></a>: the adaptive learning system, four-tier memory, and the verdict cache</li>
+<li><a href="/blog/stylobot-release-nondeterministic-testing"><strong>Testing the Thing That Won't Sit Still</strong></a>: the verification discipline: one BDF file drives regression, load, and calibration</li>
+<li><strong>StyloExtract - a local learning HTML to Markdown converter</strong>: the HTML→Markdown layer that pairs with the detector, the walker bug lucidVIEW caught, and the dogfood loop that made it honest</li>
+</ol>
+</blockquote>
+<p>The detector that decides which requests get Markdown is in <a href="/blog/stylobot-fingerprint">Behaviour, Not Identity</a>; the policy-dispatch middleware that fires the <code>extract-markdown</code> action is the same <code>DetectionPolicyMiddleware</code> covered in <a href="/blog/sidecar-architecture">The Sidecar Architecture</a>; the reliability discipline that keeps the gateway from leaking memory while it does this is in <a href="/blog/stylobot-release-reliability">Finding and Fixing Unbounded Growth</a>. Source: <a href="https://github.com/scottgal/styloextract">github.com/scottgal/styloextract</a> and the consumer that surfaced the v1.7.1 bug at <a href="https://github.com/scottgal/lucidview">github.com/scottgal/lucidview</a>.</p>
+<!-- [TOC] Auto-adjusted minLevel from 1 to 2 (document starts at H2) -->
+<nav class="ml_toc" aria-label="Table of Contents">
+<ul>
+<li><a href="#what-stylobot-v8-adds">What StyloBot v8 adds</a></li>
+<li><a href="#what-extract-markdown-actually-means">What &quot;extract Markdown&quot; actually means</a></li>
+<li><a href="#the-walker">The walker</a></li>
+<li><a href="#the-dogfood-loop">The dogfood loop</a></li>
+<li><a href="#the-bug-class-no-test-would-have-caught">The bug class no test would have caught</a></li>
+<li><a href="#what-dogfooding-actually-demands">What dogfooding actually demands</a></li>
+<li><a href="#closed-loops-across-the-stack">Closed loops across the stack</a></li>
+<li><a href="#how-lucidview-wires-it-in">How lucidVIEW wires it in</a></li>
+<li><a href="#the-pipeline-by-stage">The pipeline, by stage</a></li>
+<li><a href="#playwright-for-js-rendered-pages">Playwright for JS-rendered pages</a></li>
+<li><a href="#other-things-dogfooding-surfaced">Other things dogfooding surfaced</a></li>
+<li><a href="#the-arbitrary-site-coverage-gap">The arbitrary-site coverage gap</a></li>
+<li><a href="#where-it-ships">Where it ships</a></li>
+<li><a href="#whats-actually-new-here">What&#39;s actually new here</a></li>
+</ul>
+</nav>
+<hr />
+<h2 id="what-stylobot-v8-adds">What StyloBot v8 adds</h2>
+<p>When an AI crawler hits a path the operator has marked Markdown-eligible, the gateway swaps the response: the crawler receives GFM rendered from the upstream page body, with none of the chrome, none of the JavaScript, none of the cookie banners. The upstream site stays untouched. Every other request (human, search engine, regular API client) continues to receive the original HTML.</p>
+<p>The shape is the obvious one once the classifier is in place: classify the request as a crawler (StyloBot already does this), pull the page through a content-extraction layer, project to Markdown, return that instead of the HTML. The detector pipeline classifying <code>BotType.AiBot</code> with the same fast-path latency as every other verdict is v7 work. The <code>DetectionPolicyMiddleware</code> in 7.x that dispatches named action policies by verdict is v7 work. The missing piece, and what v8 adds, is the extractor itself.</p>
+<p>Cloudflare ships an edge-side version of a similar feature, which is fine if you own the edge. A self-hosted StyloBot operator doesn't, and that puts three constraints on the implementation Cloudflare doesn't have:</p>
+<ol>
+<li><strong>The site is upstream of the StyloBot gateway.</strong> Cloudflare can serve markdown because they ARE the edge. A StyloBot gateway sits in front of upstream origins it doesn't control, proxying with <a href="https://microsoft.github.io/reverse-proxy/">YARP</a>. The content has to be extracted on the gateway hop, not at the origin and not at some SaaS round-trip. The upstream site stays untouched.</li>
+<li><strong>Local. No Python, no Node, no separate service.</strong> The gateway is a single <a href="https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/">AOT</a>-published binary. Adding a Python sidecar for HTML to Markdown defeats the deployment shape.</li>
+<li><strong>Fast enough to sit on the hot path.</strong> If &quot;serve Markdown to AI crawlers&quot; adds 200ms per request, the operator turns it off. The budget is sub-15ms p99 on a cache hit, which is what the existing detection middleware lives within.</li>
+</ol>
+<p>Wiring an <code>extract-markdown</code> policy to &quot;AiBot at /docs/*&quot; is a config line: a small adapter pack (<code>Mostlylucid.BotDetection.StyloExtract</code>) and six lines of JSON. An operator drops the package in, adds the rule, and AI crawlers start receiving Markdown for the same URLs that still serve HTML to humans.</p>
+<p>StyloExtract has three escape levels, in order of cost:</p>
+<ol>
+<li><strong>Static extraction.</strong> The default path. Parse, clean, classify, walk, render. Runs on the gateway hot path with no extra dependencies. Handles every SSR site.</li>
+<li><strong>Playwright rendering.</strong> Optional package. Drives a headless Chromium for SPAs whose visible content is hydrated client-side after page load. Same downstream pipeline; just different fetcher.</li>
+<li><strong>Operator templates.</strong> Manual escape hatch. One YAML file per hostile host, pinning the MainContent selector. Hot-reloaded.</li>
+</ol>
+<p>The static path is the one that lives on the hot path. The other two exist because real-world HTML is broken in two distinct ways: some pages need a browser to render, and some pages don't follow any structure at all.</p>
+<h2 id="what-extract-markdown-actually-means">What &quot;extract Markdown&quot; actually means</h2>
+<p>If you read the spec at face value, &quot;convert HTML to Markdown&quot; is a solved problem. There are dozens of libraries. Reality is they all degrade on real pages because they take the document as flat content and the page as scoping.</p>
+<p>Real-world web pages are 80-95% boilerplate. The article you actually want lives inside two or three wrapping <code>&lt;div&gt;</code>s out of two or three hundred. A naive HTML-to-Markdown library converts everything: every nav link, every cookie banner phrase, every footer, every related-post sidebar, every share button, every modal that's hidden by CSS but present in the DOM. The crawler asked for the article; you handed it an entire 50KB Markdown file with the article buried somewhere on line 412.</p>
+<p>So the extractor has to do two jobs:</p>
+<ol>
+<li><strong>Identify the body.</strong> Which subtree of the parsed DOM contains the actual content, and which subtrees are chrome?</li>
+<li><strong>Render the body.</strong> Once you've isolated it, project that subtree to Markdown that preserves the structure a downstream reader (human or LLM) cares about: heading hierarchy, inline links, lists, tables, code blocks, images.</li>
+</ol>
+<p>Identification is the harder one. There's a whole field of academic literature on it - it's called <em>web content extraction</em> and the established benchmark is <a href="https://github.com/scrapinghub/article-extraction-benchmark">WCXB</a>. The state of the art when I started reading was a Python tool called <a href="https://trafilatura.readthedocs.io/">Trafilatura</a>. I ported the load-bearing ideas to .NET and added a layer Trafilatura doesn't have: per-host <em>template learning</em> via structural fingerprinting.</p>
+<p>The shape is:</p>
+<pre><code>parse HTML → clean → fingerprint the structure → does this fingerprint
+  match a template I've seen on this host before?
+    yes → apply the cached extractor → render
+    no  → run the heuristic classifier → induce a fresh extractor →
+          cache it under this host's fingerprint → render
+</code></pre>
+<p>The first time the gateway sees a page from a host, it pays the full heuristic-classifier cost (~200µs for a medium page). Every subsequent page from that host whose structural fingerprint matches gets the cached extractor instead, which is a handful of CSS-selector queries (~30µs). Same-host pages with the same template - which is most of a site - go through the fast path. Pages with novel layouts trigger a refit.</p>
+<p>The fingerprint is a <a href="https://en.wikipedia.org/wiki/MinHash">MinHash</a> sketch over a normalised DOM-path representation, with an <a href="https://en.wikipedia.org/wiki/Locality-sensitive_hashing">LSH</a> bander on top for sub-millisecond probe. The match math doesn't matter for this article; what matters is that it makes the per-host learning cheap enough to run on every request.</p>
+<h2 id="the-walker">The walker</h2>
+<p>The render side is where the dogfooding loop made me earn it.</p>
+<p>The first version of StyloExtract emitted Markdown by walking the classified blocks and projecting <code>element.TextContent.Trim()</code> into the output. Every block became a paragraph. Every heading became <code># text</code> regardless of whether it was H1 or H4. Anchors collapsed to bare text. Lists lost their bullets. Code blocks lost their fences. Tables flattened to comma-separated runs.</p>
+<p>This is technically &quot;Markdown.&quot; It's also useless. The AI crawler asks for Markdown to <em>avoid parsing chrome</em>, and we hand it a wall of paragraphs where the only signal is occasional plain-text noun phrases. The whole point of serving Markdown is that the structure carries information. Strip the structure and you've just given the crawler a slightly smaller bag of strings.</p>
+<p>So the next version of StyloExtract walks the DOM of each classified content block and emits real <a href="https://github.github.com/gfm/">GFM</a>:</p>
+<ul>
+<li><code>&lt;h1&gt;</code> through <code>&lt;h6&gt;</code> become 1 through 6 <code>#</code> characters</li>
+<li><code>&lt;a href&gt;</code> becomes <code>[text](href)</code></li>
+<li><code>&lt;em&gt;</code> and <code>&lt;strong&gt;</code> keep their emphasis</li>
+<li><code>&lt;code&gt;</code> stays backticked, <code>&lt;pre&gt;</code> becomes a fenced block with <code>language-x</code> carried across</li>
+<li><code>&lt;ul&gt;</code> and <code>&lt;ol&gt;</code> emit real bullet and numbered lists</li>
+<li><code>&lt;blockquote&gt;</code> prefixes each line with <code>&gt; </code> (and the multi-paragraph quote gets the <code>&gt; body\n&gt;\n&gt; body</code> convention)</li>
+<li><code>&lt;table&gt;</code> is reconstructed via a <a href="https://html.spec.whatwg.org/multipage/tables.html">WHATWG slot-grid algorithm</a> with proper colspan / rowspan / caption / alignment handling, falling back to raw HTML when the source is too complex for GFM to express (multi-row thead, nested tables, block content in a cell)</li>
+<li>Images render as <code>![alt](src)</code> whether they're inline in prose or standalone in <code>&lt;figure&gt;</code></li>
+</ul>
+<p>The walker is one StringBuilder per block, an internal scratch buffer reused across cells / list items, and a single pass over the DOM. After tuning (the first cut was 304µs / 191KB for a table-heavy page) it sits at ~70µs / 165KB worst case. The render share of the full extraction pipeline went from 25-55% to 5-11%.</p>
+<p>The walker is also the part that broke first.</p>
+<h2 id="the-dogfood-loop">The dogfood loop</h2>
+<p>lucidVIEW is a cross-platform Avalonia desktop Markdown viewer I built well before StyloExtract existed. The original purpose was to dogfood <a href="https://www.nuget.org/packages/Mostlylucid.Naiad" class="broken-link" title="This link may be broken">Mostlylucid.Naiad</a>, the embedded Mermaid renderer fork that ships inside it: open a <code>.md</code> file, render it natively with Mermaid support, get on with the day. When StyloExtract shipped, lucidVIEW grew an &quot;Open Web Page&quot; command (Ctrl+Shift+W): paste a URL, the app fetches it in-process, hands the HTML to StyloExtract, and renders whatever Markdown comes back. No server, no embedded browser, no Chromium. The full extraction-and-render path lives inside the same single-file exe.</p>
+<p>What lucidVIEW gave me was a dogfooding loop with teeth. The other StyloBot release-series articles talk about the dashboard as the dogfooding surface; that's true at the protocol layer. But the dashboard is reading data the detection engine produces and rendering it to <em>me</em>. I'm in the loop. I'll forgive a lot of weird-looking output as long as the underlying counters are right.</p>
+<p>lucidVIEW renders Markdown to a downstream reader (me, but reading content). It's the same shape as the AI crawler use case: someone consuming my output as the <em>substance</em>, not as instrumentation. When the output is wrong, you see it immediately. There's no abstraction layer between &quot;the extractor produced X&quot; and &quot;I am reading X.&quot;</p>
+<p>So I open lucidVIEW pointing at my own blog index. The cards render. Then I scroll. Every blog-card link past the first is rendered as <code>[Post title](/blog/post)</code> - the literal bracket text - instead of as a styled clickable link.</p>
+<p>The unit-test suite is green. The fixture I'd written for &quot;anchor inside indented HTML&quot; passes. The output contains the string <code>[Post title](/blog/post)</code>. The Markdown is wrong anyway.</p>
+<h2 id="the-bug-class-no-test-would-have-caught">The bug class no test would have caught</h2>
+<p>The blog index is built with Tailwind. Tailwind output is indented for readability: each wrapper div sits two spaces further in than its parent. By the time you reach the actual anchor for a blog-card link, the source HTML looks like:</p>
+<pre><code class="language-html">&lt;section class=&quot;...&quot;&gt;
+    &lt;div class=&quot;container...&quot;&gt;
+        &lt;div class=&quot;grid...&quot;&gt;
+            &lt;div class=&quot;card...&quot;&gt;
+                &lt;a href=&quot;/blog/post-a&quot;&gt;Post title&lt;/a&gt;
+                ...
+</code></pre>
+<p>The walker's text-handling helper, <code>AppendEscapedInline</code>, collapses runs of whitespace to a single space. Inside one call it does this correctly: the function maintains a <code>prevWs</code> flag that suppresses successive whitespace emits. Between calls, the flag resets. So when the walker visits successive text-node-of-whitespace siblings - which is exactly what indented HTML produces between empty inline elements - each call emits one collapsed leading space at line-start.</p>
+<p>Four wrappers of indentation, four text-node-whitespace siblings, four collapsed spaces. <a href="https://commonmark.org/">CommonMark</a>'s indented-code-block rule fires at four spaces. The walker's <code>[Post title](/blog/post)</code> lands on a line that starts with four spaces. <a href="https://github.com/xoofx/markdig">Markdig</a> parses the entire line as a code block. The bracket text renders as literal text. The link is dead.</p>
+<p>The unit test passes because the test asserts the string <code>[Post title](/blog/post)</code> appears somewhere in the output. It does. It's just inside a code block now.</p>
+<p>The fix is two lines: at line-start, prime <code>prevWs = true</code> so the <em>first</em> leading whitespace from each text node gets skipped instead of emitted. Leading whitespace inside indented HTML never reaches the output. Inner-paragraph runs still collapse to single spaces.</p>
+<p>The interesting thing is what the test <em>should</em> have asserted. Surface-text <code>.Contains()</code> checks the <em>characters</em> are present. They were. They were just in the wrong CommonMark block type. What I needed was a <em>structural</em> assertion: parse the walker's output with a real CommonMark parser and assert paragraphs are paragraphs, links are links, no spurious code blocks. Markdig's AST gives you that for free. So the bug fix landed with a regression test, and the regression test landed with a lint harness: a small helper that takes any walker output, parses it with Markdig, and asserts:</p>
+<ul>
+<li>Zero indented code blocks unless a fenced block was the source</li>
+<li>Every link in the source HTML survives as a real <code>LinkInline</code> in the AST</li>
+<li>The fenced-block count matches the declared expectation</li>
+</ul>
+<p>To prove the lint had teeth, I reverted the original fix and ran the lint suite. Exactly one test failed - the one that uses the four-nested-wrapper shape. Restore the fix, all pass.</p>
+<p>That single check now runs over every walker test in the suite. Future regressions of the same class get caught structurally, not by string matching. Which means I'll find them in CI instead of in lucidVIEW.</p>
+<p><img src="/articleimages/lucidview-mostlylucid.png" alt="mostlylucid.net rendered in lucidVIEW after the v1.7.1 walker fix: every blog-post card resolves as a real clickable link with its summary as a proper paragraph, instead of bracket-text inside a code block." /></p>
+<h2 id="what-dogfooding-actually-demands">What dogfooding actually demands</h2>
+<p>There's a phase in every product where the unit tests are green and the demo works and the operator has set the right config flags and you ship a release and a day later a user opens an issue saying &quot;this doesn't work on real content.&quot; Every product hits this. The honest answer is that the test fixtures and the demo content are sterile in a way real content isn't.</p>
+<p>The dogfooding loop is the cheapest way out of this trap. The phrase &quot;dogfooding&quot; gets used loosely; in this case it means something specific. lucidVIEW is a <em>separate product</em>, with separate users, that <em>happens to consume StyloExtract's output as its product surface</em>. If lucidVIEW shows broken Markdown, lucidVIEW's users complain about lucidVIEW. The complaint surfaces in a separate issue tracker, with a separate triage queue, against a separate version. From StyloExtract's perspective this is an external user filing a bug.</p>
+<p>That separation matters. If lucidVIEW were a StyloExtract test fixture, I'd have written it with sterile content because I know what the extractor likes. Because lucidVIEW exists in its own world, it points at my actual blog, which uses Tailwind, which produces the indented HTML shape that triggers the bug class. The bug surfaced in five minutes of using the product as a user.</p>
+<p>A lot of the v1.7.x releases trace back to this loop. The structured-walker output (v1.7.0) shipped because lucidVIEW's first version was unreadable when StyloExtract was emitting flat paragraphs. The leading-whitespace fix (v1.7.1) shipped because the post-walker version was visibly broken on Tailwind sites. The output-quality lint harness shipped because I wanted the next bug class to be CI-caught.</p>
+<p>The pattern's not new. The contribution of this article is naming it: build a <em>consumer product</em> in parallel with your <em>infrastructure product</em>, and consume your own infrastructure through the consumer. The bug rate at the infrastructure layer drops by the amount the consumer surfaces. The bug <em>class</em> coverage at the infrastructure layer expands by everything the consumer notices that you didn't think to write a test for.</p>
+<h2 id="closed-loops-across-the-stack">Closed loops across the stack</h2>
+<p>StyloExtract / lucidVIEW is one instance of a pattern I run across every project. The loop is:</p>
+<pre class="mermaid">flowchart LR
+    PB[visible product&lt;br/>behaviour] --> TR[test/review&lt;br/>loop]
+    TR --> AP[architectural&lt;br/>primitive]
+    AP --> RL[reusable&lt;br/>library]
+    RL --> WE[written&lt;br/>explanation]
+    WE --> LG[LLM-readable&lt;br/>grammar]
+    LG --> NP[next&lt;br/>product]
+    NP --> PB
+</pre>
+<p>A bug surfaces in a product. The fix becomes a structural assertion (the test/review loop). The assertion turns into a primitive that other things can use. The primitive becomes a library. The library gets written about. The writing builds an LLM-readable grammar around the codebase. The grammar makes the next product faster to build. The next product surfaces new bugs in the libraries it depends on. The loop closes.</p>
+<p>The dependency graph that this produces, across the projects I run, looks like:</p>
+<pre class="mermaid">flowchart TB
+    LV[lucidVIEW&lt;br/>Avalonia markdown reader]
+    SB[StyloBot&lt;br/>detection gateway]
+    SF[StyloFlow&lt;br/>policy + flow runtime]
+    SE[StyloExtract&lt;br/>HTML → Markdown]
+    NA[mostlylucid.Naiad&lt;br/>Mermaid renderer fork]
+    DA[mostlylucid.dagre&lt;br/>graph layout]
+    EP[mostlylucid.ephemeral&lt;br/>signal + sketch primitives]
+    UT[Mostlylucid.Avalonia.UITesting&lt;br/>Avalonia UI test framework]
+
+    SB --> SF
+    SB --> SE
+    LV --> SE
+    LV --> NA
+    NA --> DA
+    SE --> EP
+    SF --> EP
+    LV -.tests via.-> UT
+</pre>
+<p><a href="https://www.nuget.org/packages/Mostlylucid.Avalonia.UITesting" class="broken-link" title="This link may be broken"><code>Mostlylucid.Avalonia.UITesting</code></a> is the bit that makes the lucidVIEW side of the loop reproducible. It is the Avalonia UI test harness lucidVIEW uses for drag, click, scroll, screenshot, and script playback; every lucidVIEW screenshot in this article was captured by it. With the desktop side automated, every fix to StyloExtract that lucidVIEW exposes can be replayed and verified without re-opening the app and clicking through by hand. (<code>Mostlylucid.StyloExtract.Playwright</code> is unrelated to the test loop; it is the JS-rendering input fetcher, covered in its own section below.)</p>
+<p>The trade is real. The graph is self-referential, and that has a cost. A bug in <code>mostlylucid.ephemeral</code> ripples up through StyloExtract and StyloFlow into StyloBot and lucidVIEW. The mitigation is time-boxed releases (no feature creep, the version ships when the scope it claims ships) and that every layer has its own test suite. The benefit is that I can work across all of them in a week and the cost of context-switching between them stays low, because every layer has the same shape: a primitive, a library, an explanation, a consumer.</p>
+<p>It also means writing this article isn't a side-effect of shipping StyloExtract. The writing IS one of the stages. Externalising the design into prose closes the loop that started with &quot;blog cards render wrong in lucidVIEW&quot; and ends with &quot;the next consumer of StyloExtract has a structural lint helper and a documented walker contract.&quot;</p>
+<p>This works for me because closing loops is how I think. The <em>workflow</em> probably doesn't generalise. The <em>local Markdown Mode</em> it produces does.</p>
+<h2 id="how-lucidview-wires-it-in">How lucidVIEW wires it in</h2>
+<pre class="mermaid">flowchart LR
+    URL[URL bar] --> Fetch[HttpClient GET&lt;br/>Accept: text/markdown, text/html]
+    Fetch --> Sniff{Content-Type}
+    Sniff -->|text/markdown| Render[LiveMarkdown.Avalonia]
+    Sniff -->|text/html| Convert[HtmlToMarkdownService]
+    Convert --> Sparse{&lt; 200 chars +&lt;br/>SPA markers?}
+    Sparse -->|yes| Stub[Stub: needs JS,&lt;br/>open in browser?]
+    Sparse -->|no| Render
+    Stub --> Render
+</pre>
+<p>Four package references and one service:</p>
+<pre><code class="language-csharp">public sealed class HtmlToMarkdownService
+{
+    private readonly IHtmlDomParser _parser = new AngleSharpHtmlDomParser();
+    private readonly IDomCleaner _cleaner = new DomCleaner();
+    private readonly IBlockSegmenter _segmenter = new BlockSegmenter();
+    private readonly IBlockClassifier _classifier =
+        HeuristicBlockClassifier.LoadFromEmbeddedResources();
+    private readonly IMarkdownRenderer _renderer = new TypedMarkdownRenderer();
+
+    public string Convert(string html, Uri? sourceUri = null)
+    {
+        var doc = _parser.Parse(html, sourceUri);
+        _cleaner.Clean(doc);
+        var blocks = _classifier.Classify(_segmenter.Segment(doc));
+        return _renderer.Render(blocks, ExtractionProfile.RagFull);
+    }
+}
+</code></pre>
+<p>That's it. A status-bar icon shows which path ran (direct MD / converted / SPA stub) so when something looks wrong the user can point at the right layer.</p>
+<p><img src="/articleimages/lucidview-wikipedia.png" alt="Wikipedia's Markdown article rendered inside lucidVIEW via StyloExtract: heading hierarchy intact, inline links live, code samples preserved." /></p>
+<h2 id="the-pipeline-by-stage">The pipeline, by stage</h2>
+<pre class="mermaid">flowchart LR
+    HTML[HTML] --> P[AngleSharpHtmlDomParser]
+    P --> C[DomCleaner&lt;br/>strip script/style]
+    C --> S[BlockSegmenter&lt;br/>candidate subtrees]
+    S --> K[HeuristicBlockClassifier&lt;br/>role + score]
+    K --> W[DomMarkdownWalker&lt;br/>GFM per block]
+    W --> R[TypedMarkdownRenderer&lt;br/>profile gate]
+    R --> MD[Markdown]
+</pre>
+<p>Parser + cleaner are <a href="https://anglesharp.github.io/">AngleSharp</a> wrappers. The interesting code starts at segmentation.</p>
+<p><strong>Segmenter.</strong> Walk the body, sink any semantic tag (<code>main</code>/<code>article</code>/<code>section</code>/<code>h1</code>-<code>h6</code>/<code>ul</code>/<code>pre</code>/...) plus any <code>&lt;div&gt;</code>/<code>&lt;section&gt;</code> that's text-heavy or has many children. Everything else is too small to be content:</p>
+<pre><code class="language-csharp">public IReadOnlyList&lt;IElement&gt; Segment(IDocument document)
+{
+    if (document.Body is null) return Array.Empty&lt;IElement&gt;();
+    var result = new List&lt;IElement&gt;();
+    Walk(document.Body, result);
+    return result;
+}
+
+private static void Walk(IElement element, List&lt;IElement&gt; sink)
+{
+    if (SemanticTags.Contains(element.TagName))   sink.Add(element);
+    else if (IsBlockyDiv(element))                sink.Add(element);
+    foreach (var child in element.Children) Walk(child, sink);
+}
+</code></pre>
+<p><strong>Classifier.</strong> Score every candidate, pick non-overlapping winners, tag with a <code>BlockRole</code> (MainContent, Heading, Navigation, Boilerplate, RepeatedItem, ...). Each chosen block gets its DOM walked into structured Markdown:</p>
+<pre><code class="language-csharp">foreach (var element in selected)
+{
+    var role = ClassifyRole(element);
+    yield return new ExtractedBlock
+    {
+        Role     = role,
+        Text     = element.TextContent.Trim(),
+        Markdown = ShouldRenderMarkdown(role) ? DomMarkdownWalker.Render(element) : &quot;&quot;,
+        Links    = ExtractLinks(element),
+        XPath    = XPathBuilder.For(element),
+        // ...
+    };
+}
+</code></pre>
+<p><strong>Walker.</strong> One StringBuilder, one DOM pass. The <code>&lt;a&gt;</code> case is where the v1.7.1 bug lived:</p>
+<pre><code class="language-csharp">case &quot;a&quot;:
+    var href = el.GetAttribute(&quot;href&quot;) ?? &quot;&quot;;
+    if (href.Length == 0) { WriteInlineChildren(dest, el); return; }
+    dest.Append('[');
+    WriteInlineChildren(dest, el);
+    dest.Append(&quot;](&quot;).Append(href).Append(')');
+    return;
+</code></pre>
+<p>(The fix wasn't here. It was in <code>AppendEscapedInline</code>, which fed leading whitespace into <code>dest</code> before this case ever ran. Four spaces ahead of <code>[</code> makes CommonMark parse the line as a code block.)</p>
+<p><strong>Renderer.</strong> Gate by profile. <code>RagFull</code> keeps article-context (Breadcrumb, RelatedLinks) and drops chrome (Footer, Header, CookieBanner, Nav). <code>MainContentOnly</code> keeps just the body. <code>AgentNavigation</code> keeps only nav (for crawl-link discovery):</p>
+<pre><code class="language-csharp">return p switch
+{
+    ExtractionProfile.RagFull =&gt; b.Role is not (BlockRole.Footer or BlockRole.Header
+        or BlockRole.Advertisement or BlockRole.CookieBanner or BlockRole.Boilerplate
+        or BlockRole.Unknown or BlockRole.PrimaryNavigation or BlockRole.SecondaryNavigation),
+    ExtractionProfile.MainContentOnly =&gt; b.Role is BlockRole.MainContent or BlockRole.Article
+        or BlockRole.Heading or BlockRole.Summary or BlockRole.Table or BlockRole.CodeBlock
+        or BlockRole.RepeatedItem,
+    ExtractionProfile.AgentNavigation =&gt; b.Role is BlockRole.PrimaryNavigation
+        or BlockRole.SecondaryNavigation or BlockRole.Breadcrumb or BlockRole.Form,
+    _ =&gt; true
+};
+</code></pre>
+<h2 id="playwright-for-js-rendered-pages">Playwright for JS-rendered pages</h2>
+<p>StyloExtract's heuristic operates on the static HTML the server returned. That's fine for SSR sites (Wikipedia, GitHub, most news article URLs). It breaks on SPA shells where the visible content is hydrated client-side from a JSON blob: <code>__NEXT_DATA__</code>, <code>__NUXT__</code>, <code>__APOLLO_STATE__</code>. The static HTML there is meta tags + a skeleton, and there is no body for the classifier to find.</p>
+<p><code>Mostlylucid.StyloExtract.Playwright</code> plugs in upstream of the pipeline. It implements <code>IRenderedHtmlFetcher</code>, drives a headless Chromium via <a href="https://playwright.dev/">Playwright</a>, waits for hydration, and returns the post-JS HTML to the rest of the extractor:</p>
+<pre><code class="language-csharp">public async Task&lt;RenderedHtmlResult&gt; FetchAsync(
+    Uri uri, RenderOptions? options = null, CancellationToken cancellationToken = default)
+{
+    var page = await _context.NewPageAsync();
+    await page.GotoAsync(uri.ToString(), new PageGotoOptions
+    {
+        WaitUntil = WaitUntilState.NetworkIdle,
+        Timeout = options?.NavigationTimeoutMs ?? 15000,
+    });
+    var html = await page.ContentAsync();
+    await page.CloseAsync();
+    return new RenderedHtmlResult { Html = html, FinalUrl = page.Url };
+}
+</code></pre>
+<p>Same parser, cleaner, segmenter, classifier, walker, renderer downstream. The only difference is that the input HTML now contains the hydrated DOM that the JS produced.</p>
+<pre class="mermaid">flowchart LR
+    URL[URL] --> Choice{Render mode}
+    Choice -->|static| HTTP[HttpClient]
+    Choice -->|js-required| PW[PlaywrightHtmlFetcher&lt;br/>headless Chromium]
+    HTTP --> Pipeline[parse → clean → segment&lt;br/>→ classify → walk → render]
+    PW --> Pipeline
+    Pipeline --> MD[Markdown]
+</pre>
+<p>This is the right answer when an operator runs StyloExtract server-side and a headless browser is a reasonable dependency. The CLI ships two binaries for exactly this split: <code>stylo-extract</code> (AOT, ~12MB, static-only) and <code>stylo-extract-playwright</code> (~120MB once Playwright's browser pack lands, JS-capable).</p>
+<p><strong>lucidVIEW does not use it.</strong> lucidVIEW is a markdown reader; its identity is &quot;no Chromium, no browser engine, no 200MB of dependencies for one feature.&quot; Bundling Playwright would put a headless browser inside an app whose pitch is the absence of one. The SPA stub described below is the correct response from lucidVIEW's perspective: tell the user the page needs a browser, hand it off to theirs. A server-side StyloBot operator has no such constraint and benefits from running both binaries side-by-side.</p>
+<h2 id="other-things-dogfooding-surfaced">Other things dogfooding surfaced</h2>
+<p>Four non-bugs that shaped lucidVIEW's failure-mode handling:</p>
+<ul>
+<li><p><strong>The spec that drove v1.7.0.</strong> First build emitted flat paragraphs (<code>element.TextContent.Trim()</code> per block). Wikipedia was unreadable, blog cards lost every anchor. Instead of &quot;make it better&quot; I wrote <a href="https://github.com/scottgal/lucidview/blob/main/docs/styloextract-markdown-spec.md"><code>docs/styloextract-markdown-spec.md</code></a> enumerating what was missing: heading levels, inline runs, lists, GFM tables, block images, with four reproducer URLs. The structured-walker work in v1.7.0 implements that spec.</p>
+</li>
+<li><p framework=""><strong>SPA pages.</strong> <code>bbc.com/news</code> is Next.js: static HTML is meta tags + a <code>__NEXT_DATA__</code> JSON blob hydrated by JS. StyloExtract correctly returns ~1 char because there's no body. lucidVIEW now sniffs for known framework markers (<code>__NEXT_DATA__</code>, <code>__NUXT__</code>, <code>__APOLLO_STATE__</code>, <code>data-reactroot</code>, <code>ng-version=</code>, <code>__REMIX_DATA__</code>) and, on sparse output + marker, renders a stub: <em>&quot;This page uses ; lucidVIEW does not run JavaScript. Open in browser?&quot;</em> BBC's article URLs (<code>/news/articles/&lt;id&gt;</code>) serve real <code>&lt;main&gt;</code> and convert cleanly. Homepage / article asymmetry, not a converter failure.</p>
+<p><img src="/articleimages/lucidview-bbc-spa.png" alt="lucidVIEW loading bbc.com/news: detects Next.js, renders a stub explaining client-side rendering isn't supported and offering an open-in-browser handoff. Status bar shows the warning-triangle source-mode icon plus a &quot;client-side rendered, no conversion possible&quot; tag." /></p>
+</li>
+<li><p><strong>Semantic-free pages.</strong> <code>example.com</code> has no <code>&lt;main&gt;</code>, no <code>&lt;article&gt;</code>. Heuristic correctly returns nothing. Same stub flow catches it.</p>
+</li>
+<li><p><strong>Correct-but-useless emit.</strong> My blog's category filter is <code>&lt;select&gt;&lt;option&gt;</code>. The walker finds no <code>&lt;a href&gt;</code>, emits the option text as one paragraph: <em>&quot;All .NET (41) 404s (1) ACP (1) AI (69)...&quot;</em> Correct (options aren't links) but visually awful. A future walker pass could detect <code>&lt;select&gt;</code> and emit a definition list or <code>[42 categories]</code> summary.</p>
+</li>
+</ul>
+<p>Plus one guardrail that came out of resisting the obvious shortcut. When extraction is sparse the temptation is &quot;fall back to Jina Reader / r.jina.ai / Trafilatura.&quot; lucidVIEW doesn't. Routing user URLs through a third-party reader makes the reader a privacy leak; every URL the user visits flows through some other operator's logs. The fallback chain stays local: direct markdown, then HTML through StyloExtract, then a metadata stub from <code>&lt;meta&gt;</code> / <code>og:</code> tags, then &quot;open in browser?&quot; Every step feeds <em>StyloExtract</em> a different fetch from the same origin, or synthesises from data we already have. The answer to &quot;this didn't convert&quot; is never &quot;use a different converter.&quot;</p>
+<h2 id="the-arbitrary-site-coverage-gap">The arbitrary-site coverage gap</h2>
+<p>What the dogfood loop is good at finding is broken output on well-formed pages. What it's not good at is missing output on weird-formed pages.</p>
+<p>I have a smoke-runner now that fetches a dozen real-world sites and dumps the extractor's output. On the structurally cooperative half - news (BBC, Guardian), Wikipedia, GitHub repo READMEs, Ghost.org's changelog, Hacker News - the heuristic classifier finds the main content cleanly and the walker produces readable Markdown. Ten to thirty kilobytes of clean prose per page.</p>
+<p>On the other half - Allbirds (Shopify), Notion's marketing page, anything built with a custom Tailwind component library - the classifier finds <em>nothing</em>. Zero MainContent blocks. Every candidate gets demoted to Boilerplate because the page doesn't use <code>&lt;main&gt;</code> or <code>&lt;article&gt;</code> and the class names don't match any of the patterns in the framework-content hints JSON.</p>
+<p>Adding more entries to that JSON file is the obvious move. It's also whack-a-mole. Every theme shop ships new class names. Every release of Shopify changes them. Curating a list of every CMS theme's class-naming conventions is a full-time job and the list is stale the day you publish it.</p>
+<p>The real fix is a trained model. Per-element features (tag identity, class-name hash buckets, text-length, link-density, sibling shape, ancestor presence) into a small gradient-boosted classifier, trained on the <a href="https://github.com/scrapinghub/article-extraction-benchmark">WCXB</a> labeled corpus, exported to <a href="https://onnx.ai/">ONNX</a>, called from .NET via <a href="https://onnxruntime.ai/"><code>Microsoft.ML.OnnxRuntime</code></a>. A 45-feature vector per candidate, ~10µs of inference per element, ~5MB model file, AOT-clean. The model augments the heuristic - it doesn't replace it - by promoting elements the heuristic dropped when its own confidence is high.</p>
+<p>The design for this is committed in the StyloExtract repo (<code>docs/ml-classifier-v2-design.md</code>). The implementation isn't done. The thing it's blocked on isn't engineering effort; it's the operator question of &quot;ship a 25MB ONNX Runtime native binary into the gateway's deployment, or keep ML as a separate optional pack the operator opts into?&quot; The optional-pack answer is the right one for a FOSS pack ecosystem, but it means the model isn't on by default, which means most operators won't get it, which means the heuristic carries most of the production load anyway.</p>
+<p>In the interim, what operators get is the <em>manual</em> escape hatch: operator-authored YAML templates, one file per host, parsed AOT-clean, hot-overriding the induction pipeline for that host. An operator notices that <code>weird-shopify-tenant.com</code> produces empty Markdown, writes a five-line YAML file that says &quot;for this host, MainContent is <code>.product-description-body</code>&quot;, drops it in <code>config/templates/</code>, and the runtime picks it up via FileSystemWatcher within seconds. The CLI has <code>template add/list/show/remove/test</code>. The REST surface has <code>GET/PUT/DELETE/POST</code> for the same. Automated security review caught path traversal and SSRF in the REST endpoints during PR review and those got fixed; the regression suite for both lives in the test project now.</p>
+<p>Operator templates are the floor. The ML model is the ceiling. The fact that there's a gap in between is honest - the heuristic is the load-bearing path today, and it'll stay load-bearing until the model is trained and benchmarked against the WCXB F1 bar. That work isn't done.</p>
+<p><strong>Part 2 of this series is the ML build-out.</strong> Heuristic + per-host templates handles the well-behaved long tail and the operator-flagged edges; the trained classifier handles the genuinely messy HTML (Shopify themes, Notion marketing pages, Tailwind component libraries with no semantic anchors) where there is no <code>&lt;main&gt;</code>, no <code>&lt;article&gt;</code>, no consistent class-name signal, and no obvious place for the heuristic to latch on. v2 is the answer to &quot;what about the pages that don't follow any structure at all.&quot;</p>
+<h2 id="where-it-ships">Where it ships</h2>
+<p>StyloExtract is on NuGet as a set of related packages: Abstractions, Heuristics, Fingerprint, Core, Markdown, AspNetCore. The CLI ships as <code>stylo-extract</code> (AOT, ~12MB single binary) and <code>stylo-extract-playwright</code> (with headless-browser fallback for JS-rendered SPAs). The current version is 1.7.1.</p>
+<p>The StyloBot integration ships as <code>Mostlylucid.BotDetection.StyloExtract</code>. Adding it to a gateway is two lines of <code>Program.cs</code> and one rule in <code>appsettings.json</code>:</p>
+<pre><code class="language-jsonc">{
+  &quot;BotDetection&quot;: {
+    &quot;DetectionPolicies&quot;: {
+      &quot;Rules&quot;: [
+        {
+          &quot;Name&quot;: &quot;ai-bot-docs-markdown&quot;,
+          &quot;Path&quot;: &quot;/docs/*&quot;,
+          &quot;Types&quot;: [&quot;AiBot&quot;],
+          &quot;Confidence&quot;: &quot;&gt;= 0.85&quot;,
+          &quot;Action&quot;: &quot;extract-markdown&quot;
+        }
+      ]
+    }
+  },
+  &quot;StyloExtract&quot;: {
+    &quot;Actions&quot;: {
+      &quot;extract-markdown&quot;: {
+        &quot;Profile&quot;: &quot;RagFull&quot;,
+        &quot;Cache&quot;: {
+          &quot;Mode&quot;: &quot;Override&quot;,
+          &quot;MaxAge&quot;: 3600,
+          &quot;VaryByBotType&quot;: true
+        }
+      }
+    }
+  }
+}
+</code></pre>
+<p>What this says: any request the detector classifies as AI Bot, with confidence at least 0.85, hitting a path under <code>/docs/*</code>, gets its response body transformed from HTML to Markdown by StyloExtract before being returned. The same gateway continues to serve HTML to every other request. Worth being explicit here: StyloBot's classifier is behavioural, not a user-agent string match. It catches the honest AI bots that announce themselves <em>and</em> the sneaky ones that don't (see <a href="/blog/stylobot-fingerprint">Behaviour, Not Identity</a> for how). Either flavour gets the same answer: a lightweight Markdown rendition instead of full HTML, CSS, and JavaScript that was only going to be scraped anyway. The site author keeps serving HTML to humans without writing a separate Markdown site, and stops paying full-page render cost for traffic that doesn't need it.</p>
+<p>That's the local Markdown Mode. It doesn't depend on Cloudflare. It doesn't cost per request. It runs on the same gateway box you already have. The classifier is StyloBot. The extractor is StyloExtract. The whole thing fits in an AOT-published binary you can deploy with <code>docker run</code> and leave alone.</p>
+<h2 id="whats-actually-new-here">What's actually new here</h2>
+<p>What Cloudflare ships is a bundle: the classifier (theirs is proprietary), the extractor (likely a fork of Trafilatura or similar), the rule-evaluation surface (their dashboard), and the edge-runtime substrate (their global network). They sell it as a unit because it ONLY makes sense as a unit at their position in the stack.</p>
+<p>The same capability, decomposed for a self-hosted gateway, is four separate things that compose:</p>
+<ol>
+<li>A classifier that runs locally and decides &quot;this is an AI crawler.&quot; StyloBot.</li>
+<li>An extractor that runs locally and converts HTML to readable Markdown. StyloExtract.</li>
+<li>A rule-evaluation surface that maps verdicts to actions. The <code>DetectionPolicyMiddleware</code> in StyloBot 7.x.</li>
+<li>The substrate they all run on. Whatever box your YARP gateway is on.</li>
+</ol>
+<p>Cloudflare owns all four. A self-hosted operator owns at most three (the substrate is theirs, the rest is FOSS). The trade is the obvious one: lose the global-network advantages, gain the operator-controls-everything-and-pays-nothing-per-request advantages.</p>
+<p>The reason this article exists is that the second and third pieces of that decomposition - the extractor and the rule surface - didn't have a coherent local story when I started. They do now. The walker is what made the output actually usable. The dogfood loop with lucidVIEW is what made the walker actually correct. The operator-template surface is what makes the long tail tractable while the ML feature is built.</p>
+<p>Part 2 covers the ML classifier for the messy-HTML tail. It ships when there's something to show.</p>
+<hr />
+<p><em>StyloExtract source: <code>github.com/scottgal/styloextract</code>. The StyloBot integration pack lives in the stylobot repo as <code>Mostlylucid.BotDetection.StyloExtract</code>. lucidVIEW source: <code>github.com/scottgal/lucidview</code>. The CommonMark output-quality lint helper that closed the v1.7.1 bug loop is in <code>tests/StyloExtract.Heuristics.Tests/MarkdownOutputLint.cs</code>.</em></p>
+
+    </div>
+        <nav class="flex items-center justify-between text-sm text-primary dark:text-white mb-2 print:hidden" aria-label="Post navigation">
+            <div>
+            </div>
+            <div>
+                        <a href="/blog/behaviour-aware-ux" hx-target="#contentcontainer" hx-swap="show:window:top" hx-push-url="true" class="inline-flex items-center hover:text-secondary" hx-get="/blog/behaviour-aware-ux">
+                            <span>Older: StyloBot Release Series: Behaviour-Aware ASP.NET UI</span>
+                            <i class='bx bx-right-arrow-alt text-xl ml-1'></i>
+                        </a>
+            </div>
+        </nav>
+        <div class="print:hidden" hx-get="/search/related/stylobot-release-styloextract/en" hx-trigger="load delay:300ms" hx-target="this" hx-swap="innerHTML">
+            <div class="mt-6 mb-6">
+                <div class="border border-base-300 rounded-lg overflow-hidden bg-gradient-to-r from-base-200/80 to-base-200/40">
+                    <div class="flex items-center gap-2 px-4 py-2.5">
+                        <span class="loading loading-spinner loading-xs text-secondary"></span>
+                        <span class="text-sm opacity-60">Finding related posts...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    <div x-data="{ showNewElement: false }" x-init="
+    document.addEventListener('htmx:afterSwap', (event) => {
+        if (event.detail.target.id === 'contentformarea') {
+            $data.showNewElement = true;  // Use $data to reference Alpine component's state
+        }
+    });
+"  class="pt-6 print:!hidden" id="commentsection">
+        <!-- Button that will disappear once showNewElement is true -->
+        <a x-show="!showNewElement" class="btn btm-sm btn-outline mb-6" href="javascript:void(0)" role="button" x-on:click.prevent hx-boost="false" hx-push-url="false" hx-swap="innerHTML" hx-target="#contentformarea" hx-get="/comment/get-commentform?postId=580006">
+            <i class='bx bx-message-rounded-add'></i> Add Comment
+        </a>
+
+        <!-- The target for HTMX content swap -->
+        <div id="contentformarea"
+             x-show="showNewElement"
+             class="border border-b-neutral-600 border-1 rounded-xl p-4 mb-4">
+        </div>
+    </div>
+
+    <div id="commentlist">
+        
+    
+        
+
+
+    </div>
+ 
+</div>
+</div>
+<div class="container pb-8 mx-auto print:hidden">
+    <div
+        class="flex flex-col items-center justify-between  sm:flex-row sm:py-2">
+        <div class="mr-auto flex flex-col items-center sm:flex-row">
+            <a href="/" hx-swap="show:window:top" hx-target="#contentcontainer" hx-push-url="true" hx-headers='{"homerequest": "true"}' class="mr-auto sm:mr-6" hx-get="/">
+                <div class="svg-container">
+                    <img src="/img/logo.svg?v=kUkb5rVbYNGnG7rw9AdiyMbnZiU7-WEYHK40rbEZwtA" width="180px" height="30px" alt="logo" :class="{ 'img-filter-dark': !isDarkMode }" />
+                </div>
+            </a>
+<p class="pt-5 font-body font-light text-primary dark:text-white sm:pt-0">
+    &copy; 2026 Scott Galloway — 
+    <a href="https://unlicense.org" target="_blank" rel="noopener noreferrer">Unlicense</a> — 
+    All content and source code on this site is free to use, copy, modify, and sell.
+</p>
+
+        </div>
+        <div class="mr-auto flex items-center pt-6 sm:mr-0 sm:pt-0 space-x-3 text-2xl ">
+
+    <a href="https://github.com/scottgal/" target="_blank">
+        <i class="text-primary dark:text-white hover:text-secondary dark:hover:text-secondary transition-colors bx bxl-github"></i>
+    </a>
+
+    <a href="https://hachyderm.io/@scottgal@hachyderm.io" target="_blank">
+        <i class=" text-primary dark:text-white hover:text-secondary dark:hover:text-secondary transition-colors bx bxl-mastodon"></i>
+    </a>
+
+    <a href="https://www.linkedin.com/in/scott-galloway-91608691/" target="_blank">
+        <i class=" text-primary dark:text-white hover:text-secondary dark:hover:text-secondary transition-colors bx bxl-linkedin"></i>
+    </a>
+
+</div>
+    </div>
+
+</div>
+<noscript>
+    <style>
+        [x-cloak] {
+            display: block !important;
+        }
+    </style>
+</noscript>
+<script src="/js/dist/main.js?v=HObCvVQfPxNDvaYnRAXVFxrFJeDJL3tEH_EhVNsGKcI" data-cfasync="false"> </script>
+<script src="https://umami.mostlylucid.net/getinfo" data-website-id="1e3b7657-9487-4857-a9e9-4e1920aa8c42"></script>
+
+
+	<script>'serviceWorker'in navigator&&navigator.serviceWorker.register('/serviceworker', { scope: '/' })</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a11d686048f463e2',t:'MTc4MjQ4OTQ0Ng=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
