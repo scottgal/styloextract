@@ -72,7 +72,8 @@ jobs:
             src/StyloExtract.AspNetCore \
             src/StyloExtract.Llm.Ollama \
             src/StyloExtract.Llm.LlamaSharp \
-            src/StyloExtract.Playwright; do
+            src/StyloExtract.Playwright \
+            src/StyloExtract.Streaming; do
             echo "=== Packing $proj at $PKG_VERSION ==="
             dotnet pack "$proj" -c Release --no-build -o artifacts -p:Version="$PKG_VERSION"
           done

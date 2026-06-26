@@ -1,3 +1,43 @@
+StyloExtract 1.8.0-alpha.16 - 2026-06-26
+=========================================
+
+Mostlylucid.StyloExtract.Streaming — zero-allocation byte-stream scanner
+------------------------------------------------------------------------
+
+New package on NuGet. Hot-path streaming fence scanner: skips page chrome
+and captures the content region as response bytes flow past, using
+MinHash-derived structural fences. Zero per-request GC-tracked
+allocations in steady state.
+
+Designed for the gateway position — drop into a response pipeline
+(HttpClient, Stylobot's edge, ASP.NET output filters) alongside the byte
+stream and emit a verdict without buffering the full page.
+
+Public hot-path API:
+  StreamingPathSelector.Scan(Guid templateId, ReadOnlySpan<byte> html)
+    → ScanVerdict { Continue | Captured | Bailout | NoTemplate }
+
+  // Warm a template into the hot cache:
+  await selector.WarmAsync(templateId);
+
+Storage:
+  - InMemoryStreamingTemplateStore — single-process LRU.
+  - SqliteStreamingTemplateStore — durable; same SQLite file pattern as
+    the existing ITemplateIndex but a separate table.
+
+Pairs with the existing StyloExtract.Fingerprint learn path and
+ITemplateIndex template store. The streaming template format is its own
+shape (TemplateFence with MinHash bloom, content-start/content-end
+fences) — not an LLM template or operator template.
+
+Bench results vs LayoutExtractor on mostlylucid fixtures: see
+bench/StyloExtract.Streaming.Benchmarks/ (zero-alloc scan competitive
+with the full extractor's path-match cost while never building a DOM).
+
+Migration: additive package; consumers add a PackageReference to
+Mostlylucid.StyloExtract.Streaming if they want gateway-position
+scanning.
+
 StyloExtract 1.8.0-alpha.15 - 2026-06-26
 =========================================
 
