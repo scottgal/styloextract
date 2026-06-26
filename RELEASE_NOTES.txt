@@ -1,3 +1,71 @@
+StyloExtract 1.8.0-alpha.11 - 2026-06-26
+=========================================
+
+Sequenced architecture extension: deterministic templates with
+extended classification — Title role, Sitemap profile, deterministic
+YAML persistence, and a sitemap CLI verb.
+
+Title BlockRole
+---------------
+
+New BlockRole.Title value distinguishes the page-level <h1> (the single
+H1 the rest of the page is "about") from intra-content Heading
+(H2/H3/H4 inside the body). HeuristicBlockClassifier surfaces the Title
+via a shared PageTitleDetector helper, picking the H1 in/closest-to
+<main>/<article> and falling back to earliest-in-document with multiple
+H1s. ExtractorApplicator surfaces Title on the fast-path / applicator
+branch too, so output stays consistent across novel and cached requests
+(matters for the response-cache ETag). LlmInducerPrompts list Title in
+the allowed-roles set with a one-line distinction from Heading.
+
+MainContentOnly, RagFull, Wcxb, and AgentNavigation profiles all
+include Title in their role-set. The renderer quality gate (drop short
+text) bypasses for Title and Heading so intentionally-terse page
+titles ("Home", "About") still surface.
+
+Sitemap ExtractionProfile
+-------------------------
+
+New ExtractionProfile.Sitemap value emits only Title + Heading +
+PrimaryNavigation + SecondaryNavigation + Breadcrumb. For sitemap /
+outline / crawler use cases that want page titles and the site's nav
+structure without pulling body content. The CLI's --profile flag
+recognises `sitemap` automatically (enum binding).
+
+Deterministic YAML persistence
+------------------------------
+
+New DeterministicTemplateYamlSink, wired automatically when
+AddStyloExtractOperatorTemplates(root) is called, writes
+<host>-deterministic.yaml alongside each heuristic-induced template's
+SQLite row. The file carries every role the heuristic detected (Title,
+MainContent, Navigation, Footer, …) — auditable, hand-editable, and
+diffable, mirroring how LLM-induced templates have always been written
+by TemplateEnrichmentCoordinator. The SQLite store remains the
+authoritative source at match time; YAML is best-effort and
+non-blocking.
+
+stylo-extract sitemap CLI verb
+------------------------------
+
+New `sitemap` subcommand: takes one or more starting URLs, extracts
+each with ExtractionProfile.Sitemap, follows internal nav links to
+--max-depth (default 3), and emits a markdown tree of titles + URLs to
+stdout or --out <file>. Safety caps: 50 pages by default
+(--max-pages), 1s between requests (--delay-ms), no off-host follow.
+
+Migration
+---------
+
+No source change required for consumers. The new Title role is
+additive (existing switches that handled BlockRole pattern-match
+defaults will continue to compile and behave identically; switches
+that exhaustively listed roles were updated). Deterministic YAML
+writing only activates when AddStyloExtractOperatorTemplates is
+called, so consumers that don't use operator templates see no new
+filesystem activity.
+
+
 StyloExtract 1.8.0-alpha.10 - 2026-06-26
 =========================================
 
