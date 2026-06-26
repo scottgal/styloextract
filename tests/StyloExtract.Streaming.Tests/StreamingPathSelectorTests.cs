@@ -49,6 +49,7 @@ public sealed class StreamingPathSelectorTests
             BailoutBytes = 100_000,
             MaxCaptureBytes = 100_000,
             WindowSize = 3,
+            MaxEventsWithoutTransition = 256,
         };
         var bigTemplate = BuildBodyHeaderArticleFooterTemplate(out var bigId);
 
@@ -85,6 +86,7 @@ public sealed class StreamingPathSelectorTests
             BailoutBytes = 100_000,
             MaxCaptureBytes = 100_000,
             WindowSize = 4,
+            MaxEventsWithoutTransition = 256,
         };
     }
 

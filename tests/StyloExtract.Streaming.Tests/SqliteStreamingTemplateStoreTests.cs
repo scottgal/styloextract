@@ -64,6 +64,7 @@ public sealed class SqliteStreamingTemplateStoreTests
             BailoutBytes = 262_144,
             MaxCaptureBytes = 1_048_576,
             WindowSize = 8,
+            MaxEventsWithoutTransition = 256,
         };
     }
 

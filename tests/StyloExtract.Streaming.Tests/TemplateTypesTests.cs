@@ -22,6 +22,7 @@ public sealed class TemplateTypesTests
             BailoutBytes = 262_144,
             MaxCaptureBytes = 1_048_576,
             WindowSize = 8,
+            MaxEventsWithoutTransition = 256,
         };
 
         var updated = template with { BailoutBytes = 524_288 };

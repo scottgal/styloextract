@@ -33,6 +33,7 @@ public sealed class RealHtmlFixtureTests
             BailoutBytes = 1_000_000,
             MaxCaptureBytes = 1_000_000,
             WindowSize = 4,
+            MaxEventsWithoutTransition = 256,
         };
 
         var store = new InMemoryStreamingTemplateStore();

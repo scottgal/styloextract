@@ -50,6 +50,7 @@ public class ExtractionComparisonBench
             BailoutBytes = 5_000_000,
             MaxCaptureBytes = 5_000_000,
             WindowSize = 4,
+            MaxEventsWithoutTransition = 256,
         };
         await store.RegisterAsync(template);
         _selector = new StreamingPathSelector(store);
