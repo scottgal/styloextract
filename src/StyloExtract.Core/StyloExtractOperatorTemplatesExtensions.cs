@@ -30,6 +30,13 @@ public static class StyloExtractOperatorTemplatesExtensions
         if (string.IsNullOrWhiteSpace(root)) throw new ArgumentException("root must be non-empty", nameof(root));
         services.TryAddSingleton<IOperatorTemplateStore>(sp =>
             new YamlFileOperatorTemplateStore(root, sp.GetService<ILogger<YamlFileOperatorTemplateStore>>()));
+        // Also register the deterministic-template YAML sink, sharing the same
+        // root. LayoutExtractor consumes it as an optional dependency and writes
+        // <host>-deterministic.yaml alongside the LLM-induced <host>.yaml files
+        // every time the heuristic inducer fires. Best-effort; failures don't
+        // affect the SQLite write that is the source of truth at match time.
+        services.TryAddSingleton(sp =>
+            new DeterministicTemplateYamlSink(root, sp.GetService<ILogger<DeterministicTemplateYamlSink>>()));
         return services;
     }
 }

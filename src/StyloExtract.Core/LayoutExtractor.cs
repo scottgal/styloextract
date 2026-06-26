@@ -32,6 +32,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
     private readonly IOperatorTemplateStore? _operatorTemplates;
     private readonly ITemplateEnrichmentQueue? _enrichmentQueue;
     private readonly DomSkeletonRenderer? _skeletonRenderer;
+    private readonly DeterministicTemplateYamlSink? _deterministicYamlSink;
 
     public LayoutExtractor(
         IHtmlDomParser parser,
@@ -52,7 +53,8 @@ public sealed class LayoutExtractor : ILayoutExtractor
         ILogger<LayoutExtractor>? logger = null,
         IOperatorTemplateStore? operatorTemplates = null,
         ITemplateEnrichmentQueue? enrichmentQueue = null,
-        DomSkeletonRenderer? skeletonRenderer = null)
+        DomSkeletonRenderer? skeletonRenderer = null,
+        DeterministicTemplateYamlSink? deterministicYamlSink = null)
     {
         _parser = parser; _cleaner = cleaner; _fingerprinter = fingerprinter;
         _segmenter = segmenter; _classifier = classifier; _renderer = renderer;
@@ -67,6 +69,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
         // Lazily allocate the renderer only if a queue is wired. The skeleton
         // is the queue payload; without a queue, no renderer is needed.
         _skeletonRenderer = enrichmentQueue is not null ? (skeletonRenderer ?? new DomSkeletonRenderer()) : null;
+        _deterministicYamlSink = deterministicYamlSink;
     }
 
     public async Task<ExtractionResult> ExtractAsync(
@@ -262,6 +265,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
                     _signals?.Raise(StyloExtractSignals.TemplateNovel,
                         new StyloExtractSignal(TemplateId: templateId, FingerprintHex: fp.Hex, HostDisplayName: sourceUri?.Host),
                         key: templateId.Value.ToString("N"));
+                    _deterministicYamlSink?.Persist(resolvedHost, freshEx);
                     llmInductionFired |= await MaybeEnqueueEnrichmentAsync(doc, resolvedHost, fp.Hex, cancellationToken).ConfigureAwait(false);
                 }
                 else
@@ -319,6 +323,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
                     _signals?.Raise(StyloExtractSignals.TemplateNovel,
                         new StyloExtractSignal(TemplateId: templateId, FingerprintHex: fp.Hex, HostDisplayName: sourceUri?.Host),
                         key: templateId.Value.ToString("N"));
+                    _deterministicYamlSink?.Persist(resolvedHost, ex);
                     llmInductionFired |= await MaybeEnqueueEnrichmentAsync(doc, resolvedHost, fp.Hex, cancellationToken).ConfigureAwait(false);
                 }
             }
