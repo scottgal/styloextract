@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>StyloExtract.Streaming</RootNamespace>
+    <AssemblyName>StyloExtract.Streaming</AssemblyName>
+    <PackageId>Mostlylucid.StyloExtract.Streaming</PackageId>
+    <IsPackable>true</IsPackable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Streaming fence scanner for StyloExtract. Zero-allocation, ref-struct response-stream extractor that uses MinHash-derived structural fences to skip page chrome and capture the content region as bytes flow past. The hot-path skip route for known-stable templates; falls back to the buffered slow path via the existing ITemplateIndex.</Description>
+    <PackageTags>styloextract;streaming;fence;minhash;zero-allocation;ref-struct;pipelines</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
+    <ProjectReference Include="..\StyloExtract.Fingerprint\StyloExtract.Fingerprint.csproj" />
+    <PackageReference Include="System.IO.Hashing" />
+    <PackageReference Include="Mostlylucid.Ephemeral.Sqlite.SingleWriter" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
+  </ItemGroup>
+  <PropertyGroup>
+    <!-- GHSA-2m69-gcr7-jv3q advisory addressed by direct SQLitePCLRaw.bundle_e_sqlite3 reference. -->
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
+  </PropertyGroup>
+</Project>
