@@ -13,5 +13,12 @@
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
     <ProjectReference Include="..\StyloExtract.Fingerprint\StyloExtract.Fingerprint.csproj" />
     <PackageReference Include="System.IO.Hashing" />
+    <PackageReference Include="Mostlylucid.Ephemeral.Sqlite.SingleWriter" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
   </ItemGroup>
+  <PropertyGroup>
+    <!-- GHSA-2m69-gcr7-jv3q advisory addressed by direct SQLitePCLRaw.bundle_e_sqlite3 reference. -->
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
+  </PropertyGroup>
 </Project>
