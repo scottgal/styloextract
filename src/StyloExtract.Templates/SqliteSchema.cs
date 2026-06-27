@@ -68,6 +68,31 @@ public static class SqliteSchema
         CREATE INDEX IF NOT EXISTS ix_rule_obs_host_role ON template_rule_observations(host_hash, role, induced_at);
         CREATE INDEX IF NOT EXISTS ix_rule_obs_bucket_role ON template_rule_observations(lsh_bucket, role, induced_at);
         CREATE INDEX IF NOT EXISTS ix_rule_obs_induced_at ON template_rule_observations(induced_at);
+
+        -- Phase 2 Task 8: mined selector candidates. EvolvedSelectorEmitter
+        -- writes one row per (host, role, target_signature) after mining a
+        -- cluster's stable substructure. Task 9's apply path consumes them
+        -- and writes reputation feedback back into the same row; Task 11
+        -- promotes high-reputation candidates into the host's active
+        -- template. UNIQUE (host_hash, role, target_signature) makes repeat
+        -- mining idempotent.
+        CREATE TABLE IF NOT EXISTS evolved_selector_candidates (
+          candidate_id         BLOB PRIMARY KEY NOT NULL,
+          host_hash            BLOB NOT NULL,
+          lsh_bucket           INTEGER NOT NULL,
+          role                 INTEGER NOT NULL,
+          claims_json          BLOB NOT NULL,
+          target_signature     INTEGER NOT NULL,
+          source_count         INTEGER NOT NULL,
+          confidence           REAL NOT NULL,
+          reputation_score     INTEGER NOT NULL DEFAULT 0,
+          last_won_at          INTEGER NOT NULL DEFAULT 0,
+          last_lost_at         INTEGER NOT NULL DEFAULT 0,
+          created_at           INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_candidates_host_role ON evolved_selector_candidates(host_hash, role);
+        CREATE INDEX IF NOT EXISTS idx_candidates_bucket_role ON evolved_selector_candidates(lsh_bucket, role);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_candidates_dedup ON evolved_selector_candidates(host_hash, role, target_signature);
         """;
 
     public static void EnsureCreated(SqliteConnection connection)

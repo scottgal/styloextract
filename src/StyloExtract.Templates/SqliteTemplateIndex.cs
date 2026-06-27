@@ -528,8 +528,8 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
         {
             await using var cmd = conn.CreateCommand();
             cmd.CommandText = role is null
-                ? "SELECT observation_id, lsh_bucket, role, claims_json, target_signature, cardinality, confidence, induced_at, inducer_kind FROM template_rule_observations WHERE host_hash = @host ORDER BY induced_at DESC LIMIT @lim"
-                : "SELECT observation_id, lsh_bucket, role, claims_json, target_signature, cardinality, confidence, induced_at, inducer_kind FROM template_rule_observations WHERE host_hash = @host AND role = @role ORDER BY induced_at DESC LIMIT @lim";
+                ? "SELECT observation_id, host_hash, lsh_bucket, role, claims_json, target_signature, cardinality, confidence, induced_at, inducer_kind FROM template_rule_observations WHERE host_hash = @host ORDER BY induced_at DESC LIMIT @lim"
+                : "SELECT observation_id, host_hash, lsh_bucket, role, claims_json, target_signature, cardinality, confidence, induced_at, inducer_kind FROM template_rule_observations WHERE host_hash = @host AND role = @role ORDER BY induced_at DESC LIMIT @lim";
             cmd.Parameters.AddWithValue("@host", hostHashBytes);
             if (role is not null) cmd.Parameters.AddWithValue("@role", (int)role.Value);
             cmd.Parameters.AddWithValue("@lim", limit);
@@ -547,13 +547,14 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
         {
             await using var cmd = conn.CreateCommand();
             cmd.CommandText = role is null
-                ? "SELECT observation_id, lsh_bucket, role, claims_json, target_signature, cardinality, confidence, induced_at, inducer_kind FROM template_rule_observations WHERE lsh_bucket = @bucket ORDER BY induced_at DESC LIMIT @lim"
-                : "SELECT observation_id, lsh_bucket, role, claims_json, target_signature, cardinality, confidence, induced_at, inducer_kind FROM template_rule_observations WHERE lsh_bucket = @bucket AND role = @role ORDER BY induced_at DESC LIMIT @lim";
+                ? "SELECT observation_id, host_hash, lsh_bucket, role, claims_json, target_signature, cardinality, confidence, induced_at, inducer_kind FROM template_rule_observations WHERE lsh_bucket = @bucket ORDER BY induced_at DESC LIMIT @lim"
+                : "SELECT observation_id, host_hash, lsh_bucket, role, claims_json, target_signature, cardinality, confidence, induced_at, inducer_kind FROM template_rule_observations WHERE lsh_bucket = @bucket AND role = @role ORDER BY induced_at DESC LIMIT @lim";
             cmd.Parameters.AddWithValue("@bucket", lshBucket);
             if (role is not null) cmd.Parameters.AddWithValue("@role", (int)role.Value);
             cmd.Parameters.AddWithValue("@lim", limit);
             // Host string is not recoverable from the hash; cluster-scoped queries
-            // return observations with Host = "" (caller has the hash, not the raw).
+            // return observations with Host = "" but populate HostHash so callers
+            // (e.g. EvolvedSelectorEmitter) can group by host without the raw.
             return await ReadObservationsAsync(cmd, host: "", cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
     }
@@ -574,7 +575,7 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
             {
                 await using var cmd = conn.CreateCommand();
                 var sb = new StringBuilder(
-                    "SELECT observation_id, lsh_bucket, role, claims_json, target_signature, cardinality, confidence, induced_at, inducer_kind FROM template_rule_observations WHERE induced_at < @cursor");
+                    "SELECT observation_id, host_hash, lsh_bucket, role, claims_json, target_signature, cardinality, confidence, induced_at, inducer_kind FROM template_rule_observations WHERE induced_at < @cursor");
                 if (lshBucket is not null) sb.Append(" AND lsh_bucket = @bucket");
                 if (role is not null) sb.Append(" AND role = @role");
                 sb.Append(" ORDER BY induced_at DESC LIMIT @lim");
@@ -609,6 +610,7 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
         while (await r.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             var idBytes = (byte[])r["observation_id"];
+            var hostHash = (byte[])r["host_hash"];
             var bucket = r.GetInt32(r.GetOrdinal("lsh_bucket"));
             var role = (BlockRole)r.GetInt32(r.GetOrdinal("role"));
             var claimsBytes = (byte[])r["claims_json"];
@@ -622,6 +624,7 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
             {
                 ObservationId = new Guid(idBytes),
                 Host = host,
+                HostHash = hostHash,
                 LshBucket = bucket,
                 Role = role,
                 Claims = DeserializeClaims(claimsBytes),
@@ -650,6 +653,133 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
         var trunc = new byte[16];
         Buffer.BlockCopy(full, 0, trunc, 0, 16);
         return trunc;
+    }
+
+    // -------- Phase 2 Task 8: evolved-selector candidates --------
+
+    public async ValueTask UpsertCandidateAsync(
+        EvolvedSelectorCandidate candidate,
+        CancellationToken cancellationToken = default)
+    {
+        var idBytes = candidate.CandidateId.ToByteArray();
+        // Honor a pre-computed HostHash so the emitter can write candidates
+        // for hosts it only knows by hash (bucket-scoped corpus reads hide
+        // the raw host). Fall back to hashing Host when not supplied.
+        var hostHashBytes = candidate.HostHash.Length > 0
+            ? candidate.HostHash
+            : HashHost(candidate.Host);
+        var claimsBytes = SerializeClaims(candidate.Claims);
+        var created = candidate.CreatedAt.ToUnixTimeMilliseconds();
+        var lastWon = candidate.LastWonAt?.ToUnixTimeMilliseconds() ?? 0L;
+        var lastLost = candidate.LastLostAt?.ToUnixTimeMilliseconds() ?? 0L;
+
+        await _writer.ExecuteInTransactionAsync(async (conn, tx, ct) =>
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.Transaction = tx;
+            // INSERT OR IGNORE on the (host, role, target_signature) unique
+            // index — repeat mining of the same anchor is a no-op write.
+            cmd.CommandText = """
+                INSERT OR IGNORE INTO evolved_selector_candidates
+                  (candidate_id, host_hash, lsh_bucket, role, claims_json, target_signature,
+                   source_count, confidence, reputation_score, last_won_at, last_lost_at, created_at)
+                VALUES
+                  (@id, @host, @bucket, @role, @claims, @target,
+                   @src, @conf, @rep, @won, @lost, @created)
+                """;
+            cmd.Parameters.AddWithValue("@id", idBytes);
+            cmd.Parameters.AddWithValue("@host", hostHashBytes);
+            cmd.Parameters.AddWithValue("@bucket", candidate.LshBucket);
+            cmd.Parameters.AddWithValue("@role", (int)candidate.Role);
+            cmd.Parameters.AddWithValue("@claims", claimsBytes);
+            cmd.Parameters.AddWithValue("@target", unchecked((long)candidate.TargetSignature));
+            cmd.Parameters.AddWithValue("@src", candidate.SourceCount);
+            cmd.Parameters.AddWithValue("@conf", candidate.Confidence);
+            cmd.Parameters.AddWithValue("@rep", candidate.ReputationScore);
+            cmd.Parameters.AddWithValue("@won", lastWon);
+            cmd.Parameters.AddWithValue("@lost", lastLost);
+            cmd.Parameters.AddWithValue("@created", created);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<IReadOnlyList<EvolvedSelectorCandidate>> GetCandidatesByHostAsync(
+        string host,
+        BlockRole? role = null,
+        int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        var hostHashBytes = HashHost(host);
+        return await _writer.QueryAsync(async conn =>
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = role is null
+                ? "SELECT candidate_id, host_hash, lsh_bucket, role, claims_json, target_signature, source_count, confidence, reputation_score, last_won_at, last_lost_at, created_at FROM evolved_selector_candidates WHERE host_hash = @host ORDER BY created_at DESC LIMIT @lim"
+                : "SELECT candidate_id, host_hash, lsh_bucket, role, claims_json, target_signature, source_count, confidence, reputation_score, last_won_at, last_lost_at, created_at FROM evolved_selector_candidates WHERE host_hash = @host AND role = @role ORDER BY created_at DESC LIMIT @lim";
+            cmd.Parameters.AddWithValue("@host", hostHashBytes);
+            if (role is not null) cmd.Parameters.AddWithValue("@role", (int)role.Value);
+            cmd.Parameters.AddWithValue("@lim", limit);
+            return await ReadCandidatesAsync(cmd, cancellationToken).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask RecordCandidateOutcomeAsync(
+        Guid candidateId, bool won, DateTimeOffset at, CancellationToken cancellationToken = default)
+    {
+        var idBytes = candidateId.ToByteArray();
+        var ts = at.ToUnixTimeMilliseconds();
+
+        await _writer.ExecuteInTransactionAsync(async (conn, tx, ct) =>
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = won
+                ? "UPDATE evolved_selector_candidates SET reputation_score = reputation_score + 1, last_won_at = @ts WHERE candidate_id = @id"
+                : "UPDATE evolved_selector_candidates SET reputation_score = reputation_score - 1, last_lost_at = @ts WHERE candidate_id = @id";
+            cmd.Parameters.AddWithValue("@id", idBytes);
+            cmd.Parameters.AddWithValue("@ts", ts);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<IReadOnlyList<EvolvedSelectorCandidate>> ReadCandidatesAsync(
+        SqliteCommand cmd, CancellationToken cancellationToken)
+    {
+        var list = new List<EvolvedSelectorCandidate>();
+        await using var r = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await r.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var idBytes = (byte[])r["candidate_id"];
+            var hostHash = (byte[])r["host_hash"];
+            var bucket = r.GetInt32(r.GetOrdinal("lsh_bucket"));
+            var role = (BlockRole)r.GetInt32(r.GetOrdinal("role"));
+            var claimsBytes = (byte[])r["claims_json"];
+            var target = unchecked((ulong)r.GetInt64(r.GetOrdinal("target_signature")));
+            var src = r.GetInt32(r.GetOrdinal("source_count"));
+            var conf = r.GetDouble(r.GetOrdinal("confidence"));
+            var rep = r.GetInt32(r.GetOrdinal("reputation_score"));
+            var wonTs = r.GetInt64(r.GetOrdinal("last_won_at"));
+            var lostTs = r.GetInt64(r.GetOrdinal("last_lost_at"));
+            var created = r.GetInt64(r.GetOrdinal("created_at"));
+
+            list.Add(new EvolvedSelectorCandidate
+            {
+                CandidateId = new Guid(idBytes),
+                Host = "", // hash is one-way; mirror the observations convention
+                HostHash = hostHash,
+                LshBucket = bucket,
+                Role = role,
+                Claims = DeserializeClaims(claimsBytes),
+                TargetSignature = target,
+                SourceCount = src,
+                Confidence = conf,
+                ReputationScore = rep,
+                LastWonAt = wonTs == 0L ? null : DateTimeOffset.FromUnixTimeMilliseconds(wonTs),
+                LastLostAt = lostTs == 0L ? null : DateTimeOffset.FromUnixTimeMilliseconds(lostTs),
+                CreatedAt = DateTimeOffset.FromUnixTimeMilliseconds(created),
+            });
+        }
+        return list;
     }
 
     private static byte[] SerializeClaims(IReadOnlyList<IdentityClaim> claims)

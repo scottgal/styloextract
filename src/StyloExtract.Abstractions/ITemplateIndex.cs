@@ -54,4 +54,35 @@ public interface ITemplateIndex
         await Task.CompletedTask;
         yield break;
     }
+
+    // -------- Phase 2 Task 8: evolved-selector candidates --------
+    // EvolvedSelectorEmitter writes candidates here after mining a cluster;
+    // Task 9's apply path reads them and reports outcomes via
+    // RecordCandidateOutcomeAsync. Default implementations are no-op /
+    // empty so non-SQLite backends don't break.
+
+    /// <summary>
+    /// Insert a mined selector candidate. Implementations dedupe on
+    /// (host, role, target_signature) so repeat mining passes are
+    /// idempotent. Default no-op.
+    /// </summary>
+    ValueTask UpsertCandidateAsync(EvolvedSelectorCandidate candidate, CancellationToken cancellationToken = default)
+        => ValueTask.CompletedTask;
+
+    /// <summary>
+    /// Read candidates emitted for one host, optionally scoped by role.
+    /// Newest first. Default returns empty.
+    /// </summary>
+    ValueTask<IReadOnlyList<EvolvedSelectorCandidate>> GetCandidatesByHostAsync(
+        string host, BlockRole? role = null, int limit = 100, CancellationToken cancellationToken = default)
+        => ValueTask.FromResult<IReadOnlyList<EvolvedSelectorCandidate>>(Array.Empty<EvolvedSelectorCandidate>());
+
+    /// <summary>
+    /// Record an apply-time outcome for a candidate. Increments reputation on
+    /// win, decrements on loss, and stamps the corresponding timestamp.
+    /// Default no-op.
+    /// </summary>
+    ValueTask RecordCandidateOutcomeAsync(
+        Guid candidateId, bool won, DateTimeOffset at, CancellationToken cancellationToken = default)
+        => ValueTask.CompletedTask;
 }

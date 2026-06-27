@@ -27,6 +27,15 @@ public sealed record TemplateObservation
     public required string Host { get; init; }
 
     /// <summary>
+    /// The HMAC bytes the store assigned to <see cref="Host"/> at append
+    /// time. Populated on reads sourced from the store; empty array on
+    /// observations constructed by callers before insert. Phase 2 mining
+    /// uses this to group bucket-scoped observations by host without
+    /// needing to recover the raw host (which the HMAC hides).
+    /// </summary>
+    public byte[] HostHash { get; init; } = Array.Empty<byte>();
+
+    /// <summary>
     /// LSH cluster bucket derived from the active template's fingerprint at
     /// induction time. 0 ("unbucketed") when no template fingerprint exists
     /// yet for the host (first-ever visit); Phase 2 mining can backfill.
