@@ -250,7 +250,7 @@ For the full CLI reference including exit codes and edge cases, see [`docs/cli.m
 | `Mostlylucid.StyloExtract.Llm.Ollama` | LLM template inducer + repair backed by an Ollama server |
 | `Mostlylucid.StyloExtract.Llm.LlamaSharp` | In-process CPU LLM template inducer backed by LLamaSharp (GGUF) — no separate daemon |
 | `Mostlylucid.StyloExtract.Playwright` | **Optional, non-AOT.** Rendered-DOM fetcher for SPA pages with `RenderOptions.WaitUntil` |
-| `Mostlylucid.StyloExtract.Streaming` | Bounded-memory gateway fence scanner — `Captured` / `Bailout` verdict in flight; host-keyed templates and naive auto-induction. See [`docs/streaming.md`](docs/streaming.md). |
+| `Mostlylucid.StyloExtract.Streaming` | Bounded-memory gateway fence scanner — `Captured` / `Bailout` verdict in flight; host-keyed templates and naive auto-induction; `AddStyloExtractStreaming(o => o.SqlitePath = ...)` DI extension. See [`docs/streaming.md`](docs/streaming.md). |
 | `Mostlylucid.StyloExtract.Ml` | ML feature-extraction harness (experimental; pairs with the `extract-features` CLI verb) |
 | `Mostlylucid.StyloExtract.Cli` (`stylo-extract-playwright`) | Full CLI: `extract` / `sitemap` / `monitor` / `export` / `import` / `install-browsers` / `template` / `extract-features`. Includes Playwright. |
 | `Mostlylucid.StyloExtract.Cli.Aot` (`stylo-extract`) | AOT-published CLI without Playwright — same subcommands minus `install-browsers` and `--rendered` |

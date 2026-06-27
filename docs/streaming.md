@@ -181,15 +181,43 @@ The selector and store are thread-safe and DI-friendly singletons. The
 inducer is stateless. The refit orchestrator holds per-host EWMA state
 under a `ConcurrentDictionary` and is safe to share.
 
-There is no built-in `AddStyloExtractStreaming` extension — the package
-is meant to be wired manually because deployment shapes vary (some
-consumers run in-memory only, others on SQLite, others wire a custom
-`IStreamingTemplateVersionSink` for telemetry). Register as singletons:
+DI wire-up is one call (alpha.20+):
+
+```csharp
+// In-memory store (default — no persistence)
+services.AddStyloExtractStreaming();
+
+// SQLite store with persistence path
+services.AddStyloExtractStreaming(o =>
+{
+    o.SqlitePath = Path.Combine(AppPaths.LocalState, "streaming-templates.db");
+});
+```
+
+`AddStyloExtractStreaming` registers `IStreamingTemplateStore` (Sqlite
+or InMemory based on `StreamingOptions.SqlitePath`),
+`StreamingPathSelector`, `StreamingTemplateInducer`, and
+`StreamingRefitOrchestrator`. All use `TryAddSingleton` so a
+consumer-supplied `IStreamingTemplateVersionSink` registered before or
+after wins over the default no-op sink:
+
+```csharp
+services.AddSingleton<IStreamingTemplateVersionSink, MyTelemetrySink>();
+services.AddStyloExtractStreaming();
+```
+
+The orchestrator's drift / cadence knobs also surface through
+`StreamingOptions` (`RelativeDriftThreshold`, `DriftBailoutCount`,
+`ScansPerForcedRefit`) for consumers who want to tune the refit cadence.
+
+**Advanced / low-level form.** If you need full control of the store
+construction or want to register each piece individually, the manual
+form still works:
 
 ```csharp
 services.AddSingleton<IStreamingTemplateStore, InMemoryStreamingTemplateStore>();
 // or: services.AddSingleton<IStreamingTemplateStore>(_ =>
-//         new SqliteStreamingTemplateStore("streaming.db"));
+//         new SqliteStreamingTemplateStore("Data Source=streaming.db"));
 services.AddSingleton<StreamingPathSelector>();
 services.AddSingleton<StreamingTemplateInducer>();
 services.AddSingleton<StreamingRefitOrchestrator>();
@@ -349,10 +377,6 @@ Calling these out honestly so operators aren't surprised:
   smarter but don't currently emit streaming-template fences (open
   follow-up: derive fence templates from an LLM-induced layout
   template's selector hints).
-- **DI wire-up is manual.** No `services.AddStyloExtractStreaming()`
-  extension exists today. Operators register the three singletons
-  (`IStreamingTemplateStore`, `StreamingPathSelector`,
-  `StreamingTemplateInducer`) themselves — see §3.
 
 ---
 
