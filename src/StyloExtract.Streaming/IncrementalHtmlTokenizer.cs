@@ -60,9 +60,18 @@ public sealed class IncrementalHtmlTokenizer
     // Events parsed during the most recent Feed but not yet drained by TryReadTag.
     private readonly Queue<TagEvent> _pendingEvents = new();
 
+    // Tag-hash prefilter for the per-tag attribute pass; see MinimalHtmlTokenizer.
+    private readonly TripwireTagFilter _filter;
+
     public IncrementalHtmlTokenizer()
+        : this(TripwireTagFilter.MatchAll)
+    {
+    }
+
+    public IncrementalHtmlTokenizer(TripwireTagFilter filter)
     {
         _buffer = new byte[InitialBufferSize];
+        _filter = filter;
     }
 
     public long BytesConsumed => _bytesEmitted;
@@ -254,16 +263,18 @@ public sealed class IncrementalHtmlTokenizer
 
         var nameHash = XxHash3.HashToUInt64(inner.Slice(0, nameLen));
         var attrs = isClose ? ReadOnlySpan<byte>.Empty : inner.Slice(nameLen);
-        var classHash = isClose ? 0UL : TagAttributeParser.ExtractClassHash(attrs);
         var tagEnd = nameStart + gtIdx + 1;
         var tagByteLen = tagEnd - ltIdx;
+
+        var isInteresting = !isClose && _filter.Matches(nameHash);
+        var classHash = isInteresting ? TagAttributeParser.ExtractClassHash(attrs) : 0UL;
 
         ulong idHash = 0UL;
         ulong roleHash = 0UL;
         ulong[] classHashes = Array.Empty<ulong>();
         AttrHashPair[] dataAttrs = Array.Empty<AttrHashPair>();
         AttrHashPair[] ariaAttrs = Array.Empty<AttrHashPair>();
-        if (!isClose && !attrs.IsEmpty)
+        if (isInteresting && !attrs.IsEmpty)
         {
             TagAttributeParser.ExtractIdentityHashes(
                 attrs, out idHash, out roleHash, out classHashes, out dataAttrs, out ariaAttrs);
@@ -402,17 +413,19 @@ public sealed class IncrementalHtmlTokenizer
 
             var nameHash = XxHash3.HashToUInt64(inner.Slice(0, nameLen));
             var attrs = isClose ? ReadOnlySpan<byte>.Empty : inner.Slice(nameLen);
-            var classHash = isClose ? 0UL : TagAttributeParser.ExtractClassHash(attrs);
             var tagStart = chunkPos + ltIdx;
             var tagEnd = nameStart + gtIdx + 1;
             var tagByteLen = tagEnd - tagStart;
+
+            var isInteresting = !isClose && _filter.Matches(nameHash);
+            var classHash = isInteresting ? TagAttributeParser.ExtractClassHash(attrs) : 0UL;
 
             ulong idHash = 0UL;
             ulong roleHash = 0UL;
             ulong[] classHashes = Array.Empty<ulong>();
             AttrHashPair[] dataAttrs = Array.Empty<AttrHashPair>();
             AttrHashPair[] ariaAttrs = Array.Empty<AttrHashPair>();
-            if (!isClose && !attrs.IsEmpty)
+            if (isInteresting && !attrs.IsEmpty)
             {
                 TagAttributeParser.ExtractIdentityHashes(
                     attrs, out idHash, out roleHash, out classHashes, out dataAttrs, out ariaAttrs);

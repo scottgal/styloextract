@@ -9,11 +9,18 @@ public ref struct MinimalHtmlTokenizer
     private static readonly ulong s_styleHash = XxHash3.HashToUInt64("style"u8);
 
     private readonly ReadOnlySpan<byte> _input;
+    private readonly TripwireTagFilter _filter;
     private int _position;
 
     public MinimalHtmlTokenizer(ReadOnlySpan<byte> input)
+        : this(input, TripwireTagFilter.MatchAll)
+    {
+    }
+
+    public MinimalHtmlTokenizer(ReadOnlySpan<byte> input, TripwireTagFilter filter)
     {
         _input = input;
+        _filter = filter;
         _position = 0;
     }
 
@@ -63,16 +70,26 @@ public ref struct MinimalHtmlTokenizer
 
             var nameHash = XxHash3.HashToUInt64(inner.Slice(0, nameLen));
             var attrs = isClose ? ReadOnlySpan<byte>.Empty : inner.Slice(nameLen);
-            var classHash = isClose ? 0UL : TagAttributeParser.ExtractClassHash(attrs);
             var tagStart = _position + ltIdx;
             var tagEnd = nameStart + gtIdx + 1;
+
+            // Tripwire prefilter: skip the per-tag attribute pass for tags
+            // whose name-hash can't satisfy any active tripwire. The FSM
+            // still needs every tag event for depth tracking, but the matcher
+            // would have rejected this tag on the first tag-hash compare —
+            // so the class/id/role/data/aria extraction (and its small heap
+            // allocation per tag) was pure waste on ~95% of real-page tags.
+            // The legacy ClassHash field stays populated only when the tag
+            // is "interesting" to avoid the parallel attr scan as well.
+            var isInteresting = !isClose && _filter.Matches(nameHash);
+            var classHash = isInteresting ? TagAttributeParser.ExtractClassHash(attrs) : 0UL;
 
             ulong idHash = 0UL;
             ulong roleHash = 0UL;
             ulong[] classHashes = Array.Empty<ulong>();
             AttrHashPair[] dataAttrs = Array.Empty<AttrHashPair>();
             AttrHashPair[] ariaAttrs = Array.Empty<AttrHashPair>();
-            if (!isClose && !attrs.IsEmpty)
+            if (isInteresting && !attrs.IsEmpty)
             {
                 TagAttributeParser.ExtractIdentityHashes(
                     attrs,

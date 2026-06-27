@@ -27,7 +27,11 @@ public sealed class IncrementalFenceScanner
     private IncrementalFenceScanner(StreamingTemplate template)
     {
         _template = template;
-        _tokenizer = new IncrementalHtmlTokenizer();
+        // Tag-hash prefilter (alpha.24 tuning): tokenizer skips per-tag
+        // class/id/role/data/aria extraction for tags whose name-hash can't
+        // possibly match the active tripwires. See TripwireTagFilter for
+        // details.
+        _tokenizer = new IncrementalHtmlTokenizer(TripwireTagFilter.FromTemplate(in template));
         _state = StreamingTickState.Initial;
         _latched = ScanVerdict.Continue;
     }

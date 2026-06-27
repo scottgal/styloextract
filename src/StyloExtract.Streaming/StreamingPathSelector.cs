@@ -47,7 +47,12 @@ public sealed class StreamingPathSelector
     private static ScanVerdict ScanCore(StreamingTemplate template, ReadOnlySpan<byte> html)
     {
         var scanner = new FenceScanner(in template);
-        var tokenizer = new MinimalHtmlTokenizer(html);
+        // Tag-hash prefilter: skip per-tag attribute extraction for tags whose
+        // name-hash can't possibly satisfy any of the template's 3 tripwires.
+        // ~95% of tags on a real page (every span/a/img/etc.) get rejected on
+        // the FSM's tag-hash compare anyway — the extraction was pure waste.
+        var filter = TripwireTagFilter.FromTemplate(in template);
+        var tokenizer = new MinimalHtmlTokenizer(html, filter);
 
         var verdict = ScanVerdict.Continue;
         while (verdict == ScanVerdict.Continue && tokenizer.TryReadTag(out var evt))
