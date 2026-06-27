@@ -340,6 +340,184 @@ public class IdentityClaimSelectorBuilderTests
         result.Chain.Length.Should().BeLessThanOrEqualTo(IdentityClaimSelectorBuilder.MaxChainDepth + 1);
     }
 
+    // ---- Task 52: cardinality-aware uniqueness for repeated roles ----
+
+    [Fact]
+    public void RepeatedRole_ThreeCardsShareClass_SelectorMatchesAllThree()
+    {
+        var html = """
+            <!DOCTYPE html>
+            <html><body><main>
+                <div class="post-card" id="a">A</div>
+                <div class="post-card" id="b">B</div>
+                <div class="post-card" id="c">C</div>
+            </main></body></html>
+            """;
+        var parser = new HtmlParser();
+        var doc = parser.ParseDocument(html);
+        var targets = doc.QuerySelectorAll("main > .post-card").Cast<IElement>().ToList();
+        targets.Should().HaveCount(3);
+
+        var result = IdentityClaimSelectorBuilder.BuildForRepeatedRole(targets, doc, Filter);
+
+        result.HitDepthCap.Should().BeFalse();
+        var matched = ApplyChain(doc, result.Chain);
+        matched.Should().HaveCount(3, "the shared .post-card class identifies all 3 cards");
+        targets.Except(matched).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void RepeatedRole_AmbiguousIntersection_FallsBackToAncestorScope()
+    {
+        // .post-card on both main and sidebar — the bare intersection (.post-card)
+        // matches 3 elements, but only 2 are the role targets. The builder must
+        // walk up to the LCA (main) and prepend its claim to scope the chain.
+        var html = """
+            <!DOCTYPE html>
+            <html><body>
+                <main><div class="post-card">a</div><div class="post-card">b</div></main>
+                <aside><div class="post-card">x</div></aside>
+            </body></html>
+            """;
+        var parser = new HtmlParser();
+        var doc = parser.ParseDocument(html);
+        var targets = doc.QuerySelectorAll("main .post-card").Cast<IElement>().ToList();
+        targets.Should().HaveCount(2);
+
+        var result = IdentityClaimSelectorBuilder.BuildForRepeatedRole(targets, doc, Filter);
+
+        result.HitDepthCap.Should().BeFalse();
+        var matched = ApplyChain(doc, result.Chain);
+        matched.Should().HaveCount(2);
+        targets.Except(matched).Should().BeEmpty();
+        result.Chain.Length.Should().BeGreaterOrEqualTo(2,
+            "an ancestor scope is needed to exclude the sidebar .post-card");
+    }
+
+    [Fact]
+    public void RepeatedRole_OverSpecifiedIntersection_DropsRestrictiveAttrs()
+    {
+        // Targets are .post-card cards inside main. The middle one lacks the
+        // .featured class that the other two carry. The intersection is just
+        // .post-card (since .featured is not on every target). The chain must
+        // match all 3.
+        var html = """
+            <!DOCTYPE html>
+            <html><body><main>
+                <div class="post-card featured">a</div>
+                <div class="post-card">b</div>
+                <div class="post-card featured">c</div>
+            </main></body></html>
+            """;
+        var parser = new HtmlParser();
+        var doc = parser.ParseDocument(html);
+        var targets = doc.QuerySelectorAll("main .post-card").Cast<IElement>().ToList();
+        targets.Should().HaveCount(3);
+
+        var result = IdentityClaimSelectorBuilder.BuildForRepeatedRole(targets, doc, Filter);
+
+        result.HitDepthCap.Should().BeFalse();
+        var matched = ApplyChain(doc, result.Chain);
+        matched.Should().HaveCount(3);
+        targets.Except(matched).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void RepeatedRole_UndermatchDropsClassToWiden()
+    {
+        // Two targets that share .item but where the intersection initially
+        // includes both .item AND .row (since both targets carry both). A
+        // third element on the doc carries .item but not .row — it must be
+        // INCLUDED in the matched set when targets are [card1, card2, third].
+        // The intersection (.item .row) would undermatch; the builder must
+        // drop .row to widen.
+        var html = """
+            <!DOCTYPE html>
+            <html><body><main>
+                <div class="item row">a</div>
+                <div class="item row">b</div>
+                <div class="item">c</div>
+            </main></body></html>
+            """;
+        var parser = new HtmlParser();
+        var doc = parser.ParseDocument(html);
+        // All 3 .item elements are the role targets — but the intersection of
+        // just the first two is (.item .row), which excludes the third.
+        // Provide all 3 as targets so the builder has to widen.
+        var targets = doc.QuerySelectorAll("main > .item").Cast<IElement>().ToList();
+        targets.Should().HaveCount(3);
+
+        var result = IdentityClaimSelectorBuilder.BuildForRepeatedRole(targets, doc, Filter);
+
+        result.HitDepthCap.Should().BeFalse();
+        var matched = ApplyChain(doc, result.Chain);
+        matched.Should().HaveCount(3);
+        targets.Except(matched).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void RepeatedRole_SingleTarget_DelegatesToSingleTargetBuilder()
+    {
+        // K=1 is a degenerate "repeated" role. The builder should fall back to
+        // the single-target codepath rather than emit a tag-only intersection.
+        var html = """
+            <html><body>
+                <main><article id="post-1"><p>x</p></article></main>
+            </body></html>
+            """;
+        var parser = new HtmlParser();
+        var doc = parser.ParseDocument(html);
+        var target = doc.QuerySelector("#post-1")!;
+        var result = IdentityClaimSelectorBuilder.BuildForRepeatedRole(new[] { target }, doc, Filter);
+
+        result.HitDepthCap.Should().BeFalse();
+        result.Chain.Should().HaveCount(1);
+        result.Chain[0].Id.Should().Be("post-1");
+    }
+
+    [Fact]
+    public void RepeatedRole_MixedTagsInTargets_SetsHitDepthCap()
+    {
+        // A repeated role with heterogeneous tags is a classifier bug. The
+        // builder must refuse rather than emit a wrong chain.
+        var html = """
+            <html><body><main>
+                <div class="x">a</div>
+                <article class="x">b</article>
+            </main></body></html>
+            """;
+        var parser = new HtmlParser();
+        var doc = parser.ParseDocument(html);
+        var targets = doc.QuerySelectorAll("main > .x").Cast<IElement>().ToList();
+        targets.Should().HaveCount(2);
+
+        var result = IdentityClaimSelectorBuilder.BuildForRepeatedRole(targets, doc, Filter);
+
+        result.HitDepthCap.Should().BeTrue(
+            "mixed-tag targets within a single repeated role indicate a classifier bug");
+    }
+
+    [Fact]
+    public void RepeatedRole_ExpectedCardinality_DefaultsToTargetCount()
+    {
+        var html = """
+            <html><body><main>
+                <li class="nav-item">a</li>
+                <li class="nav-item">b</li>
+                <li class="nav-item">c</li>
+            </main></body></html>
+            """;
+        var parser = new HtmlParser();
+        var doc = parser.ParseDocument(html);
+        var targets = doc.QuerySelectorAll("li.nav-item").Cast<IElement>().ToList();
+
+        var result = IdentityClaimSelectorBuilder.BuildForRepeatedRole(targets, doc, Filter);
+
+        result.HitDepthCap.Should().BeFalse();
+        var matched = ApplyChain(doc, result.Chain);
+        matched.Should().HaveCount(targets.Count);
+    }
+
     [Fact]
     public void ToCssSelector_RendersIdAndClassesAndDataAttrs()
     {

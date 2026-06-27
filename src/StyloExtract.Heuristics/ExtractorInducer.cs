@@ -35,11 +35,107 @@ public sealed class ExtractorInducer : IExtractorInducer
         // identity-claim builder; otherwise fall back to the legacy XPath →
         // CSS-string generalizer (kept for callers like RefitOrchestrator that
         // don't currently plumb the document).
-        var perBlock = new List<(BlockRole Role, string CssSelector, IdentityClaim[]? Claims, double Confidence)>(blocks.Count);
-        foreach (var b in blocks)
+        //
+        // Task 52 / cardinality-aware uniqueness: blocks that share a repeated
+        // role (RepeatedItem, etc.) are emitted together — one identity-claim
+        // chain that matches the WHOLE set of K targets, not K independent
+        // single-target chains. Singleton roles still flow through the
+        // per-target builder unchanged.
+        var perBlock = new (BlockRole Role, string CssSelector, IdentityClaim[]? Claims, double Confidence)[blocks.Count];
+
+        if (document is not null)
         {
-            EmitForBlock(b, document, out var css, out var claims, out var confidence);
-            perBlock.Add((b.Role, css, claims, confidence));
+            // Group block indices by role so we can dispatch repeated roles in
+            // one shot. Preserve original block order inside each group so any
+            // downstream collapse stays deterministic.
+            var byRole = new Dictionary<BlockRole, List<int>>();
+            for (var i = 0; i < blocks.Count; i++)
+            {
+                if (!byRole.TryGetValue(blocks[i].Role, out var bucket))
+                {
+                    bucket = new List<int>();
+                    byRole[blocks[i].Role] = bucket;
+                }
+                bucket.Add(i);
+            }
+
+            foreach (var (role, indices) in byRole)
+            {
+                if (RoleCardinality.IsSingleton(role) || indices.Count == 1)
+                {
+                    // Singleton role OR only one block of a "repeated" role on
+                    // this page (degenerate K=1) → existing single-target path.
+                    foreach (var i in indices)
+                    {
+                        EmitForBlock(blocks[i], document, out var css, out var claims, out var confidence);
+                        perBlock[i] = (blocks[i].Role, css, claims, confidence);
+                    }
+                    continue;
+                }
+
+                // Repeated role with K > 1: resolve each block's XPath to an
+                // IElement and feed the whole set to BuildForRepeatedRole. Any
+                // block whose XPath fails to resolve drops to the per-block
+                // fallback so we don't lose it from the rule set.
+                var targets = new List<IElement>(indices.Count);
+                var resolvedIndices = new List<int>(indices.Count);
+                var unresolved = new List<int>();
+                foreach (var i in indices)
+                {
+                    var el = ResolveByXPath(document, blocks[i].XPath);
+                    if (el is null) { unresolved.Add(i); continue; }
+                    targets.Add(el);
+                    resolvedIndices.Add(i);
+                }
+
+                if (targets.Count >= 2)
+                {
+                    var result = IdentityClaimSelectorBuilder.BuildForRepeatedRole(
+                        targets, document, _classFilter, _logger);
+                    var sharedClaims = result.Chain;
+                    var sharedCss = IdentityClaimSelectorBuilder.ToCssSelector(sharedClaims);
+
+                    for (var k = 0; k < resolvedIndices.Count; k++)
+                    {
+                        var i = resolvedIndices[k];
+                        var confidence = blocks[i].Confidence;
+                        if (result.HitDepthCap)
+                        {
+                            // Same postcondition Task 51 set for singletons:
+                            // non-unique chain → zero confidence requires-review
+                            // marker. Applies to the whole repeated set since
+                            // they all share one chain.
+                            confidence = NonUniqueChainConfidence;
+                        }
+                        perBlock[i] = (blocks[i].Role, sharedCss, sharedClaims, confidence);
+                    }
+                }
+                else
+                {
+                    // Fewer than 2 resolved targets — degenerate into the
+                    // per-block path for whatever did resolve.
+                    foreach (var i in resolvedIndices)
+                    {
+                        EmitForBlock(blocks[i], document, out var css, out var claims, out var confidence);
+                        perBlock[i] = (blocks[i].Role, css, claims, confidence);
+                    }
+                }
+
+                foreach (var i in unresolved)
+                {
+                    EmitForBlock(blocks[i], document, out var css, out var claims, out var confidence);
+                    perBlock[i] = (blocks[i].Role, css, claims, confidence);
+                }
+            }
+        }
+        else
+        {
+            // No document available → legacy per-block fallback for every role.
+            for (var i = 0; i < blocks.Count; i++)
+            {
+                EmitForBlock(blocks[i], document, out var css, out var claims, out var confidence);
+                perBlock[i] = (blocks[i].Role, css, claims, confidence);
+            }
         }
 
         // Group by (role, css) so duplicate selectors collapse to one rule, the
