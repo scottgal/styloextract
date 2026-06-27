@@ -46,6 +46,28 @@ public static class SqliteSchema
           similarity_at_match  REAL NOT NULL
         );
         CREATE INDEX IF NOT EXISTS ix_obs_template ON template_observations(template_id, observed_at);
+
+        -- Phase 1 Task 5: append-only rule-observation corpus. One row per
+        -- BlockRule emitted into any persisted template, ever. Feeds the
+        -- Phase 2 cross-host mining step (LSH-bucket-scoped query joins
+        -- rules from different hosts that fingerprint into the same cluster).
+        -- Distinct from template_observations above which records per-match
+        -- similarity logs and is LRU-capped at 100 per template.
+        CREATE TABLE IF NOT EXISTS template_rule_observations (
+          observation_id       BLOB PRIMARY KEY NOT NULL,
+          host_hash            BLOB NOT NULL,
+          lsh_bucket           INTEGER NOT NULL,
+          role                 INTEGER NOT NULL,
+          claims_json          BLOB NOT NULL,
+          target_signature     INTEGER NOT NULL,
+          cardinality          INTEGER NOT NULL,
+          confidence           REAL NOT NULL,
+          induced_at           INTEGER NOT NULL,
+          inducer_kind         INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_rule_obs_host_role ON template_rule_observations(host_hash, role, induced_at);
+        CREATE INDEX IF NOT EXISTS ix_rule_obs_bucket_role ON template_rule_observations(lsh_bucket, role, induced_at);
+        CREATE INDEX IF NOT EXISTS ix_rule_obs_induced_at ON template_rule_observations(induced_at);
         """;
 
     public static void EnsureCreated(SqliteConnection connection)

@@ -266,6 +266,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
                         new StyloExtractSignal(TemplateId: templateId, FingerprintHex: fp.Hex, HostDisplayName: sourceUri?.Host),
                         key: templateId.Value.ToString("N"));
                     _deterministicYamlSink?.Persist(resolvedHost, freshEx);
+                    await AppendObservationsAsync(freshEx, resolvedHost, fp, InducerKind.Heuristic, cancellationToken).ConfigureAwait(false);
                     llmInductionFired |= await MaybeEnqueueEnrichmentAsync(doc, resolvedHost, fp.Hex, cancellationToken).ConfigureAwait(false);
                 }
                 else
@@ -324,6 +325,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
                         new StyloExtractSignal(TemplateId: templateId, FingerprintHex: fp.Hex, HostDisplayName: sourceUri?.Host),
                         key: templateId.Value.ToString("N"));
                     _deterministicYamlSink?.Persist(resolvedHost, ex);
+                    await AppendObservationsAsync(ex, resolvedHost, fp, InducerKind.Heuristic, cancellationToken).ConfigureAwait(false);
                     llmInductionFired |= await MaybeEnqueueEnrichmentAsync(doc, resolvedHost, fp.Hex, cancellationToken).ConfigureAwait(false);
                 }
             }
@@ -588,6 +590,57 @@ public sealed class LayoutExtractor : ILayoutExtractor
     /// Returns true when the job was successfully enqueued (i.e. the LLM
     /// inducer will run for this host), false for every no-op path.
     /// </summary>
+    private async Task AppendObservationsAsync(
+        LearnedExtractor extractor,
+        string host,
+        StructuralFingerprint fp,
+        InducerKind kind,
+        CancellationToken cancellationToken)
+    {
+        if (extractor.Rules.Count == 0) return;
+        // LSH bucket: first band hash cast to a non-negative int. Phase 2 mining
+        // can cluster across rows by this bucket. Bands beyond [0] aren't lost —
+        // the active template still carries them via SqliteTemplateIndex's
+        // template_lsh_band_index table; the observation row only needs one
+        // bucket-scope key for cluster queries.
+        var bucket = fp.LshBands.Length > 0
+            ? unchecked((int)(fp.LshBands[0] & 0x7FFFFFFFUL))
+            : 0;
+        var now = DateTimeOffset.UtcNow;
+        foreach (var rule in extractor.Rules)
+        {
+            try
+            {
+                var claims = rule.Claims ?? Array.Empty<IdentityClaim>();
+                // Target signature: hash leaf claim's identifying surface. Cardinality
+                // proxy: count of selectors emitted for this rule (1 for singleton
+                // rules; >1 only on repeated-role chains from Task 52).
+                var leaf = claims.Count > 0 ? claims[^1] : null;
+                var targetSig = leaf is not null
+                    ? leaf.TagHash ^ (leaf.IdHash ?? 0UL)
+                    : 0UL;
+                await _index.AppendObservationAsync(new TemplateObservation
+                {
+                    ObservationId = Guid.NewGuid(),
+                    Host = host,
+                    LshBucket = bucket,
+                    Role = rule.Role,
+                    Claims = claims,
+                    TargetSignature = targetSig,
+                    Cardinality = Math.Max(1, rule.CssSelectors.Count),
+                    Confidence = rule.MeanConfidence,
+                    InducedAt = now,
+                    InducerKind = kind,
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Audit-only path; failure must not abort extraction.
+                _logger?.LogDebug(ex, "AppendObservation failed for host {Host} role {Role}", host, rule.Role);
+            }
+        }
+    }
+
     private async Task<bool> MaybeEnqueueEnrichmentAsync(
         AngleSharp.Dom.IDocument doc, string host, string fingerprintHex, CancellationToken cancellationToken)
     {

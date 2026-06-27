@@ -1,3 +1,6 @@
+using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Mostlylucid.Ephemeral;
@@ -18,6 +21,7 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
     private readonly double _lambdaRecent;
     private readonly double _tauDays;
     private readonly TypedSignalSink<StyloExtractSignal>? _signals;
+    private readonly HostHasher? _hostHasher;
     // Source-gen typed serializer used for AOT-compatible serialization of LearnedExtractor blobs.
     // All blobs use camelCase JSON (breaking change from earlier PascalCase; see TemplatesJsonContext).
 
@@ -37,7 +41,8 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
         double lambdaObs = 0.02,
         double lambdaRecent = 0.05,
         double tauDays = 30.0,
-        TypedSignalSink<StyloExtractSignal>? signals = null)
+        TypedSignalSink<StyloExtractSignal>? signals = null,
+        HostHasher? hostHasher = null)
     {
         // Promote bare ":memory:" or "Data Source=:memory:" to a named shared-cache URI.
         // This is required so SqliteSingleWriter's read connections see the same schema and
@@ -56,6 +61,7 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
         _lambdaRecent = lambdaRecent;
         _tauDays = tauDays;
         _signals = signals;
+        _hostHasher = hostHasher;
     }
 
     // Converts ":memory:" or "Data Source=:memory:" connection strings to a named shared-cache
@@ -473,6 +479,192 @@ public sealed class SqliteTemplateIndex : ITemplateIndex, IAsyncDisposable
         _writer.InvalidateCache(VersionKey(templateId));
 
         return result;
+    }
+
+    // -------- Phase 1 Task 5: rule-observation corpus --------
+
+    public async ValueTask AppendObservationAsync(
+        TemplateObservation observation,
+        CancellationToken cancellationToken = default)
+    {
+        var idBytes = observation.ObservationId.ToByteArray();
+        var hostHashBytes = HashHost(observation.Host);
+        var claimsBytes = SerializeClaims(observation.Claims);
+        var inducedAt = observation.InducedAt.ToUnixTimeMilliseconds();
+
+        await _writer.ExecuteInTransactionAsync(async (conn, tx, ct) =>
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = """
+                INSERT INTO template_rule_observations
+                  (observation_id, host_hash, lsh_bucket, role, claims_json, target_signature, cardinality, confidence, induced_at, inducer_kind)
+                VALUES
+                  (@id, @host, @bucket, @role, @claims, @target, @card, @conf, @ts, @kind)
+                """;
+            cmd.Parameters.AddWithValue("@id", idBytes);
+            cmd.Parameters.AddWithValue("@host", hostHashBytes);
+            cmd.Parameters.AddWithValue("@bucket", observation.LshBucket);
+            cmd.Parameters.AddWithValue("@role", (int)observation.Role);
+            cmd.Parameters.AddWithValue("@claims", claimsBytes);
+            // SQLite INTEGER is 64-bit signed; cast ulong to long bits to round-trip the hash.
+            cmd.Parameters.AddWithValue("@target", unchecked((long)observation.TargetSignature));
+            cmd.Parameters.AddWithValue("@card", observation.Cardinality);
+            cmd.Parameters.AddWithValue("@conf", observation.Confidence);
+            cmd.Parameters.AddWithValue("@ts", inducedAt);
+            cmd.Parameters.AddWithValue("@kind", (int)observation.InducerKind);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<IReadOnlyList<TemplateObservation>> GetObservationsByHostAsync(
+        string host,
+        BlockRole? role = null,
+        int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        var hostHashBytes = HashHost(host);
+        return await _writer.QueryAsync(async conn =>
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = role is null
+                ? "SELECT observation_id, lsh_bucket, role, claims_json, target_signature, cardinality, confidence, induced_at, inducer_kind FROM template_rule_observations WHERE host_hash = @host ORDER BY induced_at DESC LIMIT @lim"
+                : "SELECT observation_id, lsh_bucket, role, claims_json, target_signature, cardinality, confidence, induced_at, inducer_kind FROM template_rule_observations WHERE host_hash = @host AND role = @role ORDER BY induced_at DESC LIMIT @lim";
+            cmd.Parameters.AddWithValue("@host", hostHashBytes);
+            if (role is not null) cmd.Parameters.AddWithValue("@role", (int)role.Value);
+            cmd.Parameters.AddWithValue("@lim", limit);
+            return await ReadObservationsAsync(cmd, host, cancellationToken).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<IReadOnlyList<TemplateObservation>> GetObservationsByBucketAsync(
+        int lshBucket,
+        BlockRole? role = null,
+        int limit = 1000,
+        CancellationToken cancellationToken = default)
+    {
+        return await _writer.QueryAsync(async conn =>
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = role is null
+                ? "SELECT observation_id, lsh_bucket, role, claims_json, target_signature, cardinality, confidence, induced_at, inducer_kind FROM template_rule_observations WHERE lsh_bucket = @bucket ORDER BY induced_at DESC LIMIT @lim"
+                : "SELECT observation_id, lsh_bucket, role, claims_json, target_signature, cardinality, confidence, induced_at, inducer_kind FROM template_rule_observations WHERE lsh_bucket = @bucket AND role = @role ORDER BY induced_at DESC LIMIT @lim";
+            cmd.Parameters.AddWithValue("@bucket", lshBucket);
+            if (role is not null) cmd.Parameters.AddWithValue("@role", (int)role.Value);
+            cmd.Parameters.AddWithValue("@lim", limit);
+            // Host string is not recoverable from the hash; cluster-scoped queries
+            // return observations with Host = "" (caller has the hash, not the raw).
+            return await ReadObservationsAsync(cmd, host: "", cancellationToken).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async IAsyncEnumerable<TemplateObservation> EnumerateObservationsAsync(
+        int? lshBucket = null,
+        BlockRole? role = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        // Page in chunks so a large corpus walk doesn't pin the writer's read
+        // connection for the duration. Each chunk re-issues the SELECT scoped
+        // by induced_at < cursor.
+        const int PageSize = 500;
+        long cursor = long.MaxValue;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var page = await _writer.QueryAsync(async conn =>
+            {
+                await using var cmd = conn.CreateCommand();
+                var sb = new StringBuilder(
+                    "SELECT observation_id, lsh_bucket, role, claims_json, target_signature, cardinality, confidence, induced_at, inducer_kind FROM template_rule_observations WHERE induced_at < @cursor");
+                if (lshBucket is not null) sb.Append(" AND lsh_bucket = @bucket");
+                if (role is not null) sb.Append(" AND role = @role");
+                sb.Append(" ORDER BY induced_at DESC LIMIT @lim");
+                cmd.CommandText = sb.ToString();
+                cmd.Parameters.AddWithValue("@cursor", cursor);
+                cmd.Parameters.AddWithValue("@lim", PageSize);
+                if (lshBucket is not null) cmd.Parameters.AddWithValue("@bucket", lshBucket.Value);
+                if (role is not null) cmd.Parameters.AddWithValue("@role", (int)role.Value);
+                return await ReadObservationsAsync(cmd, host: "", cancellationToken).ConfigureAwait(false);
+            }, cancellationToken).ConfigureAwait(false);
+
+            if (page.Count == 0) yield break;
+            foreach (var obs in page)
+            {
+                yield return obs;
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            if (page.Count < PageSize) yield break;
+            // Advance the cursor to the oldest row we just returned; the next
+            // page picks up strictly older rows. Ties on induced_at could
+            // re-emit a row; in practice induced_at uses unix-ms which is
+            // dense enough that the LIMIT clause picks rows monotonically.
+            cursor = page[^1].InducedAt.ToUnixTimeMilliseconds();
+        }
+    }
+
+    private static async Task<IReadOnlyList<TemplateObservation>> ReadObservationsAsync(
+        SqliteCommand cmd, string host, CancellationToken cancellationToken)
+    {
+        var list = new List<TemplateObservation>();
+        await using var r = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await r.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var idBytes = (byte[])r["observation_id"];
+            var bucket = r.GetInt32(r.GetOrdinal("lsh_bucket"));
+            var role = (BlockRole)r.GetInt32(r.GetOrdinal("role"));
+            var claimsBytes = (byte[])r["claims_json"];
+            var target = unchecked((ulong)r.GetInt64(r.GetOrdinal("target_signature")));
+            var card = r.GetInt32(r.GetOrdinal("cardinality"));
+            var conf = r.GetDouble(r.GetOrdinal("confidence"));
+            var ts = r.GetInt64(r.GetOrdinal("induced_at"));
+            var kind = (InducerKind)r.GetInt32(r.GetOrdinal("inducer_kind"));
+
+            list.Add(new TemplateObservation
+            {
+                ObservationId = new Guid(idBytes),
+                Host = host,
+                LshBucket = bucket,
+                Role = role,
+                Claims = DeserializeClaims(claimsBytes),
+                TargetSignature = target,
+                Cardinality = card,
+                Confidence = conf,
+                InducedAt = DateTimeOffset.FromUnixTimeMilliseconds(ts),
+                InducerKind = kind,
+            });
+        }
+        return list;
+    }
+
+    // Hash the raw host. Use the injected HostHasher when present so the same
+    // hash is computed by the LayoutExtractor's pre-hashed `host_hash` column
+    // (which means a future joined query across `templates` and
+    // `template_rule_observations` matches on the same bytes). Without a
+    // HostHasher, fall back to a deterministic non-keyed SHA-256 truncation
+    // so the store still round-trips host queries within its own corpus —
+    // standalone tests are the primary user of the fallback.
+    private byte[] HashHost(string host)
+    {
+        var normalized = (host ?? "").ToLowerInvariant();
+        if (_hostHasher is not null) return _hostHasher.Hash(normalized);
+        var full = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
+        var trunc = new byte[16];
+        Buffer.BlockCopy(full, 0, trunc, 0, 16);
+        return trunc;
+    }
+
+    private static byte[] SerializeClaims(IReadOnlyList<IdentityClaim> claims)
+    {
+        // The source-gen context registers IReadOnlyList<IdentityClaim>; we
+        // serialise through that contract so the persisted JSON matches what
+        // Phase 2 mining will deserialise.
+        var arr = claims as IdentityClaim[] ?? claims.ToArray();
+        return JsonSerializer.SerializeToUtf8Bytes(arr, TemplatesJsonContext.Default.IdentityClaimArray);
+    }
+
+    private static IReadOnlyList<IdentityClaim> DeserializeClaims(byte[] bytes)
+    {
+        var arr = JsonSerializer.Deserialize(bytes, TemplatesJsonContext.Default.IdentityClaimArray);
+        return arr ?? Array.Empty<IdentityClaim>();
     }
 
     private static byte[] UintArrayToBytes(uint[] sig)

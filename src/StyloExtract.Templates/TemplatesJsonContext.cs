@@ -25,6 +25,12 @@ namespace StyloExtract.Templates;
 [JsonSerializable(typeof(ExportFingerprints))]
 [JsonSerializable(typeof(ExportPqGramVector))]
 [JsonSerializable(typeof(ExportObservationSummary))]
+// Phase 1 Task 5: rule-observation corpus. IdentityClaim[] is persisted as a
+// blob column on the template_rule_observations table.
+[JsonSerializable(typeof(IdentityClaim))]
+[JsonSerializable(typeof(IdentityClaim[]))]
+[JsonSerializable(typeof(IReadOnlyList<IdentityClaim>))]
+[JsonSerializable(typeof(TemplateObservation))]
 internal sealed partial class TemplatesJsonContext : JsonSerializerContext;
 
 /// <summary>
