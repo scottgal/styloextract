@@ -257,7 +257,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
                 blocks = _classifier.Classify(_segmenter.Segment(doc));
                 if (options.LearnNewTemplates)
                 {
-                    var freshEx = _inducer.Induce(fastHit.Value, blocks);
+                    var freshEx = _inducer.Induce(fastHit.Value, blocks, doc);
                     templateId = await _index.RegisterAsync(hostHash, fp, freshEx, cancellationToken);
                     templateVersion = 1;
                     observationCount = 1;
@@ -315,7 +315,7 @@ public sealed class LayoutExtractor : ILayoutExtractor
                 if (options.LearnNewTemplates)
                 {
                     var newId = Guid.NewGuid();
-                    var ex = _inducer.Induce(newId, blocks);
+                    var ex = _inducer.Induce(newId, blocks, doc);
                     templateId = await _index.RegisterAsync(hostHash, fp, ex, cancellationToken);
                     templateVersion = 1;
                     observationCount = 1;
