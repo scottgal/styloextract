@@ -8,32 +8,30 @@ using StyloExtract.Heuristics;
 namespace StyloExtract.Streaming;
 
 /// <summary>
-/// First-pass streaming-template inducer rewritten in Task 4 (alpha.24) to
-/// emit <see cref="IdentityClaim"/> tripwires instead of MinHash fences.
+/// Streaming-template inducer rewritten in Task 13 of Phase 1 to emit
+/// <see cref="BytePattern"/>s instead of <see cref="IdentityClaim"/>
+/// tripwires. The inducer still parses the example page once with AngleSharp
+/// (induction is a per-host operation, not the per-request hot path) and
+/// reuses <see cref="DefaultClassStabilityFilter"/> for the class/id
+/// stability gate.
 ///
-/// Parses the page with AngleSharp once, picks three target elements
-/// (prefix / content-start / content-end) using the same shape heuristics
-/// as alpha.16..23, and calls
-/// <see cref="IdentityClaimExtractor.Extract(IElement, IClassStabilityFilter)"/>
-/// on each. The resulting <see cref="ElementClaimSet"/>s are projected
-/// into stable <see cref="IdentityClaim"/>s the scanner will match exactly
-/// against the tokenizer's per-event hash data.
-///
-/// Heuristic targets:
+/// Output shape (per template):
 /// <list type="bullet">
-///   <item><description>Prefix: first <c>&lt;header&gt;</c>, fallback to first
-///   <c>&lt;nav&gt;</c>, last-ditch <c>&lt;body&gt;</c>.</description></item>
-///   <item><description>Content start: first ancestor of the paragraph
-///   cluster — prefer <c>&lt;article&gt;</c>, then <c>&lt;main&gt;</c>,
-///   then the first <c>&lt;p&gt;</c> in a 2+ paragraph cluster.</description></item>
-///   <item><description>Content end: same element as content start (the
-///   scanner watches for its CLOSE event). On the wire this collapses to
-///   "fire the same tripwire on close".</description></item>
+///   <item><b>PrefixPattern</b>: open tag of the first page-chrome anchor
+///   (header, nav, body) — the simplest pattern that fires before content.</item>
+///   <item><b>ContentStartPattern</b>: open tag of the content element (
+///   article / main / paragraph cluster parent) with the minimum stable
+///   attributes needed to distinguish it from other tags of the same type
+///   on the page.</item>
+///   <item><b>ContentEndPattern</b>: close tag of the content element. The
+///   scanner counts nested opens of the same tag name so a quoted inline
+///   <c>&lt;article&gt;example&lt;/article&gt;</c> doesn't terminate the
+///   capture early.</item>
 /// </list>
 ///
-/// Returns null when no plausible targets exist (plain text, SVG-only,
-/// image-only pages). Callers should treat null as "leave NoTemplate
-/// alone, try again next visit".
+/// Returns null when no plausible content target exists (plain text,
+/// SVG-only, image-only pages). Callers should treat null as "leave
+/// NoTemplate alone, try again next visit".
 /// </summary>
 public sealed class StreamingTemplateInducer
 {
@@ -66,9 +64,6 @@ public sealed class StreamingTemplateInducer
         if (string.IsNullOrEmpty(host)) return null;
         if (html.Length == 0) return null;
 
-        // AngleSharp's HtmlParser takes a string — decode UTF-8 once.
-        // Induction is a per-host operation (not the per-request hot path),
-        // so the allocation cost is fine.
         var source = Encoding.UTF8.GetString(html);
         var doc = s_parser.ParseDocument(source);
         if (doc.Body is null) return null;
@@ -79,24 +74,17 @@ public sealed class StreamingTemplateInducer
         var contentEl = FindContentElement(doc);
         if (contentEl is null) return null;
 
-        var endEl = FindContentEndElement(doc, contentEl);
-        if (endEl is null) return null;
-
-        var prefixClaim = ToIdentityClaim(IdentityClaimExtractor.Extract(prefixEl, _classFilter));
-        var contentStartClaim = ToIdentityClaim(IdentityClaimExtractor.Extract(contentEl, _classFilter));
-        // ContentEnd fires on the CLOSE event for the content element. Close
-        // tags carry no attributes (no id, no classes), so the tripwire must
-        // rely on tag-name alone. Collapse the full claim to its tag-only
-        // form for this slot.
-        var contentEndClaim = TagOnlyClaim(IdentityClaimExtractor.Extract(endEl, _classFilter));
+        var prefixPattern = BuildOpenPattern(prefixEl, doc, requireAttrs: false);
+        var contentStartPattern = BuildOpenPattern(contentEl, doc, requireAttrs: true);
+        var contentEndPattern = BuildClosePattern(contentEl);
 
         return new StreamingTemplate
         {
             TemplateId = Guid.NewGuid(),
             Host = host,
-            PrefixTripwire = prefixClaim,
-            ContentStartTripwire = contentStartClaim,
-            ContentEndTripwire = contentEndClaim,
+            PrefixPattern = prefixPattern,
+            ContentStartPattern = contentStartPattern,
+            ContentEndPattern = contentEndPattern,
             BailoutBytes = 5_000_000,
             MaxCaptureBytes = 5_000_000,
         };
@@ -104,8 +92,7 @@ public sealed class StreamingTemplateInducer
 
     /// <summary>
     /// Diagnostic counterpart of <see cref="Induce"/> — returns a
-    /// human-readable summary of which elements the heuristic would pick.
-    /// Cheap (one parse pass).
+    /// human-readable summary of which elements the heuristic picks.
     /// </summary>
     public InducedSummary? Describe(ReadOnlySpan<byte> html)
     {
@@ -118,13 +105,11 @@ public sealed class StreamingTemplateInducer
         if (prefixEl is null) return null;
         var contentEl = FindContentElement(doc);
         if (contentEl is null) return null;
-        var endEl = FindContentEndElement(doc, contentEl);
-        if (endEl is null) return null;
 
         return new InducedSummary(
             DescribeElement(prefixEl),
             DescribeElement(contentEl),
-            DescribeElement(endEl));
+            DescribeElement(contentEl) + " (close)");
     }
 
     public readonly record struct InducedSummary(
@@ -148,10 +133,6 @@ public sealed class StreamingTemplateInducer
         var main = doc.QuerySelector("main");
         if (main is not null) return main;
 
-        // Paragraph-cluster fallback: at least two consecutive <p> siblings
-        // somewhere in the document. Return their nearest common parent so
-        // the content-end tripwire fires on the parent's close (which the
-        // scanner's depth tracking can identify cleanly).
         var paragraphs = doc.QuerySelectorAll("p");
         IElement? lastParent = null;
         int run = 0;
@@ -172,71 +153,85 @@ public sealed class StreamingTemplateInducer
         return null;
     }
 
-    private static IElement? FindContentEndElement(IDocument doc, IElement contentEl)
-    {
-        // The scanner watches for the CLOSE event of the content element by
-        // default — same identity claim, fired on close. Per the task design
-        // (prefix/content-start/content-end as three independent tripwires)
-        // we still emit a distinct claim for the end target. The natural
-        // pick is the same element as content-start (close of content =
-        // close of region). If a downstream <footer> exists we could in
-        // principle use it as a coarser end marker, but firing on the
-        // content element's own close is more precise.
-        return contentEl;
-    }
-
     /// <summary>
-    /// Project the full identity snapshot into a streaming-friendly tripwire.
-    ///
-    /// The scanner's per-event hash data is bounded (see
-    /// <see cref="TagEvent.MaxClassesPerEvent"/> /
-    /// <see cref="TagEvent.MaxAttrPairsPerEvent"/>): a tripwire that requires
-    /// 20 classes will never satisfy because TagEvent only carries 8. So
-    /// the inducer narrows the claim:
-    ///
-    /// - If the element has a stable id, the tripwire is tag + id (single
-    ///   strong discriminator, matches the layout-side preference).
-    /// - Otherwise: tag + at most the first two stable classes. Two is
-    ///   enough to disambiguate on most real pages while staying well
-    ///   under the per-event cap. Going wider would risk losing the
-    ///   match on pages where utility-class ordering shifts between
-    ///   sessions.
+    /// Build the open-tag <see cref="BytePattern"/> for <paramref name="element"/>.
+    /// When <paramref name="requireAttrs"/> is true, picks the minimum stable
+    /// attributes needed to distinguish this element from other tags of the
+    /// same name on the page.
     /// </summary>
-    private static IdentityClaim ToIdentityClaim(ElementClaimSet claimSet)
+    private BytePattern BuildOpenPattern(IElement element, IDocument doc, bool requireAttrs)
     {
-        if (claimSet.Id is not null)
+        var tagName = Encoding.UTF8.GetBytes(element.LocalName.ToLowerInvariant());
+        var attrs = requireAttrs ? PickDisambiguatingAttrs(element, doc) : Array.Empty<AttrConstraint>();
+        return new BytePattern
         {
-            return new IdentityClaim
-            {
-                Tag = claimSet.Tag,
-                TagHash = claimSet.TagHash,
-                Id = claimSet.Id,
-                IdHash = claimSet.IdHash,
-            };
-        }
-
-        const int maxClasses = 2;
-        var keepClasses = claimSet.Classes.Count <= maxClasses
-            ? claimSet.Classes
-            : (IReadOnlyList<string>)claimSet.Classes.Take(maxClasses).ToArray();
-        var keepHashes = claimSet.ClassHashes.Count <= maxClasses
-            ? claimSet.ClassHashes
-            : (IReadOnlyList<ulong>)claimSet.ClassHashes.Take(maxClasses).ToArray();
-
-        return new IdentityClaim
-        {
-            Tag = claimSet.Tag,
-            TagHash = claimSet.TagHash,
-            Classes = keepClasses,
-            ClassHashes = keepHashes,
+            TagName = tagName,
+            Attrs = attrs,
+            IsClose = false,
+            MaxScanBytes = 512,
         };
     }
 
-    private static IdentityClaim TagOnlyClaim(ElementClaimSet claimSet) => new()
+    private static BytePattern BuildClosePattern(IElement element)
     {
-        Tag = claimSet.Tag,
-        TagHash = claimSet.TagHash,
-    };
+        var tagName = Encoding.UTF8.GetBytes(element.LocalName.ToLowerInvariant());
+        return new BytePattern
+        {
+            TagName = tagName,
+            Attrs = Array.Empty<AttrConstraint>(),
+            IsClose = true,
+            MaxScanBytes = 64,
+        };
+    }
+
+    /// <summary>
+    /// Choose the minimum set of attribute constraints that would let the
+    /// byte pattern distinguish <paramref name="element"/> from the other
+    /// same-tag elements on the page.
+    ///
+    /// Preference order:
+    /// 1. <c>id</c> alone if present and stable (the strongest discriminator).
+    /// 2. First stable class if present and disambiguating.
+    /// 3. Empty (the tag name alone is unique on the page).
+    /// </summary>
+    private AttrConstraint[] PickDisambiguatingAttrs(IElement element, IDocument doc)
+    {
+        // If only one element with this tag exists, no attrs needed.
+        var sameTag = doc.QuerySelectorAll(element.LocalName);
+        if (sameTag.Length <= 1) return Array.Empty<AttrConstraint>();
+
+        var id = element.Id;
+        if (!string.IsNullOrEmpty(id) && _classFilter.IsStable(id))
+        {
+            return new[]
+            {
+                new AttrConstraint
+                {
+                    Name = "id"u8.ToArray(),
+                    Value = Encoding.UTF8.GetBytes(id),
+                },
+            };
+        }
+
+        if (!string.IsNullOrWhiteSpace(element.ClassName))
+        {
+            foreach (var cls in element.ClassName.Split(' ',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (!_classFilter.IsStable(cls)) continue;
+                return new[]
+                {
+                    new AttrConstraint
+                    {
+                        Name = "class"u8.ToArray(),
+                        Value = Encoding.UTF8.GetBytes(cls),
+                    },
+                };
+            }
+        }
+
+        return Array.Empty<AttrConstraint>();
+    }
 
     private static string DescribeElement(IElement el)
     {

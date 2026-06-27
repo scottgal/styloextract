@@ -21,9 +21,9 @@ public sealed class StreamingPathSelectorTests
     public async Task Drives_full_stack_to_Captured_when_template_matches_html()
     {
         var template = TripwireTestHelpers.MakeTemplate(
-            TripwireTestHelpers.TagClaim("header"),
-            TripwireTestHelpers.TagClaim("article"),
-            TripwireTestHelpers.TagClaim("article"));
+            TripwireTestHelpers.TagPattern("header"),
+            TripwireTestHelpers.TagPattern("article"),
+            TripwireTestHelpers.ClosePattern("article"));
         var store = new InMemoryStreamingTemplateStore();
         await store.RegisterAsync(template);
 
@@ -40,13 +40,13 @@ public sealed class StreamingPathSelectorTests
     public async Task Selector_can_dispatch_two_distinct_templates_per_id()
     {
         var smallTemplate = TripwireTestHelpers.MakeTemplate(
-            TripwireTestHelpers.TagClaim("nav"),
-            TripwireTestHelpers.TagClaim("main"),
-            TripwireTestHelpers.TagClaim("main"));
+            TripwireTestHelpers.TagPattern("nav"),
+            TripwireTestHelpers.TagPattern("main"),
+            TripwireTestHelpers.ClosePattern("main"));
         var bigTemplate = TripwireTestHelpers.MakeTemplate(
-            TripwireTestHelpers.TagClaim("header"),
-            TripwireTestHelpers.TagClaim("article"),
-            TripwireTestHelpers.TagClaim("article"));
+            TripwireTestHelpers.TagPattern("header"),
+            TripwireTestHelpers.TagPattern("article"),
+            TripwireTestHelpers.ClosePattern("article"));
 
         var store = new InMemoryStreamingTemplateStore();
         await store.RegisterAsync(smallTemplate);

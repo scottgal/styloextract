@@ -12,13 +12,13 @@ public sealed class RealHtmlFixtureTests
         File.Exists(path).Should().BeTrue("article fixture should be copied to output");
         var html = File.ReadAllBytes(path);
 
-        // Fence design: <header> ... </header> <main> <article> ... </article> </main> <footer>...
-        // The tripwire scanner fires on the first <header> open (prefix), the first <article>
-        // open (content-start), and the matching </article> close at depth baseline (content-end).
+        // Task 13 byte-pattern shape: prefix=<header>, content-start=<article>,
+        // content-end=</article>. Same semantic pattern as the Task 4 tripwire
+        // model, expressed as byte literals.
         var template = TripwireTestHelpers.MakeTemplate(
-            TripwireTestHelpers.TagClaim("header"),
-            TripwireTestHelpers.TagClaim("article"),
-            TripwireTestHelpers.TagClaim("article"));
+            TripwireTestHelpers.TagPattern("header"),
+            TripwireTestHelpers.TagPattern("article"),
+            TripwireTestHelpers.ClosePattern("article"));
 
         var store = new InMemoryStreamingTemplateStore();
         await store.RegisterAsync(template);

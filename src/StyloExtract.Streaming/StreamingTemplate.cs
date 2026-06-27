@@ -3,29 +3,29 @@ using StyloExtract.Abstractions;
 namespace StyloExtract.Streaming;
 
 /// <summary>
-/// A streaming template — three <see cref="IdentityClaim"/> tripwires the
-/// scanner state machine fires on as the response stream flows past.
+/// A streaming template — three <see cref="BytePattern"/>s the byte-pattern
+/// scanner (<see cref="BytePatternScanner"/> / <see cref="IncrementalBytePatternScanner"/>)
+/// fires on as the response stream flows past.
 ///
-/// Task 4 of Phase 1 (alpha.24) replaced the alpha.16..23 MinHash
-/// <c>TemplateFence</c> shape with this tripwire shape. The state machine
-/// transitions on EXACT identity-claim match against the tokenizer's
-/// per-event hash data:
+/// Task 13 of Phase 1 replaced the Task 4 tripwire shape (three
+/// <see cref="IdentityClaim"/>s evaluated against tokenizer hash data) with
+/// byte-level patterns that match directly on the response bytes. No
+/// tokeniser on the hot path; no per-tag identity-claim conjunction
+/// evaluation; no DOM depth tracker. The patterns anchor on the local marker
+/// bytes the inducer chose, so surrounding-DOM changes (header redesign,
+/// sidebar swap, ad-div injection) don't touch the patterns.
 ///
+/// Scanner FSM:
 /// <list type="bullet">
-///   <item><description>AwaitPrefix → match <see cref="PrefixTripwire"/> →
-///   AwaitContentStart</description></item>
-///   <item><description>AwaitContentStart → match <see cref="ContentStartTripwire"/> →
-///   Capturing (depth snapshot taken)</description></item>
-///   <item><description>Capturing → close-event matching <see cref="ContentEndTripwire"/>
-///   AND depth ≤ snapshot → Captured</description></item>
-///   <item><description>Bailout when <see cref="BailoutBytes"/> consumed without
-///   a state change, or when capture exceeds <see cref="MaxCaptureBytes"/>.</description></item>
+///   <item>AwaitPrefix → match <see cref="PrefixPattern"/> → AwaitContentStart</item>
+///   <item>AwaitContentStart → match <see cref="ContentStartPattern"/> →
+///   Capturing (capture-start byte snapshot taken)</item>
+///   <item>Capturing → match <see cref="ContentEndPattern"/> with the
+///   nested-open counter at 1 → Captured</item>
+///   <item>Bailout on <see cref="BailoutBytes"/> consumed in a non-Capturing
+///   state without a transition, or on <see cref="MaxCaptureBytes"/> exceeded
+///   in Capturing.</item>
 /// </list>
-///
-/// Trade-off: the alpha.21..23 LSH bands gave soft tolerance across DOM
-/// diffs. Tripwires match exactly on stable-by-construction identifiers
-/// (the identity-aware inducer from Task 2 picks stable claims) — drift
-/// becomes a clean miss → refit signal, which is what we wanted anyway.
 /// </summary>
 public sealed record StreamingTemplate
 {
@@ -39,38 +39,39 @@ public sealed record StreamingTemplate
     public required string Host { get; init; }
 
     /// <summary>
-    /// Identity claim the scanner waits on while in AwaitPrefix. First
-    /// matching open-event transitions to AwaitContentStart. Typically the
-    /// outer page chrome opener — header / nav / banner / top-level main.
+    /// Pattern the scanner waits on while in AwaitPrefix. First open-tag
+    /// match transitions to AwaitContentStart. Typically the outer page
+    /// chrome opener — header / nav / banner / top-level main.
     /// </summary>
-    public required IdentityClaim PrefixTripwire { get; init; }
+    public required BytePattern PrefixPattern { get; init; }
 
     /// <summary>
-    /// Identity claim the scanner waits on while in AwaitContentStart. First
-    /// matching open-event transitions to Capturing and snapshots the DOM
-    /// depth. Typically the content-region opener — article / main / a
-    /// paragraph-cluster wrapper.
+    /// Pattern the scanner waits on while in AwaitContentStart. First match
+    /// transitions to Capturing and snapshots the capture-start byte. The
+    /// captured byte span starts AT the matched tag so the consumer sees
+    /// the content element's opening.
     /// </summary>
-    public required IdentityClaim ContentStartTripwire { get; init; }
+    public required BytePattern ContentStartPattern { get; init; }
 
     /// <summary>
-    /// Identity claim the scanner waits on while in Capturing. First matching
-    /// close-event at depth ≤ snapshot-depth transitions to Captured. The
-    /// depth gate prevents premature termination from nested elements that
-    /// happen to share the same identity.
+    /// Pattern the scanner waits on while in Capturing. Usually the close
+    /// form of the content-start tag. The scanner counts nested opens of
+    /// the same tag name so an inline <c>&lt;article&gt;...&lt;/article&gt;</c>
+    /// inside the captured region doesn't terminate the capture early —
+    /// only the close that returns the counter to zero counts.
     /// </summary>
-    public required IdentityClaim ContentEndTripwire { get; init; }
+    public required BytePattern ContentEndPattern { get; init; }
 
     /// <summary>
     /// Maximum bytes the scanner may consume in a non-Capturing state without
-    /// a state transition before latching Bailout. Bounds the scanner's worst
-    /// case on pages that don't carry the expected fences.
+    /// a state transition before latching Bailout. Bounds the scanner's
+    /// worst case on pages that don't carry the expected patterns.
     /// </summary>
     public required int BailoutBytes { get; init; }
 
     /// <summary>
     /// Maximum bytes the captured content region may span before the scanner
-    /// bails. Bounds the worst case on pages whose ContentEnd tripwire never
+    /// bails. Bounds the worst case on pages whose ContentEnd pattern never
     /// fires (e.g. infinite-scroll feeds).
     /// </summary>
     public required int MaxCaptureBytes { get; init; }

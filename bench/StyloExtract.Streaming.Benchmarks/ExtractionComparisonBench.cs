@@ -37,21 +37,21 @@ public class ExtractionComparisonBench
         _htmlString = Encoding.UTF8.GetString(_htmlBytes);
 
         // === Streaming path: hand-built template likely to match SOMETHING on a mostlylucid page ===
-        // alpha.24 (Task 4): three IdentityClaim tripwires instead of three MinHash fences.
-        // The scanner fires on exact tag-name match (no class/id requirements on the bench so
-        // the tripwire stays maximally lenient — equivalent to the alpha.21..23 sketch hitting
-        // any structural-tag match).
-        // Register BOTH a GUID-keyed template (legacy Scan bench) AND a host-keyed template
-        // under "www.mostlylucid.net" so ScanByHost exercises the lucidview-FULL hot-path.
+        // Task 13: three BytePattern shapes that match directly on response
+        // bytes. No class/id requirements on the bench so the patterns stay
+        // maximally lenient — bench measures the byte-scan hot path.
+        // Register BOTH a GUID-keyed template (legacy Scan bench) AND a
+        // host-keyed template under "www.mostlylucid.net" so ScanByHost
+        // exercises the lucidview-FULL hot-path.
         var store = new InMemoryStreamingTemplateStore();
         _templateId = Guid.NewGuid();
         var guidKeyedTemplate = new StreamingTemplate
         {
             TemplateId = _templateId,
             Host = "",
-            PrefixTripwire = TagOnlyClaim("header"),
-            ContentStartTripwire = TagOnlyClaim("p"),
-            ContentEndTripwire = TagOnlyClaim("footer"),
+            PrefixPattern = TagOpenPattern("header"),
+            ContentStartPattern = TagOpenPattern("p"),
+            ContentEndPattern = TagClosePattern("footer"),
             BailoutBytes = 5_000_000,
             MaxCaptureBytes = 5_000_000,
         };
@@ -96,14 +96,17 @@ public class ExtractionComparisonBench
     public ScanVerdict New_StreamingScanByHost()
         => _selector.ScanByHost(BenchHost, _htmlBytes);
 
-    private static IdentityClaim TagOnlyClaim(string tag)
+    private static BytePattern TagOpenPattern(string tag) => new()
     {
-        Span<byte> buf = stackalloc byte[64];
-        var len = Encoding.UTF8.GetBytes(tag.AsSpan(), buf);
-        return new IdentityClaim
-        {
-            Tag = tag,
-            TagHash = XxHash3.HashToUInt64(buf[..len]),
-        };
-    }
+        TagName = Encoding.UTF8.GetBytes(tag),
+        Attrs = Array.Empty<AttrConstraint>(),
+        IsClose = false,
+    };
+
+    private static BytePattern TagClosePattern(string tag) => new()
+    {
+        TagName = Encoding.UTF8.GetBytes(tag),
+        Attrs = Array.Empty<AttrConstraint>(),
+        IsClose = true,
+    };
 }

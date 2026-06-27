@@ -6,11 +6,9 @@ using Xunit.Abstractions;
 namespace StyloExtract.Streaming.Tests;
 
 /// <summary>
-/// Task 4 (alpha.24) tripwire-shape variant of the alpha.23 regression net.
-/// Verifies the inducer ↔ scanner agreement contract: induce a template from
-/// some bytes, then scan those same bytes through the scanner — the verdict
-/// must be Captured (modulo Bailout fallback if the inducer picked a target
-/// that the scanner can't reach).
+/// Task 13 (byte-pattern) variant of the inducer ↔ scanner agreement
+/// regression net: induce a template from some bytes, then scan those
+/// same bytes through the scanner — the verdict must be Captured.
 /// </summary>
 public sealed class InducerScannerAgreementTests
 {
@@ -45,9 +43,7 @@ public sealed class InducerScannerAgreementTests
         var store = new InMemoryStreamingTemplateStore();
         await store.UpsertAsync(template!);
 
-        // Drive through IncrementalFenceScanner with chunked feed so we can
-        // surface PeakBufferedBytes for the integration metric.
-        var scanner = IncrementalFenceScanner.Create(template!);
+        var scanner = IncrementalBytePatternScanner.Create(template!);
         const int chunkSize = 256;
         ScanVerdict verdict = ScanVerdict.Continue;
         for (int i = 0; i < html.Length; i += chunkSize)
@@ -62,7 +58,7 @@ public sealed class InducerScannerAgreementTests
                        $"bytesConsumed={scanner.BytesConsumed}B captureRange=[{scanner.CaptureStartByte},{scanner.CaptureEndByte})");
 
         verdict.Should().Be(ScanVerdict.Captured,
-            "tripwire matching is exact — induced claims must fire on the same bytes the inducer saw");
+            "byte-pattern matching is anchored on local marker bytes — induced patterns must fire on the same bytes the inducer saw");
     }
 
     [Fact]
@@ -82,27 +78,24 @@ public sealed class InducerScannerAgreementTests
         var selector = new StreamingPathSelector(store);
         var verdict = selector.ScanByHost("www.mostlylucid.net", html);
 
-        // Either Captured or Bailout proves the scanner exercised the host-keyed
-        // induced template. NoTemplate or Continue would indicate the pipeline
-        // didn't actually run — that's the regression we're guarding against.
         verdict.Should().NotBe(ScanVerdict.NoTemplate);
         verdict.Should().NotBe(ScanVerdict.Continue);
     }
 
     [Fact]
-    public void Scanner_with_no_tripwire_match_flushes_to_Bailout()
+    public void Scanner_with_no_pattern_match_flushes_to_Bailout()
     {
         ReadOnlySpan<byte> html =
             "<html><body><div><p>only divs and paragraphs here, no header/footer/article</p>"u8;
         var html2 = "</div></body></html>"u8;
 
-        var unmatchable = TripwireTestHelpers.TagClaim("definitely-not-an-html-tag");
+        var unmatchable = TripwireTestHelpers.TagPattern("definitely-not-an-html-tag");
         var template = TripwireTestHelpers.MakeTemplate(
             unmatchable, unmatchable, unmatchable,
             bailoutBytes: 100_000, maxCaptureBytes: 100_000)
             with { Host = "bailout.example" };
 
-        var scanner = IncrementalFenceScanner.Create(template);
+        var scanner = IncrementalBytePatternScanner.Create(template);
         scanner.Feed(html);
         scanner.Feed(html2);
         var vFlush = scanner.Flush();

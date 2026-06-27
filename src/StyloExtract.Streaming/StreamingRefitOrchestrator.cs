@@ -195,30 +195,31 @@ public sealed class StreamingRefitOrchestrator
 
     private static bool FencesEqual(StreamingTemplate a, StreamingTemplate b)
     {
-        return TripwireEqual(a.PrefixTripwire, b.PrefixTripwire)
-            && TripwireEqual(a.ContentStartTripwire, b.ContentStartTripwire)
-            && TripwireEqual(a.ContentEndTripwire, b.ContentEndTripwire);
+        return PatternEqual(a.PrefixPattern, b.PrefixPattern)
+            && PatternEqual(a.ContentStartPattern, b.ContentStartPattern)
+            && PatternEqual(a.ContentEndPattern, b.ContentEndPattern);
 
-        static bool TripwireEqual(StyloExtract.Abstractions.IdentityClaim x, StyloExtract.Abstractions.IdentityClaim y)
+        static bool PatternEqual(StyloExtract.Abstractions.BytePattern x, StyloExtract.Abstractions.BytePattern y)
         {
-            // Compare on the hash channels — the matcher's notion of equality.
-            // Class lists are order-insensitive, so compare as sets of hashes.
-            if (x.TagHash != y.TagHash) return false;
-            if (x.IdHash != y.IdHash) return false;
-            if (x.Role != y.Role) return false;
-            if (x.ClassHashes.Count != y.ClassHashes.Count) return false;
-            foreach (var ch in x.ClassHashes)
+            if (x.IsClose != y.IsClose) return false;
+            if (!x.TagNameSpan.SequenceEqual(y.TagNameSpan)) return false;
+            if (x.Attrs.Length != y.Attrs.Length) return false;
+            // Attrs are order-insensitive — compare as a set.
+            for (int i = 0; i < x.Attrs.Length; i++)
             {
-                var found = false;
-                foreach (var yh in y.ClassHashes) if (yh == ch) { found = true; break; }
+                var xi = x.Attrs[i];
+                bool found = false;
+                for (int j = 0; j < y.Attrs.Length; j++)
+                {
+                    var yj = y.Attrs[j];
+                    if (xi.NameSpan.SequenceEqual(yj.NameSpan) && xi.ValueSpan.SequenceEqual(yj.ValueSpan))
+                    {
+                        found = true;
+                        break;
+                    }
+                }
                 if (!found) return false;
             }
-            if (x.DataAttrs.Count != y.DataAttrs.Count) return false;
-            foreach (var kv in x.DataAttrs)
-                if (!y.DataAttrs.TryGetValue(kv.Key, out var v) || v != kv.Value) return false;
-            if (x.AriaAttrs.Count != y.AriaAttrs.Count) return false;
-            foreach (var kv in x.AriaAttrs)
-                if (!y.AriaAttrs.TryGetValue(kv.Key, out var v) || v != kv.Value) return false;
             return true;
         }
     }

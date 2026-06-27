@@ -88,9 +88,9 @@ public sealed class StreamingRefitOrchestratorTests
         // Confirms additive-field default behaviour for pre-alpha.18 persisted
         // templates that won't carry a Version column.
         var template = TripwireTestHelpers.MakeTemplate(
-            TripwireTestHelpers.TagClaim("header"),
-            TripwireTestHelpers.TagClaim("article"),
-            TripwireTestHelpers.TagClaim("article"),
+            TripwireTestHelpers.TagPattern("header"),
+            TripwireTestHelpers.TagPattern("article"),
+            TripwireTestHelpers.ClosePattern("article"),
             bailoutBytes: 1,
             maxCaptureBytes: 1)
             with { Host = "x" };

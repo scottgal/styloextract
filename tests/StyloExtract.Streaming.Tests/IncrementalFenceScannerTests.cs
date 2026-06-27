@@ -4,6 +4,13 @@ using Xunit;
 
 namespace StyloExtract.Streaming.Tests;
 
+/// <summary>
+/// Chunked-feed behaviour for the Task 13 byte-pattern scanner. Pins the
+/// "same verdict regardless of chunking" contract from alpha.21.
+///
+/// File name retained from the Task 4 era for git locality; the tests
+/// themselves drive <see cref="IncrementalBytePatternScanner"/>.
+/// </summary>
 public sealed class IncrementalFenceScannerTests
 {
     [Fact]
@@ -17,7 +24,7 @@ public sealed class IncrementalFenceScannerTests
         var html = "<body><header>x</header><article>YES</article><footer>z</footer></body>"u8.ToArray();
         var expected = selector.Scan(template.TemplateId, html);
 
-        var scanner = IncrementalFenceScanner.Create(template);
+        var scanner = IncrementalBytePatternScanner.Create(template);
         var actual = scanner.Feed(html);
         actual.Should().Be(expected);
     }
@@ -28,11 +35,11 @@ public sealed class IncrementalFenceScannerTests
         var template = BuildTemplate();
         var html = "<body><header>x</header><article>YES</article><footer>z</footer></body>"u8.ToArray();
 
-        var whole = IncrementalFenceScanner.Create(template);
+        var whole = IncrementalBytePatternScanner.Create(template);
         var wholeVerdict = whole.Feed(html);
-        whole.Flush(); // no-op once terminal
+        whole.Flush();
 
-        var chunked = IncrementalFenceScanner.Create(template);
+        var chunked = IncrementalBytePatternScanner.Create(template);
         ScanVerdict chunkedVerdict = ScanVerdict.Continue;
         for (int i = 0; i < html.Length; i++)
         {
@@ -50,11 +57,11 @@ public sealed class IncrementalFenceScannerTests
         var template = BuildTemplate();
         var html = BuildLongerPage();
 
-        var whole = IncrementalFenceScanner.Create(template);
+        var whole = IncrementalBytePatternScanner.Create(template);
         whole.Feed(html);
         var wholeVerdict = whole.Flush();
 
-        var chunked = IncrementalFenceScanner.Create(template);
+        var chunked = IncrementalBytePatternScanner.Create(template);
         for (int i = 0; i < html.Length; i += 64)
         {
             var n = Math.Min(64, html.Length - i);
@@ -72,20 +79,19 @@ public sealed class IncrementalFenceScannerTests
         var template = BuildTemplate();
         var html = "<body><header>x</header><article>YES</article><footer>z</footer></body>"u8.ToArray();
 
-        var scanner = IncrementalFenceScanner.Create(template);
+        var scanner = IncrementalBytePatternScanner.Create(template);
         var v1 = scanner.Feed(html);
         v1.Should().Be(ScanVerdict.Captured);
 
-        // Subsequent feed should not crash and should report the latched terminal verdict.
         var v2 = scanner.Feed("<extra>garbage</extra>"u8);
         v2.Should().Be(ScanVerdict.Captured);
     }
 
     private static StreamingTemplate BuildTemplate() =>
         TripwireTestHelpers.MakeTemplate(
-            TripwireTestHelpers.TagClaim("header"),
-            TripwireTestHelpers.TagClaim("article"),
-            TripwireTestHelpers.TagClaim("article"),
+            TripwireTestHelpers.TagPattern("header"),
+            TripwireTestHelpers.TagPattern("article"),
+            TripwireTestHelpers.ClosePattern("article"),
             bailoutBytes: 100_000,
             maxCaptureBytes: 100_000)
         with { Host = "test.local" };

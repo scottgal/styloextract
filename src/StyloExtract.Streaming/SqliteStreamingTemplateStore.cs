@@ -25,13 +25,14 @@ public sealed class SqliteStreamingTemplateStore : IStreamingTemplateStore, IAsy
     ///   2 = alpha.22 (this constant introduced). Same MinHash-fence algorithm
     ///       as alpha.21 but stamped so future bumps can self-heal cleanly.
     ///   3 = alpha.24 (Task 4 of Phase 1). Tripwire scanner — StreamingTemplate
-    ///       now carries three IdentityClaim tripwires instead of three MinHash
-    ///       TemplateFence signatures. The serialised template shape changed
-    ///       outright; alpha.21..23 rows would fail JSON deserialisation and
-    ///       any that slipped through would be unmatchable against the tripwire
-    ///       scanner. Bumping forces a clean drop-and-reinduce on dogfood DBs.
+    ///       carried three IdentityClaim tripwires instead of MinHash signatures.
+    ///   4 = Task 13 of Phase 1. Byte-pattern scanner — StreamingTemplate now
+    ///       carries three BytePattern shapes that match directly on response
+    ///       bytes. The serialised template shape changed outright; Task-4 rows
+    ///       fail JSON deserialisation and any that slipped through would not
+    ///       match the byte scanner. Bumping forces a clean drop-and-reinduce.
     /// </summary>
-    private const int CurrentStoreVersion = 3;
+    private const int CurrentStoreVersion = 4;
 
     private readonly SqliteSingleWriter _writer;
     private readonly ConcurrentDictionary<Guid, StreamingTemplate> _hot = new();

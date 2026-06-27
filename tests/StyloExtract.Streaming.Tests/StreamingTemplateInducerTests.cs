@@ -10,10 +10,7 @@ public sealed class StreamingTemplateInducerTests
     public void Returns_null_for_plain_text_with_no_tags()
     {
         var inducer = new StreamingTemplateInducer();
-
         var result = inducer.Induce("plain.example", "this is just plain text with no html"u8);
-
-        // AngleSharp will wrap text in <html><body>, but no header/article/p-cluster.
         result.Should().BeNull();
     }
 
@@ -21,9 +18,7 @@ public sealed class StreamingTemplateInducerTests
     public void Returns_null_for_empty_input()
     {
         var inducer = new StreamingTemplateInducer();
-
         var result = inducer.Induce("empty.example", ReadOnlySpan<byte>.Empty);
-
         result.Should().BeNull();
     }
 
@@ -31,10 +26,8 @@ public sealed class StreamingTemplateInducerTests
     public void Returns_null_for_empty_host()
     {
         var inducer = new StreamingTemplateInducer();
-
         var html = "<body><header>x</header><p>a</p><p>b</p><footer></footer></body>"u8;
         var result = inducer.Induce("", html);
-
         result.Should().BeNull();
     }
 
@@ -51,9 +44,10 @@ public sealed class StreamingTemplateInducerTests
         template!.Host.Should().Be("www.example.com");
         template.TemplateId.Should().NotBe(Guid.Empty);
         template.BailoutBytes.Should().Be(5_000_000);
-        // Tripwire shape: tag-only claim covers the basic case.
-        template.PrefixTripwire.Tag.Should().Be("header");
-        template.ContentStartTripwire.Tag.Should().Be("article");
+        template.PrefixPattern.TagNameSpan.SequenceEqual("header"u8).Should().BeTrue();
+        template.ContentStartPattern.TagNameSpan.SequenceEqual("article"u8).Should().BeTrue();
+        template.ContentEndPattern.TagNameSpan.SequenceEqual("article"u8).Should().BeTrue();
+        template.ContentEndPattern.IsClose.Should().BeTrue();
     }
 
     [Fact]

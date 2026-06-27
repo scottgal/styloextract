@@ -18,10 +18,9 @@ public sealed class SqliteStreamingTemplateStoreTests
         retrieved.Should().NotBeNull();
         retrieved!.TemplateId.Should().Be(template.TemplateId);
         retrieved.BailoutBytes.Should().Be(template.BailoutBytes);
-        retrieved.PrefixTripwire.Tag.Should().Be(template.PrefixTripwire.Tag);
-        retrieved.PrefixTripwire.TagHash.Should().Be(template.PrefixTripwire.TagHash);
-        retrieved.ContentStartTripwire.Tag.Should().Be(template.ContentStartTripwire.Tag);
-        retrieved.ContentEndTripwire.Tag.Should().Be(template.ContentEndTripwire.Tag);
+        retrieved.PrefixPattern.TagNameSpan.SequenceEqual(template.PrefixPattern.TagNameSpan).Should().BeTrue();
+        retrieved.ContentStartPattern.TagNameSpan.SequenceEqual(template.ContentStartPattern.TagNameSpan).Should().BeTrue();
+        retrieved.ContentEndPattern.IsClose.Should().Be(template.ContentEndPattern.IsClose);
     }
 
     [Fact]
@@ -109,9 +108,9 @@ public sealed class SqliteStreamingTemplateStoreTests
 
     private static StreamingTemplate BuildTemplate() =>
         TripwireTestHelpers.MakeTemplate(
-            TripwireTestHelpers.TagClaim("header"),
-            TripwireTestHelpers.TagClaim("article"),
-            TripwireTestHelpers.TagClaim("article"),
+            TripwireTestHelpers.TagPattern("header"),
+            TripwireTestHelpers.TagPattern("article"),
+            TripwireTestHelpers.ClosePattern("article"),
             bailoutBytes: 262_144,
             maxCaptureBytes: 1_048_576);
 }

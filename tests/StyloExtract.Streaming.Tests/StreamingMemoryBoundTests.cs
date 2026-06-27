@@ -1,19 +1,23 @@
 using System.Text;
 using FluentAssertions;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace StyloExtract.Streaming.Tests;
 
 /// <summary>
-/// Pins the alpha.19 sliding-window memory contract: regardless of how many
-/// bytes are fed through the tokenizer / scanner, the in-flight buffer stays
-/// bounded by the longest tag observed (plus chunk slack), NEVER O(response).
+/// Pins the bounded-memory contract: regardless of how many bytes are fed
+/// through the byte-pattern scanner, the carry-over buffer stays bounded by
+/// the longest carry needed for pattern stitching, NEVER O(response).
 ///
-/// These tests are the regression guard against re-introducing alpha.18's
-/// growable-up-to-1MiB buffer behaviour.
+/// Regression guard against re-introducing growable-up-to-1MiB buffer
+/// behaviour.
 /// </summary>
 public sealed class StreamingMemoryBoundTests
 {
+    private readonly ITestOutputHelper _out;
+    public StreamingMemoryBoundTests(ITestOutputHelper o) { _out = o; }
+
     private const int ChunkSize = 4 * 1024;
 
     [Fact]
@@ -36,23 +40,14 @@ public sealed class StreamingMemoryBoundTests
         events.Should().BeGreaterThan(0, "the synthetic page is tag-heavy");
         tok.BytesConsumed.Should().BeGreaterThan(4 * 1024 * 1024,
             "we fed multi-MiB; consumed should reflect that");
-
-        // alpha.21 contract: peak in-flight is O(longest partial tag at a
-        // chunk boundary) — NOT chunk-size. The longest tag in the fixture
-        // is well under 256 B; realistic peak is low hundreds of bytes,
-        // often zero when boundaries land in text. 4 KiB is the MaxBufferSize
-        // cap — peak must stay strictly below it.
         tok.PeakBufferedBytes.Should().BeLessThan(IncrementalHtmlTokenizer.MaxBufferSize,
-            $"alpha.21 sliding-window contract violated: peak buffered = {tok.PeakBufferedBytes:N0} B " +
+            $"sliding-window contract violated: peak buffered = {tok.PeakBufferedBytes:N0} B " +
             $"after consuming {tok.BytesConsumed:N0} B");
     }
 
     [Fact]
     public void IncrementalTokenizer_HoldsNoBytesBetweenDrainedFeeds()
     {
-        // After every drained feed, in-flight bytes should be ~0 (or at most
-        // the tail of an unclosed tag at the chunk boundary). The buffer must
-        // not carry already-emitted history forward.
         var html = GenerateLargeHtml(megabytes: 1);
         var tok = new IncrementalHtmlTokenizer();
 
@@ -63,10 +58,6 @@ public sealed class StreamingMemoryBoundTests
             var take = Math.Min(ChunkSize, html.Length - offset);
             tok.Feed(html.AsSpan(offset, take));
             while (tok.TryReadTag(out _)) { }
-            // _filled - _consumed isn't directly exposed; PeakBufferedBytes is
-            // the closest signal. After drain, the only legitimate residual is
-            // a partial tag straddling the boundary — bounded by tag length.
-            // Use BytesConsumed delta vs total fed as the cheap cross-check.
             var consumedSoFar = tok.BytesConsumed;
             var fedSoFar = offset + take;
             var residual = (int)(fedSoFar - consumedSoFar);
@@ -81,11 +72,10 @@ public sealed class StreamingMemoryBoundTests
     [Fact]
     public void IncrementalScanner_FivePlusMiB_HoldsBoundedBytes()
     {
-        // Build a tiny synthetic template + drive a multi-MiB response through
-        // the incremental scanner. Verdict here is whatever it is — we're only
-        // measuring memory residency, not capture correctness.
+        // Drive a multi-MiB response through the incremental byte-pattern
+        // scanner. Verdict isn't what's measured here — peak buffered bytes is.
         var template = BuildTrivialTemplate();
-        var scanner = IncrementalFenceScanner.Create(template);
+        var scanner = IncrementalBytePatternScanner.Create(template);
 
         var html = GenerateLargeHtml(megabytes: 5);
         int offset = 0;
@@ -93,19 +83,44 @@ public sealed class StreamingMemoryBoundTests
         {
             var take = Math.Min(ChunkSize, html.Length - offset);
             var v = scanner.Feed(html.AsSpan(offset, take));
-            if (v is ScanVerdict.Captured or ScanVerdict.Bailout)
-            {
-                // Drain the remainder so PeakBufferedBytes covers the whole feed.
-                offset += take;
-                continue;
-            }
             offset += take;
+            if (v is ScanVerdict.Captured or ScanVerdict.Bailout) continue;
         }
         scanner.Flush();
 
         scanner.BytesConsumed.Should().BeGreaterThan(0);
-        scanner.PeakBufferedBytes.Should().BeLessThan(IncrementalHtmlTokenizer.MaxBufferSize,
-            $"scanner held {scanner.PeakBufferedBytes:N0} B vs response {html.Length:N0} B — sliding-window broken");
+        scanner.PeakBufferedBytes.Should().BeLessThan(IncrementalBytePatternScanner.MaxBufferSize,
+            $"scanner held {scanner.PeakBufferedBytes:N0} B vs response {html.Length:N0} B — bounded-memory broken");
+    }
+
+    [Fact]
+    public void BytePatternScanner_200KB_16KB_chunks_PeakBytesProbe()
+    {
+        // Headline measurement for Task 13: peak buffered bytes on the
+        // existing 200 KB / 16 KB chunk integration setup. Logs to xUnit
+        // output so the implementer can read the actual number off the
+        // test report.
+        var template = BuildTrivialTemplate();
+        var html = GenerateLargeHtml(megabytes: 1).AsSpan(0, 200_000).ToArray();
+        var scanner = IncrementalBytePatternScanner.Create(template);
+        const int chunkSize = 16 * 1024;
+        ScanVerdict v = ScanVerdict.Continue;
+        int offset = 0;
+        while (offset < html.Length)
+        {
+            var take = Math.Min(chunkSize, html.Length - offset);
+            v = scanner.Feed(html.AsSpan(offset, take));
+            offset += take;
+            if (v is ScanVerdict.Captured or ScanVerdict.Bailout) break;
+        }
+        if (v == ScanVerdict.Continue) v = scanner.Flush();
+
+        _out.WriteLine($"[Task13 probe] html=200_000B chunks=16KB verdict={v} " +
+                       $"peakBuffered={scanner.PeakBufferedBytes}B " +
+                       $"bytesConsumed={scanner.BytesConsumed}B " +
+                       $"captureRange=[{scanner.CaptureStartByte},{scanner.CaptureEndByte})");
+
+        scanner.PeakBufferedBytes.Should().BeLessThan(IncrementalBytePatternScanner.MaxBufferSize);
     }
 
     private static byte[] GenerateLargeHtml(int megabytes)
@@ -118,8 +133,6 @@ public sealed class StreamingMemoryBoundTests
         for (int i = 0; i < 10; i++) sb.Append("<li><a href=\"/x\">nav</a></li>");
         sb.Append("</ul></nav></header>");
         sb.Append("<main><article>");
-        // Tag-heavy body with classes and attributes — exercises ExtractClassHash
-        // and keeps the tokenizer doing real work per chunk.
         int para = 0;
         while (sb.Length < target)
         {
@@ -134,7 +147,6 @@ public sealed class StreamingMemoryBoundTests
             para++;
             if ((para & 0x3F) == 0)
             {
-                // Sprinkle a script + comment to exercise the body-skip and comment paths.
                 sb.Append("<script>var x = ")
                     .Append(para)
                     .Append(";</script><!-- marker ")
@@ -148,12 +160,10 @@ public sealed class StreamingMemoryBoundTests
 
     private static StreamingTemplate BuildTrivialTemplate()
     {
-        // Build any well-formed template — the scanner's per-tick memory bound
-        // is independent of whether the tripwires match.
         return TripwireTestHelpers.MakeTemplate(
-            TripwireTestHelpers.TagClaim("header"),
-            TripwireTestHelpers.TagClaim("article"),
-            TripwireTestHelpers.TagClaim("article"),
+            TripwireTestHelpers.TagPattern("header"),
+            TripwireTestHelpers.TagPattern("article"),
+            TripwireTestHelpers.ClosePattern("article"),
             bailoutBytes: 10_000_000,
             maxCaptureBytes: 10_000_000)
             with { Host = "synthetic.test" };

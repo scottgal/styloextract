@@ -341,6 +341,116 @@ public sealed class SqliteStreamingTemplateStoreMigrationTests
         }
     }
 
+    /// <summary>
+    /// Task 13 of Phase 1: opening a Task-4 dogfood DB (user_version=3, Task-4
+    /// JSON blobs carrying <c>PrefixTripwire</c>/<c>ContentStartTripwire</c>/
+    /// <c>ContentEndTripwire</c> as <c>IdentityClaim</c> shapes) must drop
+    /// every row on first open. The byte-pattern scanner can't match against
+    /// hash-shaped tripwires; preserving them would mean the consumer stays
+    /// stuck on a template that always Bailouts.
+    /// </summary>
+    [Fact]
+    public async Task OpeningTask4Db_WithUserVersionThree_DropsRows_StampsToFour()
+    {
+        var tempDb = Path.Combine(Path.GetTempPath(), $"sx-task4-uv-{Guid.NewGuid():N}.db");
+        try
+        {
+            var seeded = new[]
+            {
+                (Host: "task4-a.example", TemplateId: Guid.NewGuid()),
+                (Host: "task4-b.example", TemplateId: Guid.NewGuid()),
+            };
+
+            await using (var conn = new SqliteConnection($"Data Source={tempDb}"))
+            {
+                await conn.OpenAsync();
+                await using (var create = conn.CreateCommand())
+                {
+                    create.CommandText = """
+                        CREATE TABLE streaming_templates (
+                            host TEXT NOT NULL,
+                            version INTEGER NOT NULL,
+                            template_id BLOB NOT NULL,
+                            template_blob BLOB NOT NULL,
+                            created_at INTEGER NOT NULL,
+                            PRIMARY KEY (host, version)
+                        );
+                        CREATE INDEX idx_streaming_templates_host ON streaming_templates(host);
+                        CREATE INDEX idx_streaming_templates_template_id ON streaming_templates(template_id);
+                        """;
+                    await create.ExecuteNonQueryAsync();
+                }
+                await using (var stamp = conn.CreateCommand())
+                {
+                    stamp.CommandText = "PRAGMA user_version = 3;";
+                    await stamp.ExecuteNonQueryAsync();
+                }
+
+                foreach (var (host, id) in seeded)
+                {
+                    var blob = BuildTask4JsonBlob(id, host);
+                    await using var insert = conn.CreateCommand();
+                    insert.CommandText =
+                        "INSERT INTO streaming_templates(host, version, template_id, template_blob, created_at) " +
+                        "VALUES (@host, 1, @id, @blob, @now)";
+                    insert.Parameters.AddWithValue("@host", host);
+                    insert.Parameters.AddWithValue("@id", id.ToByteArray());
+                    insert.Parameters.AddWithValue("@blob", blob);
+                    insert.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                    await insert.ExecuteNonQueryAsync();
+                }
+            }
+
+            await using (var store = new SqliteStreamingTemplateStore($"Data Source={tempDb}"))
+            {
+                foreach (var (host, _) in seeded)
+                {
+                    (await store.GetByHostAsync(host)).Should().BeNull(
+                        $"host {host} must drop when user_version=3 (Task 4) < CurrentStoreVersion=4 (Task 13)");
+                }
+            }
+
+            await using (var conn = new SqliteConnection($"Data Source={tempDb}"))
+            {
+                await conn.OpenAsync();
+                await using var pragma = conn.CreateCommand();
+                pragma.CommandText = "PRAGMA user_version;";
+                var stamped = (long)(await pragma.ExecuteScalarAsync() ?? 0L);
+                stamped.Should().Be(CurrentStoreVersion,
+                    "Task 13 store must stamp user_version=4 after dropping Task-4 rows");
+            }
+        }
+        finally
+        {
+            try { File.Delete(tempDb); } catch { /* best-effort */ }
+            try { File.Delete(tempDb + "-wal"); } catch { /* best-effort */ }
+            try { File.Delete(tempDb + "-shm"); } catch { /* best-effort */ }
+        }
+    }
+
+    /// <summary>
+    /// Build a JSON blob shaped like a Task-4 (user_version=3) template:
+    /// three IdentityClaim tripwires. Task 13 deserialises into a
+    /// StreamingTemplate carrying BytePattern shapes; the Task-4 fields
+    /// would fail to populate the required new fields, so the gate drops
+    /// these rows on open.
+    /// </summary>
+    private static byte[] BuildTask4JsonBlob(Guid templateId, string host)
+    {
+        var sb = new StringBuilder();
+        sb.Append('{');
+        sb.Append($"\"TemplateId\":\"{templateId:D}\",");
+        sb.Append($"\"Host\":\"{host}\",");
+        sb.Append("\"PrefixTripwire\":{\"Tag\":\"header\",\"TagHash\":12345},");
+        sb.Append("\"ContentStartTripwire\":{\"Tag\":\"article\",\"TagHash\":67890},");
+        sb.Append("\"ContentEndTripwire\":{\"Tag\":\"article\",\"TagHash\":67890},");
+        sb.Append("\"BailoutBytes\":262144,");
+        sb.Append("\"MaxCaptureBytes\":1048576,");
+        sb.Append("\"Version\":1");
+        sb.Append('}');
+        return Encoding.UTF8.GetBytes(sb.ToString());
+    }
+
     // Two rows for the SAME host can't coexist under alpha.20's single-PK schema —
     // alpha.20 UpsertAsync explicitly DELETEd any prior row for the host before
     // inserting a new one (see HEAD~1 source), so the migration only has to handle
@@ -352,7 +462,7 @@ public sealed class SqliteStreamingTemplateStoreMigrationTests
     /// real constant ever moves, these tests will assert against the wrong
     /// value and fail loudly. That's the intent.
     /// </summary>
-    private const int CurrentStoreVersion = 3;
+    private const int CurrentStoreVersion = 4;
 
     /// <summary>
     /// Builds a JSON blob byte-identical to what alpha.20 wrote: TemplateFence
@@ -456,9 +566,9 @@ public sealed class SqliteStreamingTemplateStoreMigrationTests
 
     private static StreamingTemplate BuildAlpha21Template(string host, int version) =>
         TripwireTestHelpers.MakeTemplate(
-            TripwireTestHelpers.TagClaim("header"),
-            TripwireTestHelpers.TagClaim("article"),
-            TripwireTestHelpers.TagClaim("article"),
+            TripwireTestHelpers.TagPattern("header"),
+            TripwireTestHelpers.TagPattern("article"),
+            TripwireTestHelpers.ClosePattern("article"),
             bailoutBytes: 262_144,
             maxCaptureBytes: 1_048_576)
         with { Host = host, Version = version };
