@@ -29,9 +29,19 @@ public static class StyloExtractServiceCollectionExtensions
         services.AddSingleton<IBlockSegmenter, BlockSegmenter>();
         services.AddSingleton<IBlockClassifier>(_ => HeuristicBlockClassifier.LoadFromEmbeddedResources());
         services.AddSingleton<IMarkdownRenderer, TypedMarkdownRenderer>();
-        services.AddSingleton<IExtractorInducer, ExtractorInducer>();
-        services.AddSingleton<IExtractorApplicator>(sp =>
-            new ExtractorApplicator(sp.GetService<ILogger<ExtractorApplicator>>()));
+
+        // Shared stability filter — emission (inducer) AND apply (applicator)
+        // must use the same instance so each claim's class list extracted at
+        // induction matches the element class set evaluated at apply time.
+        // A stricter apply-time filter would drop the anchor class from the
+        // element set and silently break the match.
+        services.AddSingleton<IClassStabilityFilter, DefaultClassStabilityFilter>();
+        services.AddSingleton<IExtractorInducer>(sp => new ExtractorInducer(
+            sp.GetRequiredService<IClassStabilityFilter>(),
+            sp.GetService<ILogger<ExtractorInducer>>()));
+        services.AddSingleton<IExtractorApplicator>(sp => new ExtractorApplicator(
+            sp.GetRequiredService<IClassStabilityFilter>(),
+            sp.GetService<ILogger<ExtractorApplicator>>()));
 
         services.AddSingleton<MinHashSketcher>(sp => new MinHashSketcher(options.Fingerprint.MinHashSize));
         services.AddSingleton<ShingleGenerator>(sp => new ShingleGenerator(sp.GetRequiredService<ClassNoiseFilter>(), options.Fingerprint.ShingleWidth));

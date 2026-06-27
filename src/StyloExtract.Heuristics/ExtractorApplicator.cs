@@ -6,10 +6,20 @@ namespace StyloExtract.Heuristics;
 
 public sealed class ExtractorApplicator : IExtractorApplicator
 {
+    private readonly IClassStabilityFilter _classFilter;
     private readonly ILogger<ExtractorApplicator>? _logger;
 
-    public ExtractorApplicator(ILogger<ExtractorApplicator>? logger = null)
+    public ExtractorApplicator() : this(new DefaultClassStabilityFilter(), logger: null) { }
+
+    public ExtractorApplicator(IClassStabilityFilter classFilter)
+        : this(classFilter, logger: null) { }
+
+    public ExtractorApplicator(ILogger<ExtractorApplicator>? logger)
+        : this(new DefaultClassStabilityFilter(), logger) { }
+
+    public ExtractorApplicator(IClassStabilityFilter classFilter, ILogger<ExtractorApplicator>? logger)
     {
+        _classFilter = classFilter;
         _logger = logger;
     }
 
@@ -35,51 +45,102 @@ public sealed class ExtractorApplicator : IExtractorApplicator
         }
         foreach (var rule in extractor.Rules)
         {
-            // A rule "matched" when at least one of its selectors produced an element.
-            // The aggregate miss count is the bug-out signal: when a CMS theme changes
-            // and most selectors point at DOM paths that no longer exist, the missed
-            // count approaches the rule count and LayoutExtractor can drop the cached
-            // extractor for THIS request, re-classify with the heuristic, and refit.
-            bool ruleMatched = false;
-            foreach (var selector in rule.CssSelectors)
+            // Dispatch: identity-claim chain (Task 2+ inducer output) takes the
+            // claim-based evaluator; legacy templates lacking Claims keep the
+            // CSS-string path so persisted blobs from before Task 2 still apply.
+            bool ruleMatched;
+            if (rule.Claims is { Count: > 0 } claims)
             {
-                IElement[] matches;
-                try
-                {
-                    matches = document.QuerySelectorAll(selector).ToArray();
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogWarning(ex, "ExtractorApplicator: bad CSS selector {Selector} on rule {RuleId}; skipping", selector, rule.RuleId);
-                    continue;
-                }
-                if (matches.Length > 0) ruleMatched = true;
-                foreach (var element in matches)
-                {
-                    result.Add(new ExtractedBlock
-                    {
-                        Id = $"b{i++:D4}",
-                        Role = rule.Role,
-                        Confidence = rule.MeanConfidence,
-                        Text = element.TextContent.Trim(),
-                        Markdown = ShouldRenderMarkdown(rule.Role) ? DomMarkdownWalker.Render(element) : "",
-                        XPath = XPathBuilder.ComputeXPath(element),
-                        CssSelector = selector,
-                        TextLength = element.TextContent.Length,
-                        LinkDensity = LinkDensityOf(element),
-                        Links = element.QuerySelectorAll("a")
-                            .Select(a => new ExtractedLink
-                            {
-                                Text = a.TextContent.Trim(),
-                                Href = a.GetAttribute("href") ?? "",
-                                IsExternal = (a.GetAttribute("href") ?? "").StartsWith("http", StringComparison.OrdinalIgnoreCase)
-                            }).ToList()
-                    });
-                }
+                ruleMatched = ApplyClaimRule(document, rule, claims, result, ref i);
+            }
+            else
+            {
+                ruleMatched = ApplyCssRule(document, rule, result, ref i);
             }
             if (ruleMatched) rulesApplied++; else rulesMissed++;
         }
         return new ApplicatorResult(result, rulesApplied, rulesMissed);
+    }
+
+    private bool ApplyClaimRule(
+        IDocument document,
+        BlockRule rule,
+        IReadOnlyList<IdentityClaim> claims,
+        List<ExtractedBlock> result,
+        ref int i)
+    {
+        var matches = IdentityClaimApplicator.Apply(claims, document, _classFilter);
+        if (matches.Count == 0) return false;
+
+        // Render the chain to a CSS-selector string for the ExtractedBlock.CssSelector
+        // field so downstream consumers (diagnostics, UI inspectors) keep a
+        // human-readable selector reference. The string is the same shape
+        // the inducer wrote into BlockRule.CssSelectors[0].
+        var selector = rule.CssSelectors.Count > 0
+            ? rule.CssSelectors[0]
+            : IdentityClaimSelectorBuilder.ToCssSelector(claims);
+
+        foreach (var element in matches)
+        {
+            result.Add(BuildBlock(element, rule, selector, i++));
+        }
+        return true;
+    }
+
+    private bool ApplyCssRule(
+        IDocument document,
+        BlockRule rule,
+        List<ExtractedBlock> result,
+        ref int i)
+    {
+        // A rule "matched" when at least one of its selectors produced an element.
+        // The aggregate miss count is the bug-out signal: when a CMS theme changes
+        // and most selectors point at DOM paths that no longer exist, the missed
+        // count approaches the rule count and LayoutExtractor can drop the cached
+        // extractor for THIS request, re-classify with the heuristic, and refit.
+        bool ruleMatched = false;
+        foreach (var selector in rule.CssSelectors)
+        {
+            IElement[] matches;
+            try
+            {
+                matches = document.QuerySelectorAll(selector).ToArray();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "ExtractorApplicator: bad CSS selector {Selector} on rule {RuleId}; skipping", selector, rule.RuleId);
+                continue;
+            }
+            if (matches.Length > 0) ruleMatched = true;
+            foreach (var element in matches)
+            {
+                result.Add(BuildBlock(element, rule, selector, i++));
+            }
+        }
+        return ruleMatched;
+    }
+
+    private static ExtractedBlock BuildBlock(IElement element, BlockRule rule, string selector, int id)
+    {
+        return new ExtractedBlock
+        {
+            Id = $"b{id:D4}",
+            Role = rule.Role,
+            Confidence = rule.MeanConfidence,
+            Text = element.TextContent.Trim(),
+            Markdown = ShouldRenderMarkdown(rule.Role) ? DomMarkdownWalker.Render(element) : "",
+            XPath = XPathBuilder.ComputeXPath(element),
+            CssSelector = selector,
+            TextLength = element.TextContent.Length,
+            LinkDensity = LinkDensityOf(element),
+            Links = element.QuerySelectorAll("a")
+                .Select(a => new ExtractedLink
+                {
+                    Text = a.TextContent.Trim(),
+                    Href = a.GetAttribute("href") ?? "",
+                    IsExternal = (a.GetAttribute("href") ?? "").StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                }).ToList()
+        };
     }
 
     private static bool ShouldRenderMarkdown(BlockRole role) => role
