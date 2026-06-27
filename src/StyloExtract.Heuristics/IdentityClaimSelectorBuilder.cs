@@ -1,4 +1,5 @@
 using AngleSharp.Dom;
+using Microsoft.Extensions.Logging;
 using StyloExtract.Abstractions;
 
 namespace StyloExtract.Heuristics;
@@ -23,19 +24,44 @@ namespace StyloExtract.Heuristics;
 /// <see cref="BuildResult.HitDepthCap"/>.</item>
 /// </list>
 ///
-/// The caller (the heuristic inducer) is responsible for downgrading the
-/// rule's confidence when <see cref="BuildResult.HitDepthCap"/> is true.
+/// <para><b>Hard uniqueness postcondition (Task 51 / 2.1).</b> If the
+/// ancestor walk extends to the cap and the chain still matches more than
+/// one element on the induction document, <see cref="BuildResult.HitDepthCap"/>
+/// is set to true. The caller (the heuristic inducer) MUST then force the
+/// rule's confidence to 0.0 — a chain that's not unique at induction will
+/// pick arbitrary elements at apply time and produce wrong markdown.
+/// </para>
 /// </summary>
 public static class IdentityClaimSelectorBuilder
 {
-    public const int MaxChainDepth = 4;
+    /// <summary>
+    /// Maximum ancestors above the target the builder will prepend before
+    /// giving up. Extended from 4 to 8 in Task 51 / 2.1: real-world pages
+    /// (Tailwind-heavy SPAs, deeply nested utility-class soup) frequently
+    /// need 5-7 ancestors to reach a unique anchor. The cost is bounded —
+    /// each step does one tag-set scan + one ancestor walk per match.
+    /// </summary>
+    public const int MaxChainDepth = 8;
 
     public readonly record struct BuildResult(IdentityClaim[] Chain, bool HitDepthCap);
 
     public static BuildResult BuildAncestorChain(
         IElement target,
         IDocument document,
-        IClassStabilityFilter filter)
+        IClassStabilityFilter filter) =>
+        BuildAncestorChain(target, document, filter, logger: null);
+
+    /// <summary>
+    /// Logger overload — emits a debug-level event when the walk falls back
+    /// to a deep chain (length &gt; 4) and a warning when the cap is hit
+    /// without uniqueness. Used by the inducer; tests typically call the
+    /// no-logger overload.
+    /// </summary>
+    public static BuildResult BuildAncestorChain(
+        IElement target,
+        IDocument document,
+        IClassStabilityFilter filter,
+        ILogger? logger)
     {
         var chain = new List<IdentityClaim>(MaxChainDepth + 1);
         var elements = new List<IElement>(MaxChainDepth + 1);
@@ -57,11 +83,24 @@ public static class IdentityClaimSelectorBuilder
             elements.Insert(0, current);
             chain.Insert(0, BuildBestClaim(current, document, filter));
 
-            if (IsUnique(chain, document)) return new BuildResult(chain.ToArray(), HitDepthCap: false);
+            if (IsUnique(chain, document))
+            {
+                if (chain.Count > 4)
+                {
+                    logger?.LogDebug(
+                        "IdentityClaim chain reached uniqueness at depth {Depth} (chain length {Length}); deep walks indicate utility-class-heavy markup or low identity density.",
+                        depth + 1, chain.Count);
+                }
+                return new BuildResult(chain.ToArray(), HitDepthCap: false);
+            }
 
             current = current.ParentElement;
             depth++;
         }
+
+        logger?.LogWarning(
+            "IdentityClaim chain hit MaxChainDepth ({MaxDepth}) without uniqueness — emitting non-unique chain with requires-review marker. Target tag: {Tag}",
+            MaxChainDepth, target.LocalName);
 
         return new BuildResult(chain.ToArray(), HitDepthCap: true);
     }

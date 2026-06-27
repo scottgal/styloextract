@@ -56,4 +56,64 @@ public class IdentitySelectorSmokeTests
         extractor.Rules.Should().Contain(r => r.Claims != null && r.Claims.Count > 0,
             "at least one BlockRule must have an identity-claim chain populated for Task 3");
     }
+
+    /// <summary>
+    /// Phase-1 Task 51 / 2.1 regression. On the alpha.19 mostlylucid.net smoke
+    /// the PrimaryNavigation anchor came out as <c>ul.sm:gap-2</c> — a Tailwind
+    /// responsive utility class. After the stability filter was extended to
+    /// reject Tailwind utilities, NO emitted claim chain should contain a
+    /// Tailwind variant prefix (<c>sm:</c>, <c>md:</c>, <c>dark:</c>, etc.)
+    /// or a known utility class (<c>gap-N</c>, <c>p-N</c>, <c>flex</c>, etc.).
+    /// </summary>
+    [Fact]
+    public void Induce_FromMostlylucidHome_EmitsNoTailwindUtilityClasses()
+    {
+        IHtmlDomParser parser = new AngleSharpHtmlDomParser();
+        IDomCleaner cleaner = new DomCleaner();
+        IBlockSegmenter segmenter = new BlockSegmenter();
+        IBlockClassifier classifier = HeuristicBlockClassifier.LoadFromEmbeddedResources();
+        IExtractorInducer inducer = new ExtractorInducer();
+
+        var html = ReadFixture("mostlylucid-home.html");
+        var doc = parser.Parse(html);
+        cleaner.Clean(doc);
+        var blocks = classifier.Classify(segmenter.Segment(doc));
+
+        var extractor = inducer.Induce(Guid.NewGuid(), blocks, doc);
+
+        // Collect every class token across every claim across every rule.
+        var allClasses = extractor.Rules
+            .Where(r => r.Claims is not null)
+            .SelectMany(r => r.Claims!)
+            .SelectMany(c => c.Classes)
+            .ToList();
+
+        // Tailwind variant classes always contain ':' — sm:, md:, lg:, dark:,
+        // hover:, focus:, etc. None should leak through.
+        var variantClasses = allClasses.Where(c => c.Contains(':')).ToList();
+        variantClasses.Should().BeEmpty(
+            "no Tailwind variant class (containing ':') may anchor a claim — found: "
+            + string.Join(", ", variantClasses));
+
+        // Known utility classes that appear in mostlylucid-home.html — none
+        // should leak through.
+        var bannedUtilities = new[]
+        {
+            "sm:gap-2", "gap-1", "gap-2", "gap-4", "gap-6", "gap-8",
+            "p-2", "p-4", "p-6", "px-4", "py-2", "m-2", "mb-3", "mt-3",
+            "flex", "grid", "block", "hidden", "absolute", "relative", "sticky", "fixed",
+            "text-xl", "text-2xl", "text-sm", "text-base",
+            "bg-white", "bg-gray-100", "rounded", "rounded-md", "rounded-lg",
+            "w-full", "h-screen", "z-10", "z-40", "z-50",
+        };
+        foreach (var u in bannedUtilities)
+        {
+            allClasses.Should().NotContain(u,
+                $"Tailwind utility '{u}' must be rejected by the stability filter");
+        }
+
+        // Sanity: still produced rules with identity. (If everything got
+        // filtered out we'd have a different problem.)
+        extractor.Rules.Should().Contain(r => r.Claims != null && r.Claims.Count > 0);
+    }
 }

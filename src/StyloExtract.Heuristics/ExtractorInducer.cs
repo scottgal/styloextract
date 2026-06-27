@@ -1,4 +1,5 @@
 using AngleSharp.Dom;
+using Microsoft.Extensions.Logging;
 using StyloExtract.Abstractions;
 
 namespace StyloExtract.Heuristics;
@@ -6,18 +7,23 @@ namespace StyloExtract.Heuristics;
 public sealed class ExtractorInducer : IExtractorInducer
 {
     private readonly IClassStabilityFilter _classFilter;
+    private readonly ILogger<ExtractorInducer>? _logger;
 
-    // Per-rule confidence penalty when the identity-claim builder hits its
-    // ancestor-depth cap without becoming unique. Signals "we anchored, but
-    // not as cleanly as we'd like - downstream drift detection should weight
-    // this rule less heavily".
-    private const double DepthCapConfidencePenalty = 0.1;
+    // Task 51 / 2.1: hard uniqueness postcondition. When the identity-claim
+    // builder hits its ancestor-depth cap without becoming unique, we force
+    // the rule's confidence to exactly 0.0 (was previously -0.1 soft penalty).
+    // A non-unique chain at induction time will pick arbitrary elements at
+    // apply time — confidence == 0.0 IS the "requires_review" marker.
+    private const double NonUniqueChainConfidence = 0.0;
 
-    public ExtractorInducer() : this(new DefaultClassStabilityFilter()) { }
+    public ExtractorInducer() : this(new DefaultClassStabilityFilter(), logger: null) { }
 
-    public ExtractorInducer(IClassStabilityFilter classFilter)
+    public ExtractorInducer(IClassStabilityFilter classFilter) : this(classFilter, logger: null) { }
+
+    public ExtractorInducer(IClassStabilityFilter classFilter, ILogger<ExtractorInducer>? logger)
     {
         _classFilter = classFilter;
+        _logger = logger;
     }
 
     public LearnedExtractor Induce(Guid templateId, IReadOnlyList<ExtractedBlock> blocks) =>
@@ -103,12 +109,15 @@ public sealed class ExtractorInducer : IExtractorInducer
             var target = ResolveByXPath(document, block.XPath);
             if (target is not null)
             {
-                var result = IdentityClaimSelectorBuilder.BuildAncestorChain(target, document, _classFilter);
+                var result = IdentityClaimSelectorBuilder.BuildAncestorChain(target, document, _classFilter, _logger);
                 claims = result.Chain;
                 cssSelector = IdentityClaimSelectorBuilder.ToCssSelector(result.Chain);
                 if (result.HitDepthCap)
                 {
-                    confidence = Math.Max(0.0, block.Confidence - DepthCapConfidencePenalty);
+                    // Hard postcondition: non-unique chain → zero confidence.
+                    // This is the "requires_review" marker downstream consumers
+                    // should check before applying the rule.
+                    confidence = NonUniqueChainConfidence;
                 }
                 return;
             }
