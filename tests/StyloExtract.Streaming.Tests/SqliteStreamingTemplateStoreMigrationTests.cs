@@ -352,7 +352,7 @@ public sealed class SqliteStreamingTemplateStoreMigrationTests
     /// real constant ever moves, these tests will assert against the wrong
     /// value and fail loudly. That's the intent.
     /// </summary>
-    private const int CurrentStoreVersion = 2;
+    private const int CurrentStoreVersion = 3;
 
     /// <summary>
     /// Builds a JSON blob byte-identical to what alpha.20 wrote: TemplateFence
@@ -454,21 +454,12 @@ public sealed class SqliteStreamingTemplateStoreMigrationTests
         return sb.ToString();
     }
 
-    private static StreamingTemplate BuildAlpha21Template(string host, int version)
-    {
-        var fence = new TemplateFence(new uint[128], new ulong[16], 1);
-        return new StreamingTemplate
-        {
-            TemplateId = Guid.NewGuid(),
-            Host = host,
-            PrefixFence = fence,
-            ContentStartFence = fence,
-            ContentEndFence = fence,
-            BailoutBytes = 262_144,
-            MaxCaptureBytes = 1_048_576,
-            WindowSize = 8,
-            MaxEventsWithoutTransition = 256,
-            Version = version,
-        };
-    }
+    private static StreamingTemplate BuildAlpha21Template(string host, int version) =>
+        TripwireTestHelpers.MakeTemplate(
+            TripwireTestHelpers.TagClaim("header"),
+            TripwireTestHelpers.TagClaim("article"),
+            TripwireTestHelpers.TagClaim("article"),
+            bailoutBytes: 262_144,
+            maxCaptureBytes: 1_048_576)
+        with { Host = host, Version = version };
 }

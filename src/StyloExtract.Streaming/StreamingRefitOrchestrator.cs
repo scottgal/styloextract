@@ -195,15 +195,30 @@ public sealed class StreamingRefitOrchestrator
 
     private static bool FencesEqual(StreamingTemplate a, StreamingTemplate b)
     {
-        return FenceEqual(a.PrefixFence, b.PrefixFence)
-            && FenceEqual(a.ContentStartFence, b.ContentStartFence)
-            && FenceEqual(a.ContentEndFence, b.ContentEndFence);
+        return TripwireEqual(a.PrefixTripwire, b.PrefixTripwire)
+            && TripwireEqual(a.ContentStartTripwire, b.ContentStartTripwire)
+            && TripwireEqual(a.ContentEndTripwire, b.ContentEndTripwire);
 
-        static bool FenceEqual(TemplateFence x, TemplateFence y)
+        static bool TripwireEqual(StyloExtract.Abstractions.IdentityClaim x, StyloExtract.Abstractions.IdentityClaim y)
         {
-            if (x.LshBands.Length != y.LshBands.Length) return false;
-            for (int i = 0; i < x.LshBands.Length; i++)
-                if (x.LshBands[i] != y.LshBands[i]) return false;
+            // Compare on the hash channels — the matcher's notion of equality.
+            // Class lists are order-insensitive, so compare as sets of hashes.
+            if (x.TagHash != y.TagHash) return false;
+            if (x.IdHash != y.IdHash) return false;
+            if (x.Role != y.Role) return false;
+            if (x.ClassHashes.Count != y.ClassHashes.Count) return false;
+            foreach (var ch in x.ClassHashes)
+            {
+                var found = false;
+                foreach (var yh in y.ClassHashes) if (yh == ch) { found = true; break; }
+                if (!found) return false;
+            }
+            if (x.DataAttrs.Count != y.DataAttrs.Count) return false;
+            foreach (var kv in x.DataAttrs)
+                if (!y.DataAttrs.TryGetValue(kv.Key, out var v) || v != kv.Value) return false;
+            if (x.AriaAttrs.Count != y.AriaAttrs.Count) return false;
+            foreach (var kv in x.AriaAttrs)
+                if (!y.AriaAttrs.TryGetValue(kv.Key, out var v) || v != kv.Value) return false;
             return true;
         }
     }

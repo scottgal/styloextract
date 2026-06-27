@@ -1,24 +1,19 @@
 namespace StyloExtract.Streaming;
 
 /// <summary>
-/// Ref-struct, span-backed fence scanner — the hot whole-buffer path.
-/// alpha.21: per-tick algorithm delegates to <see cref="StreamingTick.Step"/>,
-/// the same static method the heap-backed
-/// <see cref="IncrementalFenceScanner"/> calls.
+/// Ref-struct, span-backed tripwire scanner. Task 4 (alpha.24) collapsed
+/// the alpha.21..23 sketch / window buffers — tripwire matching against
+/// the tokenizer's per-event hash data has no per-tick scratch state, so
+/// the scanner now only carries a small <see cref="StreamingTickState"/>.
 /// </summary>
 public ref struct FenceScanner
 {
     private readonly StreamingTemplate _template;
-    private readonly Span<uint> _signature;
-    private readonly Span<EventSlot> _window;
     private StreamingTickState _state;
 
-    public FenceScanner(in StreamingTemplate template, Span<uint> signature, Span<EventSlot> window)
+    public FenceScanner(in StreamingTemplate template)
     {
         _template = template;
-        _signature = signature;
-        _window = window;
-        _signature.Fill(uint.MaxValue);
         _state = StreamingTickState.Initial;
     }
 
@@ -27,5 +22,5 @@ public ref struct FenceScanner
     public readonly long CaptureEndByte => _state.CaptureEndByte;
 
     public ScanVerdict Tick(in TagEvent evt) =>
-        StreamingTick.Step(in evt, ref _state, _signature, _window, in _template);
+        StreamingTick.Step(in evt, ref _state, in _template);
 }

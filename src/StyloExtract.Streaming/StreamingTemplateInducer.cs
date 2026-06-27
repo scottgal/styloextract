@@ -1,251 +1,254 @@
-using System.IO.Hashing;
 using System.Text;
+using AngleSharp;
+using AngleSharp.Dom;
+using AngleSharp.Html.Parser;
+using StyloExtract.Abstractions;
+using StyloExtract.Heuristics;
 
 namespace StyloExtract.Streaming;
 
 /// <summary>
-/// Naive first-pass streaming-template inducer. Walks the HTML once via the
-/// minimal tokenizer, identifies semantic-marker tag-sequence-pairs that
-/// likely correspond to chrome → content → chrome transitions, and produces
-/// a <see cref="StreamingTemplate"/> keyed to the given host.
+/// First-pass streaming-template inducer rewritten in Task 4 (alpha.24) to
+/// emit <see cref="IdentityClaim"/> tripwires instead of MinHash fences.
 ///
-/// Heuristic:
+/// Parses the page with AngleSharp once, picks three target elements
+/// (prefix / content-start / content-end) using the same shape heuristics
+/// as alpha.16..23, and calls
+/// <see cref="IdentityClaimExtractor.Extract(IElement, IClassStabilityFilter)"/>
+/// on each. The resulting <see cref="ElementClaimSet"/>s are projected
+/// into stable <see cref="IdentityClaim"/>s the scanner will match exactly
+/// against the tokenizer's per-event hash data.
+///
+/// Heuristic targets:
 /// <list type="bullet">
-///   <item><description>PrefixFence: first <c>&lt;header&gt;</c> open → first <c>&lt;/header&gt;</c> close, OR first <c>&lt;nav&gt;</c> open → first <c>&lt;/nav&gt;</c> close. If neither marker is present, fall back to the first <c>&lt;body&gt;</c> + a couple of following events.</description></item>
-///   <item><description>ContentStartFence: the first non-trivial paragraph cluster after the prefix — typically <c>&lt;p&gt;…&lt;/p&gt;&lt;p&gt;…&lt;/p&gt;</c>.</description></item>
-///   <item><description>ContentEndFence: first <c>&lt;footer&gt;</c> open, OR <c>&lt;/main&gt;</c> / <c>&lt;/article&gt;</c> close, OR <c>&lt;/body&gt;</c> as a final fallback.</description></item>
+///   <item><description>Prefix: first <c>&lt;header&gt;</c>, fallback to first
+///   <c>&lt;nav&gt;</c>, last-ditch <c>&lt;body&gt;</c>.</description></item>
+///   <item><description>Content start: first ancestor of the paragraph
+///   cluster — prefer <c>&lt;article&gt;</c>, then <c>&lt;main&gt;</c>,
+///   then the first <c>&lt;p&gt;</c> in a 2+ paragraph cluster.</description></item>
+///   <item><description>Content end: same element as content start (the
+///   scanner watches for its CLOSE event). On the wire this collapses to
+///   "fire the same tripwire on close".</description></item>
 /// </list>
 ///
-/// Returns null when no plausible fences can be identified (plain text,
-/// SVG-only, image-only pages). The caller should treat null as "leave
-/// <see cref="ScanVerdict.NoTemplate"/> alone, try again next visit".
+/// Returns null when no plausible targets exist (plain text, SVG-only,
+/// image-only pages). Callers should treat null as "leave NoTemplate
+/// alone, try again next visit".
 /// </summary>
 public sealed class StreamingTemplateInducer
 {
-    // Pre-hashed tag-name markers (lowercase, no angle brackets / class attrs).
-    private static readonly ulong s_headerHash = XxHash3.HashToUInt64("header"u8);
-    private static readonly ulong s_navHash = XxHash3.HashToUInt64("nav"u8);
-    private static readonly ulong s_pHash = XxHash3.HashToUInt64("p"u8);
-    private static readonly ulong s_footerHash = XxHash3.HashToUInt64("footer"u8);
-    private static readonly ulong s_mainHash = XxHash3.HashToUInt64("main"u8);
-    private static readonly ulong s_articleHash = XxHash3.HashToUInt64("article"u8);
-    private static readonly ulong s_bodyHash = XxHash3.HashToUInt64("body"u8);
+    private static readonly HtmlParser s_parser = BuildParser();
+    private readonly IClassStabilityFilter _classFilter;
 
-    /// <summary>Cap how far we'll scan looking for semantic markers.</summary>
-    private const int MaxBytesScanned = 1_000_000;
+    public StreamingTemplateInducer()
+        : this(new DefaultClassStabilityFilter())
+    {
+    }
+
+    public StreamingTemplateInducer(IClassStabilityFilter classFilter)
+    {
+        _classFilter = classFilter;
+    }
+
+    private static HtmlParser BuildParser()
+    {
+        var context = BrowsingContext.New(Configuration.Default);
+        return new HtmlParser(new HtmlParserOptions(), context);
+    }
 
     /// <summary>
-    /// Build a <see cref="StreamingTemplate"/> from observed tag events for
-    /// <paramref name="host"/>. Returns null when no plausible fences can be
-    /// found within the first ~1MB of input.
+    /// Build a <see cref="StreamingTemplate"/> from observed page bytes for
+    /// <paramref name="host"/>. Returns null when no plausible targets can
+    /// be found.
     /// </summary>
-    /// <param name="host">Host the template is being induced for (lookup key).</param>
-    /// <param name="html">Page bytes (full or large enough prefix).</param>
     public StreamingTemplate? Induce(string host, ReadOnlySpan<byte> html)
     {
         if (string.IsNullOrEmpty(host)) return null;
         if (html.Length == 0) return null;
 
-        var events = new List<RecordedEvent>(capacity: 512);
-        var tokenizer = new MinimalHtmlTokenizer(html);
-        var totalBytes = 0;
-        while (tokenizer.TryReadTag(out var evt) && totalBytes < MaxBytesScanned)
-        {
-            totalBytes += evt.ByteLength;
-            events.Add(new RecordedEvent(evt.TagNameHash, evt.ClassHash, evt.IsClose));
-        }
+        // AngleSharp's HtmlParser takes a string — decode UTF-8 once.
+        // Induction is a per-host operation (not the per-request hot path),
+        // so the allocation cost is fine.
+        var source = Encoding.UTF8.GetString(html);
+        var doc = s_parser.ParseDocument(source);
+        if (doc.Body is null) return null;
 
-        if (events.Count < 4) return null;
+        var prefixEl = FindPrefixElement(doc);
+        if (prefixEl is null) return null;
 
-        // === PrefixFence: header open→close OR nav open→close ===
-        var prefixWindow = FindPrefix(events);
-        if (prefixWindow.Count == 0) return null;
+        var contentEl = FindContentElement(doc);
+        if (contentEl is null) return null;
 
-        // === ContentStartFence: paragraph cluster <p>...</p><p>...</p> ===
-        var prefixEndIdx = prefixWindow.EndIndex;
-        var contentStartWindow = FindParagraphCluster(events, prefixEndIdx);
-        if (contentStartWindow.Count == 0) return null;
+        var endEl = FindContentEndElement(doc, contentEl);
+        if (endEl is null) return null;
 
-        // === ContentEndFence: footer open / main/article close / body close ===
-        var contentStartEndIdx = contentStartWindow.EndIndex;
-        var contentEndWindow = FindContentEnd(events, contentStartEndIdx);
-        if (contentEndWindow.Count == 0) return null;
+        var prefixClaim = ToIdentityClaim(IdentityClaimExtractor.Extract(prefixEl, _classFilter));
+        var contentStartClaim = ToIdentityClaim(IdentityClaimExtractor.Extract(contentEl, _classFilter));
+        // ContentEnd fires on the CLOSE event for the content element. Close
+        // tags carry no attributes (no id, no classes), so the tripwire must
+        // rely on tag-name alone. Collapse the full claim to its tag-only
+        // form for this slot.
+        var contentEndClaim = TagOnlyClaim(IdentityClaimExtractor.Extract(endEl, _classFilter));
 
-        const int windowSize = 8;
-        var prefixEvents = ToFenceEvents(events, prefixWindow, windowSize);
-        var contentStartEvents = ToFenceEvents(events, contentStartWindow, windowSize);
-        var contentEndEvents = ToFenceEvents(events, contentEndWindow, windowSize);
-
-        var template = new StreamingTemplate
+        return new StreamingTemplate
         {
             TemplateId = Guid.NewGuid(),
             Host = host,
-            PrefixFence = TemplateFence.BuildFromEvents(prefixEvents, requiredDepth: 0),
-            ContentStartFence = TemplateFence.BuildFromEvents(contentStartEvents, requiredDepth: 0),
-            ContentEndFence = TemplateFence.BuildFromEvents(contentEndEvents, requiredDepth: 0),
+            PrefixTripwire = prefixClaim,
+            ContentStartTripwire = contentStartClaim,
+            ContentEndTripwire = contentEndClaim,
             BailoutBytes = 5_000_000,
             MaxCaptureBytes = 5_000_000,
-            WindowSize = windowSize,
-            MaxEventsWithoutTransition = 256,
         };
-        return template;
     }
 
     /// <summary>
-    /// Snapshot of an inducer-chosen fence layout, useful for logging the
-    /// induced template (the fences themselves are MinHash sketches and
-    /// not human-readable).
+    /// Diagnostic counterpart of <see cref="Induce"/> — returns a
+    /// human-readable summary of which elements the heuristic would pick.
+    /// Cheap (one parse pass).
     /// </summary>
+    public InducedSummary? Describe(ReadOnlySpan<byte> html)
+    {
+        if (html.Length == 0) return null;
+        var source = Encoding.UTF8.GetString(html);
+        var doc = s_parser.ParseDocument(source);
+        if (doc.Body is null) return null;
+
+        var prefixEl = FindPrefixElement(doc);
+        if (prefixEl is null) return null;
+        var contentEl = FindContentElement(doc);
+        if (contentEl is null) return null;
+        var endEl = FindContentEndElement(doc, contentEl);
+        if (endEl is null) return null;
+
+        return new InducedSummary(
+            DescribeElement(prefixEl),
+            DescribeElement(contentEl),
+            DescribeElement(endEl));
+    }
+
     public readonly record struct InducedSummary(
         string PrefixMarker,
         string ContentStartMarker,
         string ContentEndMarker);
 
-    /// <summary>
-    /// Describe the human-readable shape of what <see cref="Induce"/> would
-    /// pick. Walks the same heuristics and returns named markers (or null if
-    /// induction would fail). Cheap — same single tokenizer pass.
-    /// </summary>
-    public InducedSummary? Describe(ReadOnlySpan<byte> html)
+    private static IElement? FindPrefixElement(IDocument doc)
     {
-        if (html.Length == 0) return null;
-
-        var events = new List<RecordedEvent>(capacity: 512);
-        var tokenizer = new MinimalHtmlTokenizer(html);
-        var totalBytes = 0;
-        while (tokenizer.TryReadTag(out var evt) && totalBytes < MaxBytesScanned)
-        {
-            totalBytes += evt.ByteLength;
-            events.Add(new RecordedEvent(evt.TagNameHash, evt.ClassHash, evt.IsClose));
-        }
-        if (events.Count < 4) return null;
-
-        var prefix = FindPrefix(events);
-        if (prefix.Count == 0) return null;
-        var contentStart = FindParagraphCluster(events, prefix.EndIndex);
-        if (contentStart.Count == 0) return null;
-        var contentEnd = FindContentEnd(events, contentStart.EndIndex);
-        if (contentEnd.Count == 0) return null;
-
-        return new InducedSummary(prefix.MarkerLabel, contentStart.MarkerLabel, contentEnd.MarkerLabel);
+        var header = doc.QuerySelector("header");
+        if (header is not null) return header;
+        var nav = doc.QuerySelector("nav");
+        if (nav is not null) return nav;
+        return doc.Body;
     }
 
-    private static FenceWindow FindPrefix(List<RecordedEvent> events)
+    private static IElement? FindContentElement(IDocument doc)
     {
-        // <header> ... </header>
-        var openIdx = IndexOf(events, s_headerHash, isClose: false, startInclusive: 0);
-        if (openIdx >= 0)
-        {
-            var closeIdx = IndexOf(events, s_headerHash, isClose: true, startInclusive: openIdx + 1);
-            if (closeIdx > openIdx)
-                return new FenceWindow(openIdx, closeIdx, "header-open→close");
-        }
-        // <nav> ... </nav>
-        openIdx = IndexOf(events, s_navHash, isClose: false, startInclusive: 0);
-        if (openIdx >= 0)
-        {
-            var closeIdx = IndexOf(events, s_navHash, isClose: true, startInclusive: openIdx + 1);
-            if (closeIdx > openIdx)
-                return new FenceWindow(openIdx, closeIdx, "nav-open→close");
-        }
-        // <body> + next 3 events (last-ditch shape signal)
-        openIdx = IndexOf(events, s_bodyHash, isClose: false, startInclusive: 0);
-        if (openIdx >= 0 && openIdx + 3 < events.Count)
-            return new FenceWindow(openIdx, openIdx + 3, "body-prefix");
+        var article = doc.QuerySelector("article");
+        if (article is not null) return article;
+        var main = doc.QuerySelector("main");
+        if (main is not null) return main;
 
-        return default;
+        // Paragraph-cluster fallback: at least two consecutive <p> siblings
+        // somewhere in the document. Return their nearest common parent so
+        // the content-end tripwire fires on the parent's close (which the
+        // scanner's depth tracking can identify cleanly).
+        var paragraphs = doc.QuerySelectorAll("p");
+        IElement? lastParent = null;
+        int run = 0;
+        foreach (var p in paragraphs)
+        {
+            if (p.ParentElement is null) continue;
+            if (ReferenceEquals(p.ParentElement, lastParent))
+            {
+                run++;
+                if (run >= 2) return lastParent;
+            }
+            else
+            {
+                lastParent = p.ParentElement;
+                run = 1;
+            }
+        }
+        return null;
     }
 
-    private static FenceWindow FindParagraphCluster(List<RecordedEvent> events, int afterIdx)
+    private static IElement? FindContentEndElement(IDocument doc, IElement contentEl)
     {
-        // Look for first <p> ... </p> ... <p> ... </p> sequence past afterIdx.
-        var firstOpen = IndexOf(events, s_pHash, isClose: false, startInclusive: afterIdx + 1);
-        if (firstOpen < 0) return default;
-        var firstClose = IndexOf(events, s_pHash, isClose: true, startInclusive: firstOpen + 1);
-        if (firstClose < 0) return default;
-        var secondOpen = IndexOf(events, s_pHash, isClose: false, startInclusive: firstClose + 1);
-        if (secondOpen < 0) return default;
-        var secondClose = IndexOf(events, s_pHash, isClose: true, startInclusive: secondOpen + 1);
-        if (secondClose < 0) return default;
-        return new FenceWindow(firstOpen, secondClose, "p-p-cluster");
-    }
-
-    private static FenceWindow FindContentEnd(List<RecordedEvent> events, int afterIdx)
-    {
-        // First <footer> open after content start.
-        var idx = IndexOf(events, s_footerHash, isClose: false, startInclusive: afterIdx + 1);
-        if (idx >= 0 && idx + 3 < events.Count)
-            return new FenceWindow(idx, idx + 3, "footer-open");
-        if (idx >= 0)
-            return new FenceWindow(Math.Max(0, idx - 3), idx, "footer-open-prefix");
-
-        // Last </main> or </article> close, scanning forwards.
-        var mainCloseIdx = IndexOf(events, s_mainHash, isClose: true, startInclusive: afterIdx + 1);
-        if (mainCloseIdx >= 0 && mainCloseIdx >= 3)
-            return new FenceWindow(mainCloseIdx - 3, mainCloseIdx, "main-close");
-
-        var articleCloseIdx = IndexOf(events, s_articleHash, isClose: true, startInclusive: afterIdx + 1);
-        if (articleCloseIdx >= 0 && articleCloseIdx >= 3)
-            return new FenceWindow(articleCloseIdx - 3, articleCloseIdx, "article-close");
-
-        // </body> as fallback.
-        var bodyCloseIdx = IndexOf(events, s_bodyHash, isClose: true, startInclusive: afterIdx + 1);
-        if (bodyCloseIdx >= 0 && bodyCloseIdx >= 3)
-            return new FenceWindow(bodyCloseIdx - 3, bodyCloseIdx, "body-close");
-
-        return default;
-    }
-
-    private static int IndexOf(List<RecordedEvent> events, ulong tagHash, bool isClose, int startInclusive)
-    {
-        for (int i = startInclusive; i < events.Count; i++)
-        {
-            var e = events[i];
-            if (e.IsClose == isClose && e.TagNameHash == tagHash)
-                return i;
-        }
-        return -1;
+        // The scanner watches for the CLOSE event of the content element by
+        // default — same identity claim, fired on close. Per the task design
+        // (prefix/content-start/content-end as three independent tripwires)
+        // we still emit a distinct claim for the end target. The natural
+        // pick is the same element as content-start (close of content =
+        // close of region). If a downstream <footer> exists we could in
+        // principle use it as a coarser end marker, but firing on the
+        // content element's own close is more precise.
+        return contentEl;
     }
 
     /// <summary>
-    /// Build a windowSize-sized fence event sequence that ends at
-    /// <paramref name="window"/>.EndIndex. alpha.21: filters to STRUCTURAL
-    /// tag events ONLY (matching the runtime scanner's structural-tag
-    /// allowlist), and extends BACKWARDS into the surrounding event stream
-    /// to fill the window when the natural fence region is shorter than
-    /// <paramref name="windowSize"/>. The fence's MinHash signature is
-    /// therefore over the same windowSize structural events the scanner's
-    /// sliding sketch will hold at the moment-of-match.
+    /// Project the full identity snapshot into a streaming-friendly tripwire.
+    ///
+    /// The scanner's per-event hash data is bounded (see
+    /// <see cref="TagEvent.MaxClassesPerEvent"/> /
+    /// <see cref="TagEvent.MaxAttrPairsPerEvent"/>): a tripwire that requires
+    /// 20 classes will never satisfy because TagEvent only carries 8. So
+    /// the inducer narrows the claim:
+    ///
+    /// - If the element has a stable id, the tripwire is tag + id (single
+    ///   strong discriminator, matches the layout-side preference).
+    /// - Otherwise: tag + at most the first two stable classes. Two is
+    ///   enough to disambiguate on most real pages while staying well
+    ///   under the per-event cap. Going wider would risk losing the
+    ///   match on pages where utility-class ordering shifts between
+    ///   sessions.
     /// </summary>
-    private static (ulong tagHash, ulong classHash)[] ToFenceEvents(
-        List<RecordedEvent> events,
-        FenceWindow window,
-        int windowSize)
+    private static IdentityClaim ToIdentityClaim(ElementClaimSet claimSet)
     {
-        // Walk events backwards from window.EndIndex collecting structural
-        // events until we have windowSize (or run out).
-        var collected = new List<(ulong, ulong)>(windowSize);
-        for (int i = Math.Min(window.EndIndex, events.Count - 1); i >= 0 && collected.Count < windowSize; i--)
+        if (claimSet.Id is not null)
         {
-            var ev = events[i];
-            if (StructuralTagAllowlist.Contains(ev.TagNameHash))
-                collected.Add((ev.TagNameHash, ev.ClassHash));
+            return new IdentityClaim
+            {
+                Tag = claimSet.Tag,
+                TagHash = claimSet.TagHash,
+                Id = claimSet.Id,
+                IdHash = claimSet.IdHash,
+            };
         }
-        if (collected.Count == 0) return Array.Empty<(ulong, ulong)>();
-        collected.Reverse();
-        return collected.ToArray();
+
+        const int maxClasses = 2;
+        var keepClasses = claimSet.Classes.Count <= maxClasses
+            ? claimSet.Classes
+            : (IReadOnlyList<string>)claimSet.Classes.Take(maxClasses).ToArray();
+        var keepHashes = claimSet.ClassHashes.Count <= maxClasses
+            ? claimSet.ClassHashes
+            : (IReadOnlyList<ulong>)claimSet.ClassHashes.Take(maxClasses).ToArray();
+
+        return new IdentityClaim
+        {
+            Tag = claimSet.Tag,
+            TagHash = claimSet.TagHash,
+            Classes = keepClasses,
+            ClassHashes = keepHashes,
+        };
     }
 
-    private readonly record struct RecordedEvent(ulong TagNameHash, ulong ClassHash, bool IsClose);
-
-    /// <summary>
-    /// Window of events identified as a fence-shape source. The default
-    /// <c>(0, 0, null)</c> represents "not found" and has <see cref="Count"/>
-    /// == 0 so callers can distinguish a real-but-degenerate window from a
-    /// missing one.
-    /// </summary>
-    private readonly record struct FenceWindow(int StartIndex, int EndIndex, string MarkerLabel)
+    private static IdentityClaim TagOnlyClaim(ElementClaimSet claimSet) => new()
     {
-        public int Count => MarkerLabel is null ? 0 : (EndIndex - StartIndex + 1);
+        Tag = claimSet.Tag,
+        TagHash = claimSet.TagHash,
+    };
+
+    private static string DescribeElement(IElement el)
+    {
+        var sb = new StringBuilder();
+        sb.Append(el.LocalName);
+        if (!string.IsNullOrEmpty(el.Id)) sb.Append('#').Append(el.Id);
+        var cls = el.ClassName;
+        if (!string.IsNullOrWhiteSpace(cls))
+        {
+            foreach (var c in cls.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                sb.Append('.').Append(c);
+        }
+        return sb.ToString();
     }
 }

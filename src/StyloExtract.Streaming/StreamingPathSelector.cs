@@ -2,7 +2,6 @@ namespace StyloExtract.Streaming;
 
 public sealed class StreamingPathSelector
 {
-    private const int MaxWindowSize = 64;
     private readonly IStreamingTemplateStore _store;
 
     public StreamingPathSelector(IStreamingTemplateStore store)
@@ -47,15 +46,7 @@ public sealed class StreamingPathSelector
 
     private static ScanVerdict ScanCore(StreamingTemplate template, ReadOnlySpan<byte> html)
     {
-        if (template.WindowSize <= 0 || template.WindowSize > MaxWindowSize)
-            throw new InvalidOperationException(
-                $"Template {template.TemplateId} has invalid WindowSize {template.WindowSize}; must be 1..{MaxWindowSize}.");
-
-        Span<uint> signature = stackalloc uint[128];
-        Span<EventSlot> windowBuffer = stackalloc EventSlot[MaxWindowSize];
-        var window = windowBuffer[..template.WindowSize];
-
-        var scanner = new FenceScanner(in template, signature, window);
+        var scanner = new FenceScanner(in template);
         var tokenizer = new MinimalHtmlTokenizer(html);
 
         var verdict = ScanVerdict.Continue;

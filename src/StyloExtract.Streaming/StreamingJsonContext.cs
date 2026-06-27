@@ -1,9 +1,8 @@
 using System.Text.Json.Serialization;
+using StyloExtract.Abstractions;
 
 namespace StyloExtract.Streaming;
 
 [JsonSerializable(typeof(StreamingTemplate))]
-[JsonSerializable(typeof(TemplateFence))]
-[JsonSerializable(typeof(uint[]))]
-[JsonSerializable(typeof(ulong[]))]
+[JsonSerializable(typeof(IdentityClaim))]
 internal sealed partial class StreamingJsonContext : JsonSerializerContext;

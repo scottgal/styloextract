@@ -20,15 +20,27 @@ Cross-references to the release-notes entries that introduced each piece:
 [alpha.21](../RELEASE_NOTES.txt) (partial-tag-only buffer, Markov shingles,
 structural-tag filter, depth-aware capture, shared Tick, version chain),
 [alpha.23](../RELEASE_NOTES.txt) (structural-only depth tracking,
-bytes-since-state-change bailout, Flush latches Continue→Bailout at EOF).
+bytes-since-state-change bailout, Flush latches Continue→Bailout at EOF),
+[alpha.24](../RELEASE_NOTES.txt) (Task 4 of Phase 1 — tripwire scanner
+replaces MinHash fences with `IdentityClaim`-based matching shared with
+the layout extractor).
 
-**Matcher algorithm.** This is MinHash with LSH bands + a structural-tag
-filter, NOT an anchor-walk over the DOM. The scanner holds a sliding
-window of the most recent structural-tag events, recomputes a 128-slot
-MinHash signature each accepted push, hashes that signature into 16 LSH
-bands of 8 rows each, and matches a band-collision against any of the
-template's three fences. There is no rooted "anchor → walk children"
-traversal; the scan is byte-stream-position based.
+**Matcher algorithm (alpha.24+).** The scanner watches the tokenizer's
+event stream and fires state transitions on EXACT `IdentityClaim` match
+against the per-event hash data the tokenizer carries on each
+`TagEvent` (tag-name hash + id hash + per-class hashes + data-* / aria-*
+hash pairs + role hash). There is no MinHash sketch, no LSH bands, no
+sliding event window — the FSM matches once per event in O(claim size).
+The same `IdentityClaim` primitive drives the layout-extractor's
+selector resolution, so streaming and layout share one identity-matching
+contract instead of running on parallel algorithms.
+
+Before alpha.24, the scanner ran MinHash with LSH bands over a sliding
+window of structural-tag events — a probabilistic match that gave soft
+tolerance across DOM diffs at the cost of unifying with the layout side.
+alpha.24 traded that tolerance for exact match on stable-by-construction
+identifiers (the identity-aware inducer picks stable claims). Drift now
+shows up as a clean miss → refit signal, which is what we wanted anyway.
 
 ---
 
@@ -65,25 +77,30 @@ the hot path once the template is warm.
 
 Six pieces, each with one job:
 
-- **`MinimalHtmlTokenizer`** — zero-allocation, span-based tag tokenizer
-  for whole-buffer scans. Yields `TagEvent { TagNameHash, ClassHash,
-  ByteLength, IsClose }`. No DOM, no attribute parsing beyond `class=`.
+- **`MinimalHtmlTokenizer`** — span-based tag tokenizer for whole-buffer
+  scans. Yields `TagEvent { TagNameHash, ClassHash, ClassHashes[],
+  IdHash, RoleHash, DataAttrHashes[], AriaAttrHashes[], ByteLength,
+  IsClose }`. alpha.24 extended the event to carry every identity-
+  relevant hash so the tripwire matcher never has to look back at raw
+  bytes; per-event attribute extraction is shared with
+  `IncrementalHtmlTokenizer` via `TagAttributeParser`.
 - **`IncrementalHtmlTokenizer`** — stateful, fed chunk-by-chunk via
   `Feed(ReadOnlySpan<byte>)`. Holds only partial-tag bytes between calls
   (compact-on-emit, not compact-on-next-feed). Exposes
   `PeakBufferedBytes` and `BytesConsumed` for telemetry.
-- **`FenceScanner`** — `ref struct`, the hot path. Maintains a fixed-size
-  sliding window of `EventSlot`s + a rolling `RollingSketch` MinHash
-  signature. On each `Tick(TagEvent)` returns `ScanVerdict { Continue,
-  Captured, Bailout }`.
+- **`FenceScanner`** — `ref struct`, the hot path. alpha.24 dropped the
+  sliding window + sketch storage; on each `Tick(TagEvent)` it evaluates
+  the active tripwire (`PrefixTripwire` / `ContentStartTripwire` /
+  `ContentEndTripwire`) via `IdentityClaimMatcher.MatchesByHash` and
+  returns `ScanVerdict { Continue, Captured, Bailout }`.
 - **`IncrementalFenceScanner`** — class-shape wrapper that pairs
   `IncrementalHtmlTokenizer` with the scanner logic over heap-backed
-  arrays (since `FenceScanner` is a ref struct and can't live as a class
+  fields (since `FenceScanner` is a ref struct and can't live as a class
   field or survive an `await`). Same `Tick` logic, hard-pinned to the
   ref-struct path by cross-validation tests. `Feed(chunk)` returns the
   current verdict; `Flush()` is the canonical end-of-stream call — when
-  the stream exhausts without matching all fences, `Flush()` latches the
-  terminal verdict to `Bailout` (alpha.23: previously dangled at
+  the stream exhausts without matching all tripwires, `Flush()` latches
+  the terminal verdict to `Bailout` (alpha.23: previously dangled at
   `Continue`, which was meaningless at EOF).
 - **`StreamingPathSelector`** — DI-injected entry point.
   - `Scan(templateId, bytes)` — synchronous whole-buffer scan against a
@@ -99,22 +116,26 @@ Six pieces, each with one job:
 
 The persisted record:
 
-- **`StreamingTemplate`** — `{ TemplateId, Host, PrefixFence,
-  ContentStartFence, ContentEndFence, BailoutBytes, MaxCaptureBytes,
-  WindowSize, MaxEventsWithoutTransition, Version }`. alpha.21 removed
-  the unused `MinContentDepth` field. alpha.23 deprecated
-  `MaxEventsWithoutTransition` (the field is retained for back-compat
-  but ignored by the scanner — drift bailout now reads
-  `BailoutBytes` and compares against bytes-since-state-change, which
-  is robust against the alpha.21 structural-tag filter's event throttling).
+- **`StreamingTemplate`** — `{ TemplateId, Host, PrefixTripwire,
+  ContentStartTripwire, ContentEndTripwire, BailoutBytes, MaxCaptureBytes,
+  Version }`. alpha.24 replaced the three MinHash `TemplateFence` records
+  with three `IdentityClaim` tripwires and dropped the `WindowSize` and
+  `MaxEventsWithoutTransition` fields (no sliding window in the tripwire
+  model; bytes-based bailout supersedes event-counter bailout).
+  `CurrentStoreVersion` bumped from 2 to 3 so alpha.21..23 dogfood DBs
+  self-heal cleanly on first open with the new scanner.
 
 The first-pass auto-inducer:
 
-- **`StreamingTemplateInducer`** — single tokenizer pass over the bytes,
-  picks semantic-marker fences (`<header>…</header>`, paragraph cluster
-  `<p>…</p><p>…</p>`, `<footer>` / `</main>` / `</article>` / `</body>`),
-  produces a ready-to-upsert `StreamingTemplate`. Returns `null` when no
-  plausible structural fences are found.
+- **`StreamingTemplateInducer`** — parses the page once with AngleSharp,
+  picks three target elements (prefix, content-start, content-end) using
+  the same shape heuristic as alpha.16..23 (`<header>` / `<nav>` for
+  prefix; `<article>` / `<main>` / paragraph-cluster parent for content),
+  and calls `IdentityClaimExtractor.Extract` on each. The resulting
+  claims are narrowed before being stamped as tripwires: id-only when an
+  id is present, tag + first-two-classes otherwise. The ContentEnd
+  tripwire collapses further to tag-only since close events carry no
+  attributes. Returns `null` when no plausible targets are found.
 
 Per-host refit / versioning:
 
@@ -131,8 +152,8 @@ Data flow:
 ```
 chunks ─▶ IncrementalHtmlTokenizer ─▶ TagEvent ─▶ IncrementalFenceScanner
                   │                                    │
-                  └─ partial-tag bytes only            ├─ sliding window (last N events)
-                     (compact-on-emit)                 ├─ MinHash RollingSketch
+                  └─ partial-tag bytes only            ├─ FSM state + capture depth
+                     (compact-on-emit)                 ├─ IdentityClaimMatcher.MatchesByHash
                                                        └─ Tick → ScanVerdict
 ```
 
@@ -246,8 +267,8 @@ services.AddSingleton<StreamingRefitOrchestrator>();
 
 ## 4. Bounded memory — the headline property
 
-The alpha.21 refactor tightened the buffer contract further still.
-The contract now:
+The alpha.24 tripwire model preserves the alpha.21 buffer contract and
+collapses the per-tick scratch state. The contract now:
 
 - **Byte buffer.** Only the partial-tag bytes that straddle a chunk
   boundary are retained between `Feed` calls. Each chunk is parsed
@@ -258,12 +279,16 @@ The contract now:
   often zero when chunk boundaries land in text). The cap is a safety
   stop; if a single tag is genuinely &gt; 4 KiB, `Feed` throws
   `InvalidOperationException` rather than silently dropping bytes.
-- **Event window.** Fixed-size sliding ring of the last `WindowSize`
-  events (default 8). Push new, pop oldest. No growth.
-- **MinHash signature.** Fixed at `RollingSketch.SignatureSize`
-  `uint`s per scanner (currently 128 → 512 bytes of stack-allocated
-  signature on the ref-struct path, the same arity heap-allocated on
-  the incremental path). No growth.
+- **Scanner state.** A small `StreamingTickState` value type
+  (FSM state, depth counters, byte counters). No sliding window,
+  no MinHash signature — the tripwire matcher consumes the per-event
+  hash data the tokenizer already carries on each `TagEvent`.
+- **Per-event hash data.** Bounded at parse time:
+  `TagEvent.MaxClassesPerEvent = 8` class hashes,
+  `TagEvent.MaxAttrPairsPerEvent = 3` data-* and aria-* pairs each.
+  Pages with more attributes simply lose the tail; identity claims
+  that depend on a tail-class won't fire and the scanner falls through
+  to Bailout cleanly.
 
 `PeakBufferedBytes` exposes the in-flight buffer high-watermark for
 telemetry: a large gap between `BytesConsumed` (monotonic, tracks every
@@ -278,8 +303,6 @@ value is in the low hundreds of bytes.
 
 ### Honest framing — bounded by longest partial tag
 
-Two things to be straight about:
-
 1. **Bounded by longest partial tag at a chunk boundary, not chunk size.**
    alpha.21 changed the parse loop so chunks are scanned in-place
    (no wholesale copy into the tokenizer's buffer). Only the bytes of
@@ -287,16 +310,13 @@ Two things to be straight about:
    Measured peaks: 0 B for 16 KB chunks over a 200 KB body; 19 B for
    1 KB chunks. "Bounded" here is `O(longest tag)`, not
    `O(chunk + longest tag)` as in alpha.19.
-2. **MinHash sketch isn't reversibly rollable.** Min-pool MinHash
-   doesn't support subtraction — when an event leaves the window, its
-   contribution to `min(...)` can't be removed in O(1). The sketch
-   therefore **rebuilds** from the current `WindowSize` events after
-   each accepted push (`O(WindowSize × SignatureSize)` per accepted
-   tag, gated by the static `StructuralTagAllowlist` so the vast
-   majority of inbound tags skip the recompute entirely). The
-   bounded-buffer property — the user's actual concern — is satisfied
-   by the tokenizer; the sketch's per-tick recompute is the price
-   MinHash charges for the LSH-band locality the matcher relies on.
+2. **Tripwire matching is O(claim size) per event.** alpha.24 dropped
+   the alpha.21..23 per-tick MinHash recompute
+   (`O(WindowSize × SignatureSize)` per accepted structural tag). The
+   tripwire matcher walks the claim's required class/data/aria hashes
+   linearly against the event's hash arrays — both small (typically &le;4
+   classes per claim, &le;3 attrs). No per-tick allocation, no signature
+   rebuild.
 
 The streaming gateway holds at most a few hundred bytes against
 arbitrarily large responses; in many realistic chunk-alignments the
@@ -384,13 +404,12 @@ The store also tracks a `PRAGMA user_version` for algorithm-compat. When
 the scanner-side scoring rules change, bumping
 `SqliteStreamingTemplateStore.CurrentStoreVersion` causes existing DBs to
 drop their now-incompatible templates on next open, forcing clean
-re-induction. Persisted templates cannot survive a scanner algorithm
-change because their MinHash signatures were sketched under the prior
-rules — keeping them would mean the scanner always Bailouts and any
-consumer that doesn't auto-reinduct on Bailout stays stuck forever.
-Alpha.22 introduced the constant at value `2`; the schema migration runs
-first (unchanged) and the `user_version` gate runs immediately after,
-both inside the same connection.
+re-induction. Alpha.22 introduced the constant at value `2`; alpha.24
+bumped to `3` for the tripwire rewrite since the serialised
+`StreamingTemplate` shape changed outright (three `IdentityClaim`s
+instead of three `TemplateFence`s). The schema migration runs first
+(unchanged) and the `user_version` gate runs immediately after, both
+inside the same connection.
 
 ## 8. Limitations and follow-ups
 
@@ -399,32 +418,32 @@ Calling these out honestly so operators aren't surprised:
 - **Bounded by longest partial tag at chunk boundary, ~hundreds of bytes.**
   Measured: 0 B peak against 200 KB response in 16 KB chunks; 19 B in 1 KB
   chunks. The MaxBufferSize cap is 4 KB; pathological input (a single tag
-  &gt; 4 KB) throws rather than silently drop bytes. Whereas alpha.19
-  reported peak ≈ chunk size, alpha.21 reports peak ≈ longest straddling
-  tag.
-- **MinHash sketch isn't CRC-rolled.** Per-accepted-tag
-  `O(WindowSize × SignatureSize)` recompute is unavoidable for min-pool
-  MinHash. alpha.21 improves quality with two complementary filters:
-  (a) the static `StructuralTagAllowlist` — only structural tags
-  (html/body/header/nav/main/article/section/div/p/h1-h6/ul/ol/li/table/...)
-  push into the sketch; meta/link/script-chrome/img/span/a bypass the
-  recompute entirely; (b) Markov bigram shingles — each shingle is
-  `(prevTag, currentTag, currentClass)`, so order-of-tags now matters
-  (`[A,B]` ≠ `[B,A]`, where it didn't pre-alpha.21).
+  &gt; 4 KB) throws rather than silently drop bytes.
+- **Tripwire matching is exact.** alpha.24 traded the alpha.21..23
+  MinHash bands' soft-tolerance for exact hash equality on
+  stable-by-construction identifiers (the identity-aware inducer
+  rejects hash-shaped class tokens via `DefaultClassStabilityFilter`).
+  Pages whose extracted-template identifiers change between sessions
+  (utility-class shuffles, hashed CSS module names that drift, JIT
+  class-name churn) generate a clean miss → refit signal rather than
+  a probabilistic fuzzy-match that hides the drift.
 - **`FenceScanner` + `IncrementalFenceScanner` share a single static
   `Tick`.** alpha.21 extracted the per-tick algorithm into
-  `StreamingTick.Step` (over a `StreamingTickState`). Both scanners now
-  call literally the same code; cross-validation tests are retained as
-  insurance against future divergence.
+  `StreamingTick.Step` (over a `StreamingTickState`). alpha.24 kept the
+  shared-Tick shape — both scanners call literally the same code.
+- **Per-event hash data is capped.** Tags with more than
+  `TagEvent.MaxClassesPerEvent = 8` classes or more than
+  `TagEvent.MaxAttrPairsPerEvent = 3` data-* / aria-* attributes lose
+  the tail. The inducer keeps tripwires narrow (id-only when present;
+  otherwise tag + first-two-classes; ContentEnd is tag-only since
+  closes have no attributes) so the per-event cap rarely matters in
+  practice — but operators on very attribute-heavy markup should
+  know.
 - **Auto-induction is heuristic.** `StreamingTemplateInducer` picks
-  semantic-marker fences (`<header>`, `<footer>`, `<article>`,
-  paragraph clusters). Pages without semantic markup — a `<div>`-soup
-  hand-rolled landing page — get `null` from the inducer and stay
-  `NoTemplate` forever for that host. The LLM-induced layout templates
-  in `StyloExtract.Llm.Ollama` / `StyloExtract.Llm.LlamaSharp` are
-  smarter but don't currently emit streaming-template fences (open
-  follow-up: derive fence templates from an LLM-induced layout
-  template's selector hints).
+  semantic-marker targets (`<header>`, `<article>`, `<main>`,
+  paragraph-cluster parent). Pages without semantic markup — a
+  `<div>`-soup hand-rolled landing page — get `null` from the
+  inducer and stay `NoTemplate` forever for that host.
 
 ---
 

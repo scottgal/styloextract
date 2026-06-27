@@ -1,4 +1,5 @@
 using System.IO.Hashing;
+using StyloExtract.Abstractions;
 
 namespace StyloExtract.Streaming;
 
@@ -61,10 +62,39 @@ public ref struct MinimalHtmlTokenizer
             }
 
             var nameHash = XxHash3.HashToUInt64(inner.Slice(0, nameLen));
-            var classHash = isClose ? 0UL : ExtractClassHash(inner.Slice(nameLen));
+            var attrs = isClose ? ReadOnlySpan<byte>.Empty : inner.Slice(nameLen);
+            var classHash = isClose ? 0UL : TagAttributeParser.ExtractClassHash(attrs);
             var tagStart = _position + ltIdx;
             var tagEnd = nameStart + gtIdx + 1;
-            evt = new TagEvent(nameHash, classHash, ByteLength: tagEnd - tagStart, IsClose: isClose);
+
+            ulong idHash = 0UL;
+            ulong roleHash = 0UL;
+            ulong[] classHashes = Array.Empty<ulong>();
+            AttrHashPair[] dataAttrs = Array.Empty<AttrHashPair>();
+            AttrHashPair[] ariaAttrs = Array.Empty<AttrHashPair>();
+            if (!isClose && !attrs.IsEmpty)
+            {
+                TagAttributeParser.ExtractIdentityHashes(
+                    attrs,
+                    out idHash,
+                    out roleHash,
+                    out classHashes,
+                    out dataAttrs,
+                    out ariaAttrs);
+            }
+
+            evt = new TagEvent
+            {
+                TagNameHash = nameHash,
+                ClassHash = classHash,
+                IdHash = idHash,
+                RoleHash = roleHash,
+                ClassHashes = classHashes,
+                DataAttrHashes = dataAttrs,
+                AriaAttrHashes = ariaAttrs,
+                ByteLength = tagEnd - tagStart,
+                IsClose = isClose,
+            };
             _position = tagEnd;
 
             if (!isClose)
@@ -90,38 +120,5 @@ public ref struct MinimalHtmlTokenizer
         var idx = remaining.IndexOf(closeTag);
         if (idx < 0) _position = _input.Length;
         else _position += idx;
-    }
-
-    private static ulong ExtractClassHash(ReadOnlySpan<byte> attrs)
-    {
-        int i = 0;
-        while (i < attrs.Length)
-        {
-            var slice = attrs.Slice(i);
-            var idx = slice.IndexOf("class="u8);
-            if (idx < 0) return 0;
-            int abs = i + idx;
-            if (IsAttrBoundary(attrs, abs))
-            {
-                int valStart = abs + 6;
-                if (valStart >= attrs.Length) return 0;
-                var quote = attrs[valStart];
-                if (quote != (byte)'"' && quote != (byte)'\'') return 0;
-                valStart++;
-                var rest = attrs.Slice(valStart);
-                int valEnd = rest.IndexOf(quote);
-                if (valEnd < 0) return 0;
-                return XxHash3.HashToUInt64(rest.Slice(0, valEnd));
-            }
-            i = abs + 6;
-        }
-        return 0;
-    }
-
-    private static bool IsAttrBoundary(ReadOnlySpan<byte> attrs, int pos)
-    {
-        if (pos == 0) return true;
-        var prev = attrs[pos - 1];
-        return prev == (byte)' ' || prev == (byte)'\t' || prev == (byte)'\n' || prev == (byte)'\r';
     }
 }

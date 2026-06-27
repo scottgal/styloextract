@@ -87,18 +87,13 @@ public sealed class StreamingRefitOrchestratorTests
     {
         // Confirms additive-field default behaviour for pre-alpha.18 persisted
         // templates that won't carry a Version column.
-        var template = new StreamingTemplate
-        {
-            TemplateId = Guid.NewGuid(),
-            Host = "x",
-            PrefixFence = default,
-            ContentStartFence = default,
-            ContentEndFence = default,
-            BailoutBytes = 1,
-            MaxCaptureBytes = 1,
-            WindowSize = 1,
-            MaxEventsWithoutTransition = 1,
-        };
+        var template = TripwireTestHelpers.MakeTemplate(
+            TripwireTestHelpers.TagClaim("header"),
+            TripwireTestHelpers.TagClaim("article"),
+            TripwireTestHelpers.TagClaim("article"),
+            bailoutBytes: 1,
+            maxCaptureBytes: 1)
+            with { Host = "x" };
         template.Version.Should().Be(1);
         await Task.CompletedTask;
     }

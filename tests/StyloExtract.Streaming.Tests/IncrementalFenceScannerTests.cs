@@ -1,4 +1,3 @@
-using System.IO.Hashing;
 using System.Text;
 using FluentAssertions;
 using Xunit;
@@ -53,9 +52,6 @@ public sealed class IncrementalFenceScannerTests
 
         var whole = IncrementalFenceScanner.Create(template);
         whole.Feed(html);
-        // alpha.23: Flush is the canonical end-of-stream call — it latches a
-        // dangling Continue to Bailout so both paths produce the same
-        // terminal verdict.
         var wholeVerdict = whole.Flush();
 
         var chunked = IncrementalFenceScanner.Create(template);
@@ -85,24 +81,14 @@ public sealed class IncrementalFenceScannerTests
         v2.Should().Be(ScanVerdict.Captured);
     }
 
-    private static StreamingTemplate BuildTemplate() => new()
-    {
-        TemplateId = Guid.NewGuid(),
-        Host = "test.local",
-        PrefixFence = TemplateFence.BuildFromEvents(
-            TagEvents("<body>", "<header>", "</header>", "<article>"),
-            requiredDepth: 0),
-        ContentStartFence = TemplateFence.BuildFromEvents(
-            TagEvents("<header>", "</header>", "<article>", "</article>"),
-            requiredDepth: 0),
-        ContentEndFence = TemplateFence.BuildFromEvents(
-            TagEvents("<article>", "</article>", "<footer>", "</footer>"),
-            requiredDepth: 0),
-        BailoutBytes = 100_000,
-        MaxCaptureBytes = 100_000,
-        WindowSize = 4,
-        MaxEventsWithoutTransition = 256,
-    };
+    private static StreamingTemplate BuildTemplate() =>
+        TripwireTestHelpers.MakeTemplate(
+            TripwireTestHelpers.TagClaim("header"),
+            TripwireTestHelpers.TagClaim("article"),
+            TripwireTestHelpers.TagClaim("article"),
+            bailoutBytes: 100_000,
+            maxCaptureBytes: 100_000)
+        with { Host = "test.local" };
 
     private static byte[] BuildLongerPage()
     {
@@ -117,22 +103,5 @@ public sealed class IncrementalFenceScannerTests
         sb.Append("<footer>copyright</footer>");
         sb.Append("</body></html>");
         return Encoding.UTF8.GetBytes(sb.ToString());
-    }
-
-    private static (ulong tagHash, ulong classHash)[] TagEvents(params string[] tags)
-    {
-        var result = new (ulong, ulong)[tags.Length];
-        Span<byte> buf = stackalloc byte[64];
-        for (int i = 0; i < tags.Length; i++)
-        {
-            var t = tags[i];
-            var isClose = t.StartsWith("</", StringComparison.Ordinal);
-            var nameStart = isClose ? 2 : 1;
-            var nameEnd = t.IndexOf('>', nameStart);
-            var name = t.AsSpan(nameStart, nameEnd - nameStart);
-            var n = Encoding.UTF8.GetBytes(name, buf);
-            result[i] = (XxHash3.HashToUInt64(buf[..n]), 0UL);
-        }
-        return result;
     }
 }

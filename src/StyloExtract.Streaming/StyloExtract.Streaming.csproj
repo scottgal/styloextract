@@ -6,12 +6,12 @@
     <IsPackable>true</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <Description>Streaming fence scanner for StyloExtract. Zero-allocation, ref-struct response-stream extractor that uses MinHash-derived structural fences to skip page chrome and capture the content region as bytes flow past. The hot-path skip route for known-stable templates; falls back to the buffered slow path via the existing ITemplateIndex.</Description>
-    <PackageTags>styloextract;streaming;fence;minhash;zero-allocation;ref-struct;pipelines</PackageTags>
+    <Description>Streaming tripwire scanner for StyloExtract. Ref-struct response-stream extractor that fires IdentityClaim tripwires (prefix / content-start / content-end) against the tokenizer's per-event hash data to skip page chrome and capture the content region as bytes flow past. The hot-path skip route for known-stable templates; falls back to the buffered slow path via the existing ITemplateIndex.</Description>
+    <PackageTags>styloextract;streaming;tripwire;identity-claim;ref-struct;pipelines</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
-    <ProjectReference Include="..\StyloExtract.Fingerprint\StyloExtract.Fingerprint.csproj" />
+    <ProjectReference Include="..\StyloExtract.Heuristics\StyloExtract.Heuristics.csproj" />
     <PackageReference Include="System.IO.Hashing" />
     <PackageReference Include="Mostlylucid.Ephemeral.Sqlite.SingleWriter" />
     <PackageReference Include="Microsoft.Data.Sqlite" />

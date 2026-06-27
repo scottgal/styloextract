@@ -12,5 +12,6 @@
   <ItemGroup>
     <PackageReference Include="AngleSharp" />
     <PackageReference Include="Mostlylucid.Ephemeral" />
+    <PackageReference Include="System.IO.Hashing" />
   </ItemGroup>
 </Project>

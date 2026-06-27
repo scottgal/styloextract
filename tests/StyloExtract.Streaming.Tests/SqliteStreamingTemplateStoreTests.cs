@@ -1,5 +1,3 @@
-using System.IO.Hashing;
-using System.Text;
 using FluentAssertions;
 using Xunit;
 
@@ -19,11 +17,11 @@ public sealed class SqliteStreamingTemplateStoreTests
 
         retrieved.Should().NotBeNull();
         retrieved!.TemplateId.Should().Be(template.TemplateId);
-        retrieved.WindowSize.Should().Be(template.WindowSize);
         retrieved.BailoutBytes.Should().Be(template.BailoutBytes);
-        retrieved.PrefixFence.MinHash.Should().Equal(template.PrefixFence.MinHash);
-        retrieved.ContentStartFence.MinHash.Should().Equal(template.ContentStartFence.MinHash);
-        retrieved.ContentEndFence.LshBands.Should().Equal(template.ContentEndFence.LshBands);
+        retrieved.PrefixTripwire.Tag.Should().Be(template.PrefixTripwire.Tag);
+        retrieved.PrefixTripwire.TagHash.Should().Be(template.PrefixTripwire.TagHash);
+        retrieved.ContentStartTripwire.Tag.Should().Be(template.ContentStartTripwire.Tag);
+        retrieved.ContentEndTripwire.Tag.Should().Be(template.ContentEndTripwire.Tag);
     }
 
     [Fact]
@@ -52,9 +50,6 @@ public sealed class SqliteStreamingTemplateStoreTests
     [Fact]
     public async Task Version_chain_retains_prior_versions()
     {
-        // alpha.21: UpsertAsync now appends per (host, version). Both versions
-        // survive; GetByHostAsync returns the latest; GetByHostAtVersionAsync
-        // retrieves any version; ListVersionsByHostAsync enumerates.
         await using var store = new SqliteStreamingTemplateStore("Data Source=:memory:");
         var v1 = BuildTemplate() with { Host = "v.example", Version = 1 };
         var v2 = BuildTemplate() with { Host = "v.example", Version = 2, TemplateId = Guid.NewGuid() };
@@ -112,38 +107,11 @@ public sealed class SqliteStreamingTemplateStoreTests
         (await store.ListVersionsByHostAsync("im.example")).Should().Equal(1, 2);
     }
 
-    private static StreamingTemplate BuildTemplate()
-    {
-        var events = TagEvents("<body>", "<header>", "</header>", "<article>");
-        var fence = TemplateFence.BuildFromEvents(events, requiredDepth: 1);
-        return new StreamingTemplate
-        {
-            TemplateId = Guid.NewGuid(),
-            Host = "",
-            PrefixFence = fence,
-            ContentStartFence = fence,
-            ContentEndFence = fence,
-            BailoutBytes = 262_144,
-            MaxCaptureBytes = 1_048_576,
-            WindowSize = 8,
-            MaxEventsWithoutTransition = 256,
-        };
-    }
-
-    private static (ulong tagHash, ulong classHash)[] TagEvents(params string[] tags)
-    {
-        var result = new (ulong, ulong)[tags.Length];
-        Span<byte> buf = stackalloc byte[64];
-        for (int i = 0; i < tags.Length; i++)
-        {
-            var t = tags[i];
-            var isClose = t.StartsWith("</", StringComparison.Ordinal);
-            var nameStart = isClose ? 2 : 1;
-            var nameEnd = t.IndexOf('>', nameStart);
-            var name = t.AsSpan(nameStart, nameEnd - nameStart);
-            var n = Encoding.UTF8.GetBytes(name, buf);
-            result[i] = (XxHash3.HashToUInt64(buf[..n]), 0UL);
-        }
-        return result;
-    }
+    private static StreamingTemplate BuildTemplate() =>
+        TripwireTestHelpers.MakeTemplate(
+            TripwireTestHelpers.TagClaim("header"),
+            TripwireTestHelpers.TagClaim("article"),
+            TripwireTestHelpers.TagClaim("article"),
+            bailoutBytes: 262_144,
+            maxCaptureBytes: 1_048_576);
 }

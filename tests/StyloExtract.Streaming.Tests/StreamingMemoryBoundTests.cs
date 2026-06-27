@@ -149,35 +149,13 @@ public sealed class StreamingMemoryBoundTests
     private static StreamingTemplate BuildTrivialTemplate()
     {
         // Build any well-formed template — the scanner's per-tick memory bound
-        // is independent of whether the fences match.
-        var prefix = TemplateFence.BuildFromEvents(BuildTagEventsForNames("body", "header", "/header", "article"), requiredDepth: 0);
-        var start = TemplateFence.BuildFromEvents(BuildTagEventsForNames("header", "/header", "article", "section"), requiredDepth: 0);
-        var end = TemplateFence.BuildFromEvents(BuildTagEventsForNames("article", "/article", "footer", "/footer"), requiredDepth: 0);
-        return new StreamingTemplate
-        {
-            TemplateId = Guid.NewGuid(),
-            Host = "synthetic.test",
-            PrefixFence = prefix,
-            ContentStartFence = start,
-            ContentEndFence = end,
-            BailoutBytes = 10_000_000,
-            MaxCaptureBytes = 10_000_000,
-            WindowSize = 8,
-            MaxEventsWithoutTransition = 1_000_000,
-        };
-    }
-
-    private static (ulong tagHash, ulong classHash)[] BuildTagEventsForNames(params string[] names)
-    {
-        var result = new (ulong, ulong)[names.Length];
-        Span<byte> buf = stackalloc byte[64];
-        for (int i = 0; i < names.Length; i++)
-        {
-            var n = names[i];
-            var name = n.StartsWith('/') ? n.AsSpan(1) : n.AsSpan();
-            var len = Encoding.UTF8.GetBytes(name, buf);
-            result[i] = (System.IO.Hashing.XxHash3.HashToUInt64(buf[..len]), 0UL);
-        }
-        return result;
+        // is independent of whether the tripwires match.
+        return TripwireTestHelpers.MakeTemplate(
+            TripwireTestHelpers.TagClaim("header"),
+            TripwireTestHelpers.TagClaim("article"),
+            TripwireTestHelpers.TagClaim("article"),
+            bailoutBytes: 10_000_000,
+            maxCaptureBytes: 10_000_000)
+            with { Host = "synthetic.test" };
     }
 }

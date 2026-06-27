@@ -21,12 +21,17 @@ public sealed class SqliteStreamingTemplateStore : IStreamingTemplateStore, IAsy
     ///   1 = alpha.21 algorithm (Markov bigram shingles, structural-tag filter,
     ///       depth-aware capture). Note: alpha.21 itself shipped without this
     ///       PRAGMA, so existing alpha.21 DBs read as user_version=0 and get
-    ///       dropped on alpha.22 first-open. That's intentional — those rows
-    ///       were sketched before the scanner stabilised on these rules.
-    ///   2 = alpha.22 (this constant introduced). Same algorithm as alpha.21
-    ///       but stamped so future bumps can self-heal cleanly.
+    ///       dropped on alpha.22 first-open.
+    ///   2 = alpha.22 (this constant introduced). Same MinHash-fence algorithm
+    ///       as alpha.21 but stamped so future bumps can self-heal cleanly.
+    ///   3 = alpha.24 (Task 4 of Phase 1). Tripwire scanner — StreamingTemplate
+    ///       now carries three IdentityClaim tripwires instead of three MinHash
+    ///       TemplateFence signatures. The serialised template shape changed
+    ///       outright; alpha.21..23 rows would fail JSON deserialisation and
+    ///       any that slipped through would be unmatchable against the tripwire
+    ///       scanner. Bumping forces a clean drop-and-reinduce on dogfood DBs.
     /// </summary>
-    private const int CurrentStoreVersion = 2;
+    private const int CurrentStoreVersion = 3;
 
     private readonly SqliteSingleWriter _writer;
     private readonly ConcurrentDictionary<Guid, StreamingTemplate> _hot = new();

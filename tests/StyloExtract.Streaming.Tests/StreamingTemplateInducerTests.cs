@@ -13,6 +13,7 @@ public sealed class StreamingTemplateInducerTests
 
         var result = inducer.Induce("plain.example", "this is just plain text with no html"u8);
 
+        // AngleSharp will wrap text in <html><body>, but no header/article/p-cluster.
         result.Should().BeNull();
     }
 
@@ -42,21 +43,22 @@ public sealed class StreamingTemplateInducerTests
     {
         var inducer = new StreamingTemplateInducer();
         var html = Encoding.UTF8.GetBytes(
-            "<body><header>hi</header><nav>n</nav><p>one</p><p>two</p><footer>end</footer></body>");
+            "<body><header>hi</header><nav>n</nav><article><p>one</p><p>two</p></article><footer>end</footer></body>");
 
         var template = inducer.Induce("www.example.com", html);
 
         template.Should().NotBeNull();
         template!.Host.Should().Be("www.example.com");
         template.TemplateId.Should().NotBe(Guid.Empty);
-        template.WindowSize.Should().Be(8);
         template.BailoutBytes.Should().Be(5_000_000);
+        // Tripwire shape: tag-only claim covers the basic case.
+        template.PrefixTripwire.Tag.Should().Be("header");
+        template.ContentStartTripwire.Tag.Should().Be("article");
     }
 
     [Fact]
     public async Task Induced_template_drives_subsequent_scan_to_Captured_on_same_bytes()
     {
-        // Closes the dogfood loop in a single test: induce → upsert → scan.
         var inducer = new StreamingTemplateInducer();
         var html = Encoding.UTF8.GetBytes(
             "<html><body>" +
@@ -90,14 +92,13 @@ public sealed class StreamingTemplateInducerTests
     {
         var inducer = new StreamingTemplateInducer();
         var html = Encoding.UTF8.GetBytes(
-            "<body><header>x</header><p>a</p><p>b</p><footer></footer></body>");
+            "<body><header>x</header><article><p>a</p><p>b</p></article><footer></footer></body>");
 
         var summary = inducer.Describe(html);
 
         summary.Should().NotBeNull();
-        summary!.Value.PrefixMarker.Should().Be("header-open→close");
-        summary.Value.ContentStartMarker.Should().Be("p-p-cluster");
-        summary.Value.ContentEndMarker.Should().Contain("footer");
+        summary!.Value.PrefixMarker.Should().StartWith("header");
+        summary.Value.ContentStartMarker.Should().StartWith("article");
     }
 
     [Fact]
@@ -105,23 +106,17 @@ public sealed class StreamingTemplateInducerTests
     {
         var inducer = new StreamingTemplateInducer();
         var html = Encoding.UTF8.GetBytes(
-            "<body><nav><a>x</a></nav><p>a</p><p>b</p><footer></footer></body>");
+            "<body><nav><a>x</a></nav><article><p>a</p><p>b</p></article><footer></footer></body>");
 
         var summary = inducer.Describe(html);
 
         summary.Should().NotBeNull();
-        summary!.Value.PrefixMarker.Should().Be("nav-open→close");
+        summary!.Value.PrefixMarker.Should().StartWith("nav");
     }
 
     [Fact]
     public async Task Induces_a_template_from_the_real_mostlylucid_home_fixture()
     {
-        // Closes the dogfood loop on real bytes: a captured response from
-        // www.mostlylucid.net (no <nav>/<footer>, sticky header + many
-        // <p> paragraph blocks + </body>). Inducer must produce a non-null
-        // template; the produced template must drive ScanByHost to a real
-        // verdict (Captured or Bailout) — NoTemplate would mean the induction
-        // never happened.
         var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "mostlylucid-home.html");
         File.Exists(path).Should().BeTrue("mostlylucid fixture should be copied to output");
         var html = File.ReadAllBytes(path);
@@ -140,24 +135,6 @@ public sealed class StreamingTemplateInducerTests
         var selector = new StreamingPathSelector(store);
 
         var verdict = selector.ScanByHost("www.mostlylucid.net", html);
-        // Either Captured or Bailout proves the scanner ran against a host-keyed
-        // induced template on the real bytes. NoTemplate would mean the lookup
-        // didn't hit the upserted entry. Continue is also acceptable (the bench
-        // template falls through naturally on home pages with no </header> hit
-        // mid-stream — what matters is that NoTemplate is not the answer).
         verdict.Should().NotBe(ScanVerdict.NoTemplate);
-    }
-
-    [Fact]
-    public void Falls_back_to_body_close_when_no_footer_or_main_close()
-    {
-        var inducer = new StreamingTemplateInducer();
-        var html = Encoding.UTF8.GetBytes(
-            "<body><header>x</header><p>a</p><p>b</p><p>c</p><p>d</p></body>");
-
-        var summary = inducer.Describe(html);
-
-        summary.Should().NotBeNull();
-        summary!.Value.ContentEndMarker.Should().Be("body-close");
     }
 }
