@@ -79,6 +79,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StyloExtract.Streaming.Test
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StyloExtract.Streaming.Benchmarks", "bench\StyloExtract.Streaming.Benchmarks\StyloExtract.Streaming.Benchmarks.csproj", "{613B0A1A-2EF5-4857-A756-02877EE32AFE}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StyloExtract.Abstractions.Tests", "tests\StyloExtract.Abstractions.Tests\StyloExtract.Abstractions.Tests.csproj", "{B92C0C9D-ADD5-46DC-90F5-BA11E21C792A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -497,6 +499,18 @@ Global
 		{613B0A1A-2EF5-4857-A756-02877EE32AFE}.Release|x64.Build.0 = Release|Any CPU
 		{613B0A1A-2EF5-4857-A756-02877EE32AFE}.Release|x86.ActiveCfg = Release|Any CPU
 		{613B0A1A-2EF5-4857-A756-02877EE32AFE}.Release|x86.Build.0 = Release|Any CPU
+		{B92C0C9D-ADD5-46DC-90F5-BA11E21C792A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B92C0C9D-ADD5-46DC-90F5-BA11E21C792A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B92C0C9D-ADD5-46DC-90F5-BA11E21C792A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B92C0C9D-ADD5-46DC-90F5-BA11E21C792A}.Debug|x64.Build.0 = Debug|Any CPU
+		{B92C0C9D-ADD5-46DC-90F5-BA11E21C792A}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B92C0C9D-ADD5-46DC-90F5-BA11E21C792A}.Debug|x86.Build.0 = Debug|Any CPU
+		{B92C0C9D-ADD5-46DC-90F5-BA11E21C792A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B92C0C9D-ADD5-46DC-90F5-BA11E21C792A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B92C0C9D-ADD5-46DC-90F5-BA11E21C792A}.Release|x64.ActiveCfg = Release|Any CPU
+		{B92C0C9D-ADD5-46DC-90F5-BA11E21C792A}.Release|x64.Build.0 = Release|Any CPU
+		{B92C0C9D-ADD5-46DC-90F5-BA11E21C792A}.Release|x86.ActiveCfg = Release|Any CPU
+		{B92C0C9D-ADD5-46DC-90F5-BA11E21C792A}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -536,5 +550,6 @@ Global
 		{BC34B6D6-1C31-4DC6-A0D4-DC96BE01DEF8} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{51026692-BD9B-4E16-9BA2-44DCB0E15A6D} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{613B0A1A-2EF5-4857-A756-02877EE32AFE} = {760AB15A-8938-8D9B-BEDE-5CE1484B84C3}
+		{B92C0C9D-ADD5-46DC-90F5-BA11E21C792A} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal
