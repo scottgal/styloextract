@@ -1,5 +1,4 @@
 using System.IO.Hashing;
-using System.Text.Json.Serialization;
 using StyloExtract.Fingerprint;
 
 namespace StyloExtract.Streaming;
@@ -10,28 +9,16 @@ namespace StyloExtract.Streaming;
 ///
 /// alpha.21 removed the per-fence <c>TagAllowlistBloom</c> field; tag
 /// filtering now happens at the scanner level via the static
-/// <see cref="StructuralTagAllowlist"/>. The <see cref="TagAllowlistBloom"/>
-/// property is preserved as a JSON-deserialiser sink so persisted templates
-/// from alpha.16–alpha.20 round-trip cleanly (the value is read and dropped).
+/// <see cref="StructuralTagAllowlist"/>. Persisted templates from
+/// alpha.16–alpha.20 still load cleanly because <c>System.Text.Json</c>
+/// silently discards unknown JSON properties on deserialise — covered by
+/// <c>SqliteStreamingTemplateStoreMigrationTests</c>.
 /// </summary>
 public readonly record struct TemplateFence(
     uint[] MinHash,
     ulong[] LshBands,
     int RequiredDepth)
 {
-    /// <summary>
-    /// Back-compat shim. alpha.16–alpha.20 serialised a per-fence Bloom
-    /// filter here; alpha.21 removed it. JSON deserialisation still binds
-    /// this property (so old persisted templates load) but the value is
-    /// always read as 0 and ignored at scan time.
-    /// </summary>
-    [JsonInclude]
-    public ulong TagAllowlistBloom
-    {
-        get => 0UL;
-        init { /* swallow legacy value */ }
-    }
-
     public static TemplateFence BuildFromEvents(
         ReadOnlySpan<(ulong tagHash, ulong classHash)> events,
         int requiredDepth)
