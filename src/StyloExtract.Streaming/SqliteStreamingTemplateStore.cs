@@ -9,7 +9,8 @@ public sealed class SqliteStreamingTemplateStore : IStreamingTemplateStore, IAsy
 {
     private readonly SqliteSingleWriter _writer;
     private readonly ConcurrentDictionary<Guid, StreamingTemplate> _hot = new();
-    private readonly ConcurrentDictionary<string, Guid> _hostIndex =
+    // alpha.21: per-host latest cache. Lookups for older versions go to the DB.
+    private readonly ConcurrentDictionary<string, StreamingTemplate> _hotByHostLatest =
         new(StringComparer.OrdinalIgnoreCase);
 
     public SqliteStreamingTemplateStore(string connectionString)
@@ -47,8 +48,6 @@ public sealed class SqliteStreamingTemplateStore : IStreamingTemplateStore, IAsy
         var template = JsonSerializer.Deserialize(row.Item1, StreamingJsonContext.Default.StreamingTemplate);
         if (template is null) return null;
         _hot[templateId] = template;
-        if (!string.IsNullOrEmpty(template.Host))
-            _hostIndex[template.Host] = templateId;
         return template;
     }
 
@@ -60,46 +59,38 @@ public sealed class SqliteStreamingTemplateStore : IStreamingTemplateStore, IAsy
         var blob = JsonSerializer.SerializeToUtf8Bytes(template, StreamingJsonContext.Default.StreamingTemplate);
         var idBytes = template.TemplateId.ToByteArray();
         var host = template.Host ?? "";
+        var version = template.Version;
         var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
         await _writer.ExecuteInTransactionAsync(async (conn, tx, ct) =>
         {
-            // If a different template already exists for this host, drop it
-            // first — one template per host (latest wins).
-            if (!string.IsNullOrEmpty(host))
-            {
-                await using var del = conn.CreateCommand();
-                del.Transaction = tx;
-                del.CommandText =
-                    "DELETE FROM streaming_templates WHERE host = @host AND template_id != @id";
-                del.Parameters.AddWithValue("@host", host);
-                del.Parameters.AddWithValue("@id", idBytes);
-                await del.ExecuteNonQueryAsync(ct);
-            }
-
+            // INSERT OR REPLACE on (host, version) — append-only per version.
             await using var cmd = conn.CreateCommand();
             cmd.Transaction = tx;
             cmd.CommandText =
-                "INSERT OR REPLACE INTO streaming_templates(template_id, template_blob, host, created_at) " +
-                "VALUES (@id, @blob, @host, @now)";
+                "INSERT OR REPLACE INTO streaming_templates(host, version, template_id, template_blob, created_at) " +
+                "VALUES (@host, @version, @id, @blob, @now)";
+            cmd.Parameters.AddWithValue("@host", host);
+            cmd.Parameters.AddWithValue("@version", version);
             cmd.Parameters.AddWithValue("@id", idBytes);
             cmd.Parameters.AddWithValue("@blob", blob);
-            cmd.Parameters.AddWithValue("@host", host);
             cmd.Parameters.AddWithValue("@now", nowMs);
             await cmd.ExecuteNonQueryAsync(ct);
         }, cancellationToken).ConfigureAwait(false);
 
         _hot[template.TemplateId] = template;
         if (!string.IsNullOrEmpty(host))
-            _hostIndex[host] = template.TemplateId;
+        {
+            // Update latest-by-host cache only if this version is newest.
+            _hotByHostLatest.AddOrUpdate(host, template,
+                (_, existing) => existing.Version > version ? existing : template);
+        }
     }
 
     public StreamingTemplate? TryGetHotByHost(string host)
     {
         if (string.IsNullOrEmpty(host)) return null;
-        return _hostIndex.TryGetValue(host, out var id) && _hot.TryGetValue(id, out var t)
-            ? t
-            : null;
+        return _hotByHostLatest.TryGetValue(host, out var t) ? t : null;
     }
 
     public async ValueTask<StreamingTemplate?> GetByHostAsync(string host, CancellationToken cancellationToken = default)
@@ -114,7 +105,7 @@ public sealed class SqliteStreamingTemplateStore : IStreamingTemplateStore, IAsy
             await using var cmd = conn.CreateCommand();
             cmd.CommandText =
                 "SELECT template_blob FROM streaming_templates WHERE host = @host " +
-                "ORDER BY created_at DESC LIMIT 1";
+                "ORDER BY version DESC, created_at DESC LIMIT 1";
             cmd.Parameters.AddWithValue("@host", host);
             return (byte[]?)await cmd.ExecuteScalarAsync(cancellationToken);
         }, cancellationToken).ConfigureAwait(false);
@@ -123,8 +114,54 @@ public sealed class SqliteStreamingTemplateStore : IStreamingTemplateStore, IAsy
         var template = JsonSerializer.Deserialize(blob, StreamingJsonContext.Default.StreamingTemplate);
         if (template is null) return null;
         _hot[template.TemplateId] = template;
-        _hostIndex[host] = template.TemplateId;
+        _hotByHostLatest[host] = template;
         return template;
+    }
+
+    public async ValueTask<StreamingTemplate?> GetByHostAtVersionAsync(
+        string host,
+        int version,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(host)) return null;
+
+        var blob = await _writer.QueryAsync(async conn =>
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText =
+                "SELECT template_blob FROM streaming_templates WHERE host = @host AND version = @version LIMIT 1";
+            cmd.Parameters.AddWithValue("@host", host);
+            cmd.Parameters.AddWithValue("@version", version);
+            return (byte[]?)await cmd.ExecuteScalarAsync(cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
+
+        if (blob is null) return null;
+        var template = JsonSerializer.Deserialize(blob, StreamingJsonContext.Default.StreamingTemplate);
+        if (template is null) return null;
+        _hot[template.TemplateId] = template;
+        return template;
+    }
+
+    public async ValueTask<IReadOnlyList<int>> ListVersionsByHostAsync(
+        string host,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(host)) return Array.Empty<int>();
+
+        var versions = await _writer.QueryAsync(async conn =>
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText =
+                "SELECT version FROM streaming_templates WHERE host = @host ORDER BY version ASC";
+            cmd.Parameters.AddWithValue("@host", host);
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            var list = new List<int>();
+            while (await reader.ReadAsync(cancellationToken))
+                list.Add(reader.GetInt32(0));
+            return list;
+        }, cancellationToken).ConfigureAwait(false);
+
+        return versions;
     }
 
     public async ValueTask DisposeAsync()
@@ -134,50 +171,129 @@ public sealed class SqliteStreamingTemplateStore : IStreamingTemplateStore, IAsy
 
     private static void EnsureSchema(SqliteConnection conn)
     {
-        // Create the base table if needed (pre-alpha.17 shape — no host column).
-        using (var create = conn.CreateCommand())
-        {
-            create.CommandText = """
-                CREATE TABLE IF NOT EXISTS streaming_templates (
-                    template_id BLOB PRIMARY KEY NOT NULL,
-                    template_blob BLOB NOT NULL,
-                    created_at INTEGER NOT NULL
-                );
-                """;
-            create.ExecuteNonQuery();
-        }
-
-        // alpha.17 migration: add the host column if it doesn't exist yet.
-        // PRAGMA table_info returns rows for each column; check for 'host'.
-        var hasHost = false;
+        // alpha.21 schema migration: composite PK on (host, version).
+        // Detect existing shape by inspecting PRIMARY KEY constraints.
+        // The pre-alpha.21 schema had `template_id BLOB PRIMARY KEY`.
+        var needsMigration = false;
+        var hasTable = false;
         using (var info = conn.CreateCommand())
         {
             info.CommandText = "PRAGMA table_info(streaming_templates);";
             using var reader = info.ExecuteReader();
             while (reader.Read())
             {
-                // column 1 is "name"
+                hasTable = true;
+                // column 1 = name, column 5 = pk position (0 = not PK)
                 var name = reader.GetString(1);
-                if (string.Equals(name, "host", StringComparison.OrdinalIgnoreCase))
-                {
-                    hasHost = true;
-                    break;
-                }
+                var pkOrdinal = reader.GetInt32(5);
+                if (name.Equals("template_id", StringComparison.OrdinalIgnoreCase) && pkOrdinal > 0)
+                    needsMigration = true;
             }
         }
-        if (!hasHost)
+
+        if (!hasTable)
         {
-            using var alter = conn.CreateCommand();
-            alter.CommandText =
-                "ALTER TABLE streaming_templates ADD COLUMN host TEXT NOT NULL DEFAULT '';";
-            alter.ExecuteNonQuery();
+            // Fresh DB — create the new shape directly.
+            using var create = conn.CreateCommand();
+            create.CommandText = """
+                CREATE TABLE streaming_templates (
+                    host TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    template_id BLOB NOT NULL,
+                    template_blob BLOB NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    PRIMARY KEY (host, version)
+                );
+                CREATE INDEX idx_streaming_templates_host ON streaming_templates(host);
+                CREATE INDEX idx_streaming_templates_template_id ON streaming_templates(template_id);
+                """;
+            create.ExecuteNonQuery();
+            return;
         }
 
+        if (needsMigration)
+        {
+            // Migrate pre-alpha.21 rows into the new shape. Existing rows
+            // have NULL/'' version → assigned version 1. Ensure host column
+            // exists first (alpha.17 added it; pre-alpha.17 didn't have it).
+            var hasHost = false;
+            using (var info = conn.CreateCommand())
+            {
+                info.CommandText = "PRAGMA table_info(streaming_templates);";
+                using var reader = info.ExecuteReader();
+                while (reader.Read())
+                {
+                    if (reader.GetString(1).Equals("host", StringComparison.OrdinalIgnoreCase))
+                    {
+                        hasHost = true;
+                        break;
+                    }
+                }
+            }
+            if (!hasHost)
+            {
+                using var alterHost = conn.CreateCommand();
+                alterHost.CommandText = "ALTER TABLE streaming_templates ADD COLUMN host TEXT NOT NULL DEFAULT '';";
+                alterHost.ExecuteNonQuery();
+            }
+
+            using (var tx = conn.BeginTransaction())
+            {
+                // Rename old table, create new, copy.
+                using (var rename = conn.CreateCommand())
+                {
+                    rename.Transaction = tx;
+                    rename.CommandText = "ALTER TABLE streaming_templates RENAME TO streaming_templates_old;";
+                    rename.ExecuteNonQuery();
+                }
+                using (var create = conn.CreateCommand())
+                {
+                    create.Transaction = tx;
+                    create.CommandText = """
+                        CREATE TABLE streaming_templates (
+                            host TEXT NOT NULL,
+                            version INTEGER NOT NULL,
+                            template_id BLOB NOT NULL,
+                            template_blob BLOB NOT NULL,
+                            created_at INTEGER NOT NULL,
+                            PRIMARY KEY (host, version)
+                        );
+                        """;
+                    create.ExecuteNonQuery();
+                }
+                using (var copy = conn.CreateCommand())
+                {
+                    copy.Transaction = tx;
+                    copy.CommandText = """
+                        INSERT OR IGNORE INTO streaming_templates(host, version, template_id, template_blob, created_at)
+                        SELECT host, 1, template_id, template_blob, created_at FROM streaming_templates_old;
+                        """;
+                    copy.ExecuteNonQuery();
+                }
+                using (var drop = conn.CreateCommand())
+                {
+                    drop.Transaction = tx;
+                    drop.CommandText = "DROP TABLE streaming_templates_old;";
+                    drop.ExecuteNonQuery();
+                }
+                tx.Commit();
+            }
+            using (var idx = conn.CreateCommand())
+            {
+                idx.CommandText =
+                    "CREATE INDEX IF NOT EXISTS idx_streaming_templates_host ON streaming_templates(host); " +
+                    "CREATE INDEX IF NOT EXISTS idx_streaming_templates_template_id ON streaming_templates(template_id);";
+                idx.ExecuteNonQuery();
+            }
+            return;
+        }
+
+        // Existing alpha.21+ shape; just make sure helper indices exist.
         using (var idx = conn.CreateCommand())
         {
             idx.CommandText =
-                "CREATE INDEX IF NOT EXISTS idx_streaming_templates_host " +
-                "ON streaming_templates(host);";
+                "CREATE INDEX IF NOT EXISTS idx_streaming_templates_host ON streaming_templates(host); " +
+                "CREATE INDEX IF NOT EXISTS idx_streaming_templates_template_id ON streaming_templates(template_id);";
             idx.ExecuteNonQuery();
         }
     }

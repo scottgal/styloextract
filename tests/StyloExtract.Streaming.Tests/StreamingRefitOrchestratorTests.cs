@@ -94,7 +94,6 @@ public sealed class StreamingRefitOrchestratorTests
             PrefixFence = default,
             ContentStartFence = default,
             ContentEndFence = default,
-            MinContentDepth = 0,
             BailoutBytes = 1,
             MaxCaptureBytes = 1,
             WindowSize = 1,

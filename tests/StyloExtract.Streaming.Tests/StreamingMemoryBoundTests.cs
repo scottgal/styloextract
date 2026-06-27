@@ -37,11 +37,13 @@ public sealed class StreamingMemoryBoundTests
         tok.BytesConsumed.Should().BeGreaterThan(4 * 1024 * 1024,
             "we fed multi-MiB; consumed should reflect that");
 
-        // Peak in-flight must stay bounded by O(longest tag) + chunk slack.
-        // 16 KiB headroom is generous — the longest tag in the fixture is well
-        // under 256 B and a chunk is 4 KiB, so the realistic ceiling is ~8 KiB.
-        tok.PeakBufferedBytes.Should().BeLessThan(16 * 1024,
-            $"sliding-window contract violated: peak buffered = {tok.PeakBufferedBytes:N0} B " +
+        // alpha.21 contract: peak in-flight is O(longest partial tag at a
+        // chunk boundary) — NOT chunk-size. The longest tag in the fixture
+        // is well under 256 B; realistic peak is low hundreds of bytes,
+        // often zero when boundaries land in text. 4 KiB is the MaxBufferSize
+        // cap — peak must stay strictly below it.
+        tok.PeakBufferedBytes.Should().BeLessThan(IncrementalHtmlTokenizer.MaxBufferSize,
+            $"alpha.21 sliding-window contract violated: peak buffered = {tok.PeakBufferedBytes:N0} B " +
             $"after consuming {tok.BytesConsumed:N0} B");
     }
 
@@ -72,7 +74,7 @@ public sealed class StreamingMemoryBoundTests
             offset += take;
         }
 
-        maxResidual.Should().BeLessThan(16 * 1024,
+        maxResidual.Should().BeLessThan(IncrementalHtmlTokenizer.MaxBufferSize,
             $"residual between fed and consumed should bound to O(longest tag); got {maxResidual:N0} B");
     }
 
@@ -102,7 +104,7 @@ public sealed class StreamingMemoryBoundTests
         scanner.Flush();
 
         scanner.BytesConsumed.Should().BeGreaterThan(0);
-        scanner.PeakBufferedBytes.Should().BeLessThan(16 * 1024,
+        scanner.PeakBufferedBytes.Should().BeLessThan(IncrementalHtmlTokenizer.MaxBufferSize,
             $"scanner held {scanner.PeakBufferedBytes:N0} B vs response {html.Length:N0} B — sliding-window broken");
     }
 
@@ -158,7 +160,6 @@ public sealed class StreamingMemoryBoundTests
             PrefixFence = prefix,
             ContentStartFence = start,
             ContentEndFence = end,
-            MinContentDepth = 0,
             BailoutBytes = 10_000_000,
             MaxCaptureBytes = 10_000_000,
             WindowSize = 8,

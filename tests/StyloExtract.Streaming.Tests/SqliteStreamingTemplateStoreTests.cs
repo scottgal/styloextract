@@ -21,8 +21,7 @@ public sealed class SqliteStreamingTemplateStoreTests
         retrieved!.TemplateId.Should().Be(template.TemplateId);
         retrieved.WindowSize.Should().Be(template.WindowSize);
         retrieved.BailoutBytes.Should().Be(template.BailoutBytes);
-        retrieved.MinContentDepth.Should().Be(template.MinContentDepth);
-        retrieved.PrefixFence.TagAllowlistBloom.Should().Be(template.PrefixFence.TagAllowlistBloom);
+        retrieved.PrefixFence.MinHash.Should().Equal(template.PrefixFence.MinHash);
         retrieved.ContentStartFence.MinHash.Should().Equal(template.ContentStartFence.MinHash);
         retrieved.ContentEndFence.LshBands.Should().Equal(template.ContentEndFence.LshBands);
     }
@@ -50,6 +49,69 @@ public sealed class SqliteStreamingTemplateStoreTests
         hot!.TemplateId.Should().Be(template.TemplateId);
     }
 
+    [Fact]
+    public async Task Version_chain_retains_prior_versions()
+    {
+        // alpha.21: UpsertAsync now appends per (host, version). Both versions
+        // survive; GetByHostAsync returns the latest; GetByHostAtVersionAsync
+        // retrieves any version; ListVersionsByHostAsync enumerates.
+        await using var store = new SqliteStreamingTemplateStore("Data Source=:memory:");
+        var v1 = BuildTemplate() with { Host = "v.example", Version = 1 };
+        var v2 = BuildTemplate() with { Host = "v.example", Version = 2, TemplateId = Guid.NewGuid() };
+
+        await store.UpsertAsync(v1);
+        await store.UpsertAsync(v2);
+
+        (await store.GetByHostAsync("v.example"))!.Version.Should().Be(2);
+        (await store.GetByHostAtVersionAsync("v.example", 1))!.TemplateId.Should().Be(v1.TemplateId);
+        (await store.GetByHostAtVersionAsync("v.example", 2))!.TemplateId.Should().Be(v2.TemplateId);
+        var versions = await store.ListVersionsByHostAsync("v.example");
+        versions.Should().Equal(1, 2);
+    }
+
+    [Fact]
+    public async Task Version_chain_survives_reopen()
+    {
+        var tempDb = Path.Combine(Path.GetTempPath(), $"sx-streaming-{Guid.NewGuid():N}.db");
+        try
+        {
+            var v1 = BuildTemplate() with { Host = "reopen.example", Version = 1 };
+            var v2 = BuildTemplate() with { Host = "reopen.example", Version = 2, TemplateId = Guid.NewGuid() };
+            await using (var store = new SqliteStreamingTemplateStore($"Data Source={tempDb}"))
+            {
+                await store.UpsertAsync(v1);
+                await store.UpsertAsync(v2);
+            }
+            await using (var reopen = new SqliteStreamingTemplateStore($"Data Source={tempDb}"))
+            {
+                (await reopen.GetByHostAsync("reopen.example"))!.Version.Should().Be(2);
+                var versions = await reopen.ListVersionsByHostAsync("reopen.example");
+                versions.Should().Equal(1, 2);
+            }
+        }
+        finally
+        {
+            try { File.Delete(tempDb); } catch { /* best-effort */ }
+            try { File.Delete(tempDb + "-wal"); } catch { /* best-effort */ }
+            try { File.Delete(tempDb + "-shm"); } catch { /* best-effort */ }
+        }
+    }
+
+    [Fact]
+    public async Task InMemory_store_version_chain_works()
+    {
+        var store = new InMemoryStreamingTemplateStore();
+        var v1 = BuildTemplate() with { Host = "im.example", Version = 1 };
+        var v2 = BuildTemplate() with { Host = "im.example", Version = 2, TemplateId = Guid.NewGuid() };
+
+        await store.UpsertAsync(v1);
+        await store.UpsertAsync(v2);
+
+        (await store.GetByHostAsync("im.example"))!.Version.Should().Be(2);
+        (await store.GetByHostAtVersionAsync("im.example", 1))!.TemplateId.Should().Be(v1.TemplateId);
+        (await store.ListVersionsByHostAsync("im.example")).Should().Equal(1, 2);
+    }
+
     private static StreamingTemplate BuildTemplate()
     {
         var events = TagEvents("<body>", "<header>", "</header>", "<article>");
@@ -61,7 +123,6 @@ public sealed class SqliteStreamingTemplateStoreTests
             PrefixFence = fence,
             ContentStartFence = fence,
             ContentEndFence = fence,
-            MinContentDepth = 3,
             BailoutBytes = 262_144,
             MaxCaptureBytes = 1_048_576,
             WindowSize = 8,

@@ -16,7 +16,17 @@ Cross-references to the release-notes entries that introduced each piece:
 [alpha.16](../RELEASE_NOTES.txt) (package + scanner),
 [alpha.17](../RELEASE_NOTES.txt) (host-keyed templates + auto-induction),
 [alpha.18](../RELEASE_NOTES.txt) (incremental tokenizer + refit/versioning),
-[alpha.19](../RELEASE_NOTES.txt) (true sliding-window memory contract).
+[alpha.19](../RELEASE_NOTES.txt) (true sliding-window memory contract),
+[alpha.21](../RELEASE_NOTES.txt) (partial-tag-only buffer, Markov shingles,
+structural-tag filter, depth-aware capture, shared Tick, version chain).
+
+**Matcher algorithm.** This is MinHash with LSH bands + a structural-tag
+filter, NOT an anchor-walk over the DOM. The scanner holds a sliding
+window of the most recent structural-tag events, recomputes a 128-slot
+MinHash signature each accepted push, hashes that signature into 16 LSH
+bands of 8 rows each, and matches a band-collision against any of the
+template's three fences. There is no rooted "anchor → walk children"
+traversal; the scan is byte-stream-position based.
 
 ---
 
@@ -32,22 +42,20 @@ on most sites aren't worth extracting, and the ones that aren't worth
 extracting are usually the largest.
 
 Streaming gives you that verdict from the bytes themselves, as they
-arrive. Concrete numbers from the lucidview FULL `--shot` smoke against
-`https://www.mostlylucid.net`:
+arrive. alpha.21 tightened the buffer contract: `PeakBufferedBytes` now
+measures ONLY the longest single tag that straddles a chunk boundary —
+typically **low-hundreds-of-bytes, often zero**, regardless of chunk
+size or response size. Measured against a synthetic 200 KB page fed in
+16 KB chunks: peak = **0 B** (no boundary landed mid-tag). Fed in 1 KB
+chunks: peak = **19 B**. The hard cap is 4 KB
+(`IncrementalHtmlTokenizer.MaxBufferSize`), repositioned as a safety
+stop — under correct input the buffer's residency is bounded by
+`O(longest tag)`, not `O(chunk size)`. Pinned by
+[`StreamingMemoryBoundTests`](../tests/StyloExtract.Streaming.Tests/StreamingMemoryBoundTests.cs).
 
-```
-fetch Http+Captured+peak16473B/199506B · 227ms
-```
-
-The scanner reached a `Captured` verdict while holding **16,473 bytes**
-of in-flight buffer against a **199,506-byte** response — roughly 8% of
-the response was ever resident. The 16 KiB headroom is bounded by the
-HttpClient chunk size, not by the response size; a 5 MiB response would
-hold the same ~16 KiB peak (regression-pinned by
-[`StreamingMemoryBoundTests`](../tests/StyloExtract.Streaming.Tests/StreamingMemoryBoundTests.cs)).
-
-So: 8% memory footprint, sub-millisecond per-tag verdict, no DOM, no
-allocations on the hot path once the template is warm.
+So: low-hundreds-of-bytes memory footprint against arbitrarily large
+responses, sub-millisecond per-tag verdict, no DOM, no allocations on
+the hot path once the template is warm.
 
 ---
 
@@ -86,8 +94,9 @@ Six pieces, each with one job:
 The persisted record:
 
 - **`StreamingTemplate`** — `{ TemplateId, Host, PrefixFence,
-  ContentStartFence, ContentEndFence, MinContentDepth, BailoutBytes,
-  MaxCaptureBytes, WindowSize, MaxEventsWithoutTransition, Version }`.
+  ContentStartFence, ContentEndFence, BailoutBytes, MaxCaptureBytes,
+  WindowSize, MaxEventsWithoutTransition, Version }`. alpha.21 removed
+  the unused `MinContentDepth` field.
 
 The first-pass auto-inducer:
 
@@ -227,17 +236,18 @@ services.AddSingleton<StreamingRefitOrchestrator>();
 
 ## 4. Bounded memory — the headline property
 
-The alpha.19 refactor closed the only "bounded but big" gap in the
-streaming pipeline. The contract now:
+The alpha.21 refactor tightened the buffer contract further still.
+The contract now:
 
-- **Byte buffer.** Only partial-tag bytes are retained. The moment
-  `IncrementalHtmlTokenizer.TryReadTag` emits a `TagEvent`, the bytes
-  that produced it are dropped (compact-on-emit). The hard cap on the
-  internal buffer is **64 KiB** (`IncrementalHtmlTokenizer.MaxBufferSize`),
-  positioned as a safety stop — under correct input the buffer's
-  valid-byte count post-emit is `O(longest tag)`, so the cap should
-  never fire. When it does, `Feed` throws `InvalidOperationException`
-  rather than silently dropping bytes.
+- **Byte buffer.** Only the partial-tag bytes that straddle a chunk
+  boundary are retained between `Feed` calls. Each chunk is parsed
+  inline; complete-tag bytes are dropped immediately and the chunk
+  span is never copied wholesale into the buffer. The hard cap is
+  **4 KiB** (`IncrementalHtmlTokenizer.MaxBufferSize`) — under correct
+  input the buffer's residency is `O(longest tag)` (typically &lt;500 B,
+  often zero when chunk boundaries land in text). The cap is a safety
+  stop; if a single tag is genuinely &gt; 4 KiB, `Feed` throws
+  `InvalidOperationException` rather than silently dropping bytes.
 - **Event window.** Fixed-size sliding ring of the last `WindowSize`
   events (default 8). Push new, pop oldest. No growth.
 - **MinHash signature.** Fixed at `RollingSketch.SignatureSize`
@@ -253,34 +263,34 @@ scan held bounded memory.
 The regression test that pins this:
 [`StreamingMemoryBoundTests`](../tests/StyloExtract.Streaming.Tests/StreamingMemoryBoundTests.cs)
 feeds **5 MiB** of synthetic HTML in 4 KiB chunks and asserts
-`PeakBufferedBytes < 16 KiB`. That's a 320× consumed-vs-resident ratio,
-sustained.
+`PeakBufferedBytes < MaxBufferSize` (4 KiB). In practice the measured
+value is in the low hundreds of bytes.
 
-### Honest framing — bounded, not "tiny-constant"
+### Honest framing — bounded by longest partial tag
 
 Two things to be straight about:
 
-1. **Bounded by HttpClient chunk size, not "hundreds of bytes."**
-   In production, the 4 KiB lower bound in the synthetic test
-   corresponds to `HttpResponseStream`'s natural chunk size; real
-   responses give you 8–16 KiB chunks, which is exactly what the
-   lucidview smoke (`peak16473B`) shows. "Bounded" here means
-   `O(chunk + longest tag)`, not `O(1)`.
+1. **Bounded by longest partial tag at a chunk boundary, not chunk size.**
+   alpha.21 changed the parse loop so chunks are scanned in-place
+   (no wholesale copy into the tokenizer's buffer). Only the bytes of
+   a tag that's mid-parse when the chunk runs out get retained.
+   Measured peaks: 0 B for 16 KB chunks over a 200 KB body; 19 B for
+   1 KB chunks. "Bounded" here is `O(longest tag)`, not
+   `O(chunk + longest tag)` as in alpha.19.
 2. **MinHash sketch isn't reversibly rollable.** Min-pool MinHash
    doesn't support subtraction — when an event leaves the window, its
    contribution to `min(...)` can't be removed in O(1). The sketch
    therefore **rebuilds** from the current `WindowSize` events after
    each accepted push (`O(WindowSize × SignatureSize)` per accepted
-   tag, gated by the per-template Bloom allowlist so the vast majority
-   of inbound tags skip the recompute entirely). The bounded-buffer
-   property — the user's actual concern — is satisfied by the
-   tokenizer; the sketch's per-tick recompute is the price MinHash
-   charges for the LSH-band locality the matcher relies on.
+   tag, gated by the static `StructuralTagAllowlist` so the vast
+   majority of inbound tags skip the recompute entirely). The
+   bounded-buffer property — the user's actual concern — is satisfied
+   by the tokenizer; the sketch's per-tick recompute is the price
+   MinHash charges for the LSH-band locality the matcher relies on.
 
-The framing the team uses internally: *bounded-not-tiny*. The streaming
-gateway holds tens of kilobytes against arbitrarily large responses;
-calling it "constant memory" would be technically wrong and would
-mislead the operator when they see `peak16473B` in their telemetry.
+The streaming gateway holds at most a few hundred bytes against
+arbitrarily large responses; in many realistic chunk-alignments the
+buffer is literally empty between `Feed` calls.
 
 ---
 
@@ -339,35 +349,51 @@ verdict decides whether to fan-out to the extractor).
 
 ---
 
-## 7. Limitations and follow-ups
+## 7. Version chain
+
+alpha.21 made the streaming-template store version-chain-aware. Each
+host can hold multiple template versions (1, 2, 3, ...). `UpsertAsync`
+APPENDS a new (host, version) row rather than replacing the previous
+template. `StreamingRefitOrchestrator` bumps `Version` on every refit
+and calls `UpsertAsync`, so the version chain grows over time.
+
+Query surface on `IStreamingTemplateStore`:
+
+- `GetByHostAsync(host)` → latest version (hot path).
+- `GetByHostAtVersionAsync(host, version)` → specific version
+  (rollback / A/B / audit).
+- `ListVersionsByHostAsync(host)` → ascending list of all known
+  versions for a host.
+
+The SQLite store's primary key is `(host, version)`. The schema migration
+on first open of a pre-alpha.21 DB auto-renames the old table, recreates
+the new shape, and copies rows into version 1 (existing single-template-
+per-host rows become the v1 baseline).
+
+## 8. Limitations and follow-ups
 
 Calling these out honestly so operators aren't surprised:
 
-- **Bounded by HttpClient chunk size, not "a handful of bytes."**
-  Measured: 16,473 B peak against 199,506 B response (~8%). For a 4 KiB
-  chunk synthetic feed, peak stays under 16 KiB across 5 MiB consumed.
-  Bounded-not-tiny; that's the headline you should quote.
-- **MinHash sketch isn't CRC-rolled.** Per-tick `O(WindowSize ×
-  SignatureSize)` recompute over the current event window. The
-  per-template Bloom allowlist (`TagAllowlistBloom`) skips the
-  recompute for inbound tags that can't possibly affect any fence —
-  on real pages this is the vast majority. True XOR-rolling
-  isn't possible for min-pool MinHash; we'd have to swap to a
-  CountSketch / SimHash variant to get it.
-- **`IncrementalFenceScanner` duplicates `FenceScanner.Tick` logic.**
-  `FenceScanner` is a `ref struct` so its sketch state can be span-backed
-  by the call-site stack; that shape can't survive an `await` or live as
-  a class field. `IncrementalFenceScanner` therefore re-implements the
-  same tick logic over heap arrays. Cross-validation tests
-  ([`IncrementalFenceScannerTests`](../tests/StyloExtract.Streaming.Tests/))
-  pin the two implementations in lockstep — any drift is a correctness
-  bug, but the code-duplication itself is intentional.
-- **One template per host; no formal version chain on streaming yet.**
-  Alpha.18 added drift detection and version-bump-on-refit, but the
-  store keeps only the latest template per host. There is no
-  `GetByHostAtVersion(host, version)` API — `Version` is monotonic
-  metadata, not a query dimension. If you need rollback or A/B template
-  comparison, implement it in your own version sink.
+- **Bounded by longest partial tag at chunk boundary, ~hundreds of bytes.**
+  Measured: 0 B peak against 200 KB response in 16 KB chunks; 19 B in 1 KB
+  chunks. The MaxBufferSize cap is 4 KB; pathological input (a single tag
+  &gt; 4 KB) throws rather than silently drop bytes. Whereas alpha.19
+  reported peak ≈ chunk size, alpha.21 reports peak ≈ longest straddling
+  tag.
+- **MinHash sketch isn't CRC-rolled.** Per-accepted-tag
+  `O(WindowSize × SignatureSize)` recompute is unavoidable for min-pool
+  MinHash. alpha.21 improves quality with two complementary filters:
+  (a) the static `StructuralTagAllowlist` — only structural tags
+  (html/body/header/nav/main/article/section/div/p/h1-h6/ul/ol/li/table/...)
+  push into the sketch; meta/link/script-chrome/img/span/a bypass the
+  recompute entirely; (b) Markov bigram shingles — each shingle is
+  `(prevTag, currentTag, currentClass)`, so order-of-tags now matters
+  (`[A,B]` ≠ `[B,A]`, where it didn't pre-alpha.21).
+- **`FenceScanner` + `IncrementalFenceScanner` share a single static
+  `Tick`.** alpha.21 extracted the per-tick algorithm into
+  `StreamingTick.Step` (over a `StreamingTickState`). Both scanners now
+  call literally the same code; cross-validation tests are retained as
+  insurance against future divergence.
 - **Auto-induction is heuristic.** `StreamingTemplateInducer` picks
   semantic-marker fences (`<header>`, `<footer>`, `<article>`,
   paragraph clusters). Pages without semantic markup — a `<div>`-soup

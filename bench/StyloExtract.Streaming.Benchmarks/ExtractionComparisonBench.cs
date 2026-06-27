@@ -57,7 +57,6 @@ public class ExtractionComparisonBench
             ContentEndFence = TemplateFence.BuildFromEvents(
                 TagEvents("<footer>", "</footer>", "</body>", "</html>"),
                 requiredDepth: 0),
-            MinContentDepth = 0,
             BailoutBytes = 5_000_000,
             MaxCaptureBytes = 5_000_000,
             WindowSize = 4,

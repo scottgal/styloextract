@@ -14,11 +14,14 @@ it.
 
 ## Memory contract
 
-A sliding-window tokenizer holds only the partial tag currently in
-flight (compact-on-emit). On a 5 MiB synthetic response fed in 4 KiB
-chunks, `PeakBufferedBytes` stays under 16 KiB — pinned by the
-`StreamingMemoryBoundTests` regression suite. Real-world numbers: 16,473 B
-peak against a 199,506 B response (~8% memory footprint).
+A sliding-window tokenizer holds ONLY the partial tag bytes that
+straddle a chunk boundary — typically &lt;500 B, often zero. Each chunk
+is parsed inline; complete-tag bytes are dropped immediately, never
+copied into a holding buffer. The hard cap is 4 KiB
+(`IncrementalHtmlTokenizer.MaxBufferSize`); a single tag larger than
+that throws `InvalidOperationException` rather than silently dropping
+bytes. Measured peak: 0 B for 16 KB chunks over a 200 KB body; 19 B for
+1 KB chunks. Pinned by the `StreamingMemoryBoundTests` regression suite.
 
 ## Wire-up
 

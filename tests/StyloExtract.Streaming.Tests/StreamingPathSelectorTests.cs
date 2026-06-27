@@ -39,14 +39,16 @@ public sealed class StreamingPathSelectorTests
     public async Task Selector_uses_each_template_WindowSize_not_a_global()
     {
         // Two templates with different fence sizes — both must scan to Captured.
+        // alpha.21: tags must be structural; the scanner filters everything else.
+        // Fences are arranged so depth returns to capture-start depth when
+        // contentEnd matches (depth-aware capture-end requirement).
         var smallTemplate = new StreamingTemplate
         {
             TemplateId = Guid.NewGuid(),
             Host = "",
-            PrefixFence = TemplateFence.BuildFromEvents(TagEvents("<a>", "</a>", "<b>"), requiredDepth: 0),
-            ContentStartFence = TemplateFence.BuildFromEvents(TagEvents("</a>", "<b>", "</b>"), requiredDepth: 0),
-            ContentEndFence = TemplateFence.BuildFromEvents(TagEvents("<b>", "</b>", "<c>"), requiredDepth: 0),
-            MinContentDepth = 0,
+            PrefixFence = TemplateFence.BuildFromEvents(TagEvents("<nav>", "</nav>", "<main>"), requiredDepth: 0),
+            ContentStartFence = TemplateFence.BuildFromEvents(TagEvents("</nav>", "<main>", "</main>"), requiredDepth: 0),
+            ContentEndFence = TemplateFence.BuildFromEvents(TagEvents("<footer>", "</footer>", "</body>"), requiredDepth: 0),
             BailoutBytes = 100_000,
             MaxCaptureBytes = 100_000,
             WindowSize = 3,
@@ -60,7 +62,7 @@ public sealed class StreamingPathSelectorTests
 
         var selector = new StreamingPathSelector(store);
 
-        ReadOnlySpan<byte> smallHtml = "<a></a><b></b><c></c>"u8;
+        ReadOnlySpan<byte> smallHtml = "<body><nav></nav><main></main><footer></footer></body>"u8;
         selector.Scan(smallTemplate.TemplateId, smallHtml).Should().Be(ScanVerdict.Captured);
 
         ReadOnlySpan<byte> bigHtml =
@@ -84,7 +86,6 @@ public sealed class StreamingPathSelectorTests
             ContentEndFence = TemplateFence.BuildFromEvents(
                 TagEvents("<article>", "</article>", "<footer>", "</footer>"),
                 requiredDepth: 0),
-            MinContentDepth = 0,
             BailoutBytes = 100_000,
             MaxCaptureBytes = 100_000,
             WindowSize = 4,

@@ -1,3 +1,66 @@
+StyloExtract 1.8.0-alpha.21 - 2026-06-27
+=========================================
+
+Streaming: scope fixes (no algorithm replacement)
+--------------------------------------------------
+
+Tightens the alpha.19 streaming scanner without replacing the MinHash
+matcher. The algorithm shape (MinHash + LSH bands + three fences per
+template) is unchanged; what changes is its scope:
+
+1. IncrementalHtmlTokenizer.Feed no longer copies the whole chunk into
+   _buffer. Chunks are parsed inline; only the partial-tag tail (if a
+   tag straddles a chunk boundary) is retained for stitching with the
+   next chunk. PeakBufferedBytes is now bounded by O(longest tag), not
+   O(chunk size). Measured: peak = 0 B for a 200 KB body in 16 KB
+   chunks, 19 B in 1 KB chunks. MaxBufferSize lowered from 64 KiB to
+   4 KiB.
+
+2. RollingSketch shingles upgraded to Markov bigrams: each shingle is
+   (prevTagHash, currentTagHash, currentClassHash). Order-sensitive:
+   [A, B] and [B, A] now produce different signatures. The leftmost
+   shingle in any window uses prevTag = 0 so sliding-window scanners
+   match fences built from contiguous event sequences regardless of
+   what came before the window.
+
+3. Static StructuralTagAllowlist replaces per-fence TagAllowlistBloom.
+   Only structural tags (html/body/header/nav/main/article/section/
+   div/p/h1-h6/ul/ol/li/table/...) push into the sketch. meta/link/
+   script-chrome/img/span/a bypass the recompute entirely. The
+   TagAllowlistBloom JSON property is retained as a back-compat sink
+   (read-and-discarded) so persisted templates from alpha.16-alpha.20
+   round-trip cleanly.
+
+4. Depth-aware capture-end: while in Capturing, ContentEnd only matches
+   when DOM depth has returned to (or below) the depth at ContentStart.
+   Nested matches mid-content can no longer terminate capture early.
+
+5. Dead StreamingTemplate.MinContentDepth field removed (never read by
+   any scanner).
+
+6. FenceScanner and IncrementalFenceScanner now share a single static
+   StreamingTick.Step. Both scanners build a StreamingTickState from
+   their respective storage (span-backed vs heap-backed) and execute
+   literally the same code. Cross-validation tests retained as insurance.
+
+7. IStreamingTemplateStore gains version-chain APIs:
+   - GetByHostAtVersionAsync(host, version) — retrieve a specific version.
+   - ListVersionsByHostAsync(host) — enumerate all known versions.
+   UpsertAsync now APPENDS per (host, version) rather than replacing.
+   SQLite store schema migrated to PK (host, version); existing rows
+   auto-migrate to version 1 on first open.
+
+Migration notes:
+- Persisted SQLite templates from alpha.16-alpha.20 auto-migrate to
+  version 1 on first open; existing rows are preserved.
+- TemplateFence(uint[], ulong[], ulong, int) constructor removed; the
+  new shape is TemplateFence(uint[], ulong[], int). TagAllowlistBloom
+  is still readable as a property (returns 0).
+- StreamingTemplate.MinContentDepth removed — drop from any code that
+  set it in `with` expressions.
+- RollingSketch.Push signature changed to Push(prevTagHash, tagHash,
+  classHash) — direct users must track prev tag.
+
 StyloExtract 1.8.0-alpha.19 - 2026-06-26
 =========================================
 

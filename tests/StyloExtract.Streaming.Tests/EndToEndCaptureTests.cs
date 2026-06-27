@@ -26,7 +26,6 @@ public sealed class EndToEndCaptureTests
             ContentEndFence = TemplateFence.BuildFromEvents(
                 TagEvents("<article>", "</article>", "<footer>", "</footer>"),
                 requiredDepth: 0),
-            MinContentDepth = 0,
             BailoutBytes = 100_000,
             MaxCaptureBytes = 100_000,
             WindowSize = 4,

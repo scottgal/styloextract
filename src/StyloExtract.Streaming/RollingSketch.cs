@@ -2,6 +2,17 @@ using System.IO.Hashing;
 
 namespace StyloExtract.Streaming;
 
+/// <summary>
+/// Min-pooled MinHash sketch over a sliding window of recent tag events.
+///
+/// alpha.21: shingles upgraded to Markov bigrams of consecutive tag transitions
+/// — each shingle is <c>(prevTagHash, currentTagHash, currentClassHash)</c>.
+/// Order-sensitive: <c>[A, B]</c> and <c>[B, A]</c> now produce different
+/// signatures. Push state retains the previous tag hash so recompute can
+/// rebuild shingles from the window alone (storing each event's prev-tag
+/// would double window size; instead recompute walks the window left-to-right
+/// using slot[i-1].TagHash as the prev for slot[i]).
+/// </summary>
 public ref struct RollingSketch
 {
     public const int SignatureSize = 128;
@@ -59,9 +70,17 @@ public ref struct RollingSketch
         }
     }
 
-    public void Push(ulong tagHash, ulong classHash)
+    /// <summary>
+    /// Push the next event into the sliding window. The Markov shingle uses
+    /// <paramref name="prevTagHash"/> as the leading bigram element, so
+    /// callers must pass the tag hash from the *immediately preceding*
+    /// accepted event (or 0 for the first event in the stream).
+    /// </summary>
+    public void Push(ulong prevTagHash, ulong tagHash, ulong classHash)
     {
-        _window[_writeIdx] = new EventSlot(tagHash, classHash);
+        // Store (prevTagHash, currentTagHash, classHash) in the slot so
+        // Recompute can reproduce the same shingles deterministically.
+        _window[_writeIdx] = new EventSlot(tagHash, classHash, prevTagHash);
         _writeIdx = (_writeIdx + 1) % _window.Length;
         _count++;
     }
@@ -72,27 +91,42 @@ public ref struct RollingSketch
         var populated = Math.Min(_count, _window.Length);
         if (populated == 0) return;
 
-        Span<byte> buf = stackalloc byte[16];
+        Span<byte> buf = stackalloc byte[32];
         var seeds = s_seeds.AsSpan();
+
+        // Walk the window in insertion order. When the window has fewer
+        // entries than its capacity, slots[0..populated] is the insertion
+        // order. Once full, the ring wraps so insertion order starts at
+        // _writeIdx and ends at (_writeIdx - 1) mod len.
+        // alpha.21: the FIRST shingle in the window uses prevTag=0, not
+        // the slot's stored prevTag. This is so a sliding-window scanner
+        // matches a fence built from a contiguous event sequence regardless
+        // of what came before the window. (Without this, the leftmost
+        // shingle would depend on the event JUST BEFORE the window — which
+        // the fence builder didn't see — and the LSH bands wouldn't align.)
+        var len = _window.Length;
+        var start = _count <= len ? 0 : _writeIdx;
         for (int i = 0; i < populated; i++)
         {
-            var slot = _window[i];
-            var shingle = ShingleHash(slot.TagHash, slot.ClassHash);
+            var slot = _window[(start + i) % len];
+            var prevTag = i == 0 ? 0UL : slot.PrevTagHash;
+            var shingle = ShingleHash(prevTag, slot.TagHash, slot.ClassHash);
             BitConverter.TryWriteBytes(buf, shingle);
             for (int s = 0; s < SignatureSize; s++)
             {
                 BitConverter.TryWriteBytes(buf[8..], seeds[s]);
-                var h = (uint)(XxHash64.HashToUInt64(buf) & 0xFFFFFFFFUL);
+                var h = (uint)(XxHash64.HashToUInt64(buf[..16]) & 0xFFFFFFFFUL);
                 if (h < _signature[s]) _signature[s] = h;
             }
         }
     }
 
-    private static ulong ShingleHash(ulong tagHash, ulong classHash)
+    internal static ulong ShingleHash(ulong prevTagHash, ulong tagHash, ulong classHash)
     {
-        Span<byte> buf = stackalloc byte[16];
-        BitConverter.TryWriteBytes(buf, tagHash);
-        BitConverter.TryWriteBytes(buf[8..], classHash);
+        Span<byte> buf = stackalloc byte[24];
+        BitConverter.TryWriteBytes(buf, prevTagHash);
+        BitConverter.TryWriteBytes(buf[8..], tagHash);
+        BitConverter.TryWriteBytes(buf[16..], classHash);
         return XxHash3.HashToUInt64(buf);
     }
 }

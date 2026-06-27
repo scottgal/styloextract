@@ -201,7 +201,6 @@ public sealed class StreamingRefitOrchestrator
 
         static bool FenceEqual(TemplateFence x, TemplateFence y)
         {
-            if (x.TagAllowlistBloom != y.TagAllowlistBloom) return false;
             if (x.LshBands.Length != y.LshBands.Length) return false;
             for (int i = 0; i < x.LshBands.Length; i++)
                 if (x.LshBands[i] != y.LshBands[i]) return false;

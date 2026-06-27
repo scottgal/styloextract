@@ -12,7 +12,7 @@ public interface IStreamingTemplateStore
     ValueTask RegisterAsync(StreamingTemplate template, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Look up the streaming template registered for <paramref name="host"/>.
+    /// Look up the LATEST streaming template registered for <paramref name="host"/>.
     /// Host string is exact-match — lowercase + canonical form before calling.
     /// Returns null if no template has been registered for this host.
     /// Goes through the hot cache first; falls through to durable storage.
@@ -20,17 +20,35 @@ public interface IStreamingTemplateStore
     ValueTask<StreamingTemplate?> GetByHostAsync(string host, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Synchronous hot-cache-only host lookup. Returns null on miss; caller
-    /// should fall back to <see cref="GetByHostAsync"/> to bring it into hot cache.
+    /// Synchronous hot-cache-only host lookup (LATEST version). Returns null on
+    /// miss; caller should fall back to <see cref="GetByHostAsync"/> to bring
+    /// it into hot cache.
     /// </summary>
     StreamingTemplate? TryGetHotByHost(string host);
 
     /// <summary>
     /// Upsert a template — write-through to durable + hot cache, keyed by both
     /// <see cref="StreamingTemplate.TemplateId"/> and <see cref="StreamingTemplate.Host"/>.
-    /// One template per host (latest wins). Use this instead of
-    /// <see cref="RegisterAsync"/> when the template was produced for a known host
-    /// (typical for auto-induction).
+    /// alpha.21: appends a new version per (host, version) — does NOT replace
+    /// prior versions. <see cref="GetByHostAsync"/> always returns the latest;
+    /// <see cref="GetByHostAtVersionAsync"/> retrieves earlier versions.
     /// </summary>
     ValueTask UpsertAsync(StreamingTemplate template, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Look up a SPECIFIC version of a host's template. Returns null if the
+    /// host has no template at that version. alpha.21+.
+    /// </summary>
+    ValueTask<StreamingTemplate?> GetByHostAtVersionAsync(
+        string host,
+        int version,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// List all known versions for <paramref name="host"/> (ascending).
+    /// Returns an empty list if the host is unknown. alpha.21+.
+    /// </summary>
+    ValueTask<IReadOnlyList<int>> ListVersionsByHostAsync(
+        string host,
+        CancellationToken cancellationToken = default);
 }

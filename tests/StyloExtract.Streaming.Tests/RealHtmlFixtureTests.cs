@@ -30,7 +30,6 @@ public sealed class RealHtmlFixtureTests
             ContentEndFence = TemplateFence.BuildFromEvents(
                 TagEvents("</p>", "<p>", "</p>", "</article>"),
                 requiredDepth: 0),
-            MinContentDepth = 0,
             BailoutBytes = 1_000_000,
             MaxCaptureBytes = 1_000_000,
             WindowSize = 4,

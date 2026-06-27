@@ -83,7 +83,6 @@ public sealed class StreamingTemplateInducer
             PrefixFence = TemplateFence.BuildFromEvents(prefixEvents, requiredDepth: 0),
             ContentStartFence = TemplateFence.BuildFromEvents(contentStartEvents, requiredDepth: 0),
             ContentEndFence = TemplateFence.BuildFromEvents(contentEndEvents, requiredDepth: 0),
-            MinContentDepth = 0,
             BailoutBytes = 5_000_000,
             MaxCaptureBytes = 5_000_000,
             WindowSize = windowSize,
@@ -209,35 +208,32 @@ public sealed class StreamingTemplateInducer
     }
 
     /// <summary>
-    /// Slice events[<paramref name="window"/>] into a fence-event array sized
-    /// to <paramref name="windowSize"/>. Pads forwards from the start index
-    /// when the natural window is shorter; truncates to the trailing
-    /// <c>windowSize</c> events when longer.
+    /// Build a windowSize-sized fence event sequence that ends at
+    /// <paramref name="window"/>.EndIndex. alpha.21: filters to STRUCTURAL
+    /// tag events ONLY (matching the runtime scanner's structural-tag
+    /// allowlist), and extends BACKWARDS into the surrounding event stream
+    /// to fill the window when the natural fence region is shorter than
+    /// <paramref name="windowSize"/>. The fence's MinHash signature is
+    /// therefore over the same windowSize structural events the scanner's
+    /// sliding sketch will hold at the moment-of-match.
     /// </summary>
     private static (ulong tagHash, ulong classHash)[] ToFenceEvents(
         List<RecordedEvent> events,
         FenceWindow window,
         int windowSize)
     {
-        var natural = window.EndIndex - window.StartIndex + 1;
-        var sliceStart = window.StartIndex;
-        var sliceLen = natural;
-        if (natural > windowSize)
+        // Walk events backwards from window.EndIndex collecting structural
+        // events until we have windowSize (or run out).
+        var collected = new List<(ulong, ulong)>(windowSize);
+        for (int i = Math.Min(window.EndIndex, events.Count - 1); i >= 0 && collected.Count < windowSize; i--)
         {
-            // Take the trailing windowSize events so the fence lands at the
-            // end-of-window event (closer to the marker that triggered it).
-            sliceStart = window.EndIndex - windowSize + 1;
-            sliceLen = windowSize;
+            var ev = events[i];
+            if (StructuralTagAllowlist.Contains(ev.TagNameHash))
+                collected.Add((ev.TagNameHash, ev.ClassHash));
         }
-
-        var len = Math.Min(sliceLen, windowSize);
-        var result = new (ulong, ulong)[len];
-        for (int i = 0; i < len; i++)
-        {
-            var ev = events[sliceStart + i];
-            result[i] = (ev.TagNameHash, ev.ClassHash);
-        }
-        return result;
+        if (collected.Count == 0) return Array.Empty<(ulong, ulong)>();
+        collected.Reverse();
+        return collected.ToArray();
     }
 
     private readonly record struct RecordedEvent(ulong TagNameHash, ulong ClassHash, bool IsClose);
