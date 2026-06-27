@@ -370,6 +370,18 @@ on first open of a pre-alpha.21 DB auto-renames the old table, recreates
 the new shape, and copies rows into version 1 (existing single-template-
 per-host rows become the v1 baseline).
 
+The store also tracks a `PRAGMA user_version` for algorithm-compat. When
+the scanner-side scoring rules change, bumping
+`SqliteStreamingTemplateStore.CurrentStoreVersion` causes existing DBs to
+drop their now-incompatible templates on next open, forcing clean
+re-induction. Persisted templates cannot survive a scanner algorithm
+change because their MinHash signatures were sketched under the prior
+rules — keeping them would mean the scanner always Bailouts and any
+consumer that doesn't auto-reinduct on Bailout stays stuck forever.
+Alpha.22 introduced the constant at value `2`; the schema migration runs
+first (unchanged) and the `user_version` gate runs immediately after,
+both inside the same connection.
+
 ## 8. Limitations and follow-ups
 
 Calling these out honestly so operators aren't surprised:

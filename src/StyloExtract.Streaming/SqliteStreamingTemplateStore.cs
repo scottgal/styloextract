@@ -7,6 +7,27 @@ namespace StyloExtract.Streaming;
 
 public sealed class SqliteStreamingTemplateStore : IStreamingTemplateStore, IAsyncDisposable
 {
+    /// <summary>
+    /// Algorithm-compat version of the streaming-template store, tracked in SQLite
+    /// via <c>PRAGMA user_version</c>. Bump this whenever scanner-side scoring
+    /// rules change (shingling shape, structural-tag filter, depth handling —
+    /// anything that changes the MinHash signature the scanner produces from a
+    /// given byte stream). On open, any DB with a lower user_version has its
+    /// templates dropped because their signatures were sketched under prior rules
+    /// and can no longer match. Existing rows would always Bailout and consumers
+    /// that don't auto-reinduct on Bailout would stay stuck forever.
+    ///
+    /// Version history:
+    ///   1 = alpha.21 algorithm (Markov bigram shingles, structural-tag filter,
+    ///       depth-aware capture). Note: alpha.21 itself shipped without this
+    ///       PRAGMA, so existing alpha.21 DBs read as user_version=0 and get
+    ///       dropped on alpha.22 first-open. That's intentional — those rows
+    ///       were sketched before the scanner stabilised on these rules.
+    ///   2 = alpha.22 (this constant introduced). Same algorithm as alpha.21
+    ///       but stamped so future bumps can self-heal cleanly.
+    /// </summary>
+    private const int CurrentStoreVersion = 2;
+
     private readonly SqliteSingleWriter _writer;
     private readonly ConcurrentDictionary<Guid, StreamingTemplate> _hot = new();
     // alpha.21: per-host latest cache. Lookups for older versions go to the DB.
@@ -208,6 +229,7 @@ public sealed class SqliteStreamingTemplateStore : IStreamingTemplateStore, IAsy
                 CREATE INDEX idx_streaming_templates_template_id ON streaming_templates(template_id);
                 """;
             create.ExecuteNonQuery();
+            EnsureStoreVersion(conn);
             return;
         }
 
@@ -285,6 +307,7 @@ public sealed class SqliteStreamingTemplateStore : IStreamingTemplateStore, IAsy
                     "CREATE INDEX IF NOT EXISTS idx_streaming_templates_template_id ON streaming_templates(template_id);";
                 idx.ExecuteNonQuery();
             }
+            EnsureStoreVersion(conn);
             return;
         }
 
@@ -296,6 +319,52 @@ public sealed class SqliteStreamingTemplateStore : IStreamingTemplateStore, IAsy
                 "CREATE INDEX IF NOT EXISTS idx_streaming_templates_template_id ON streaming_templates(template_id);";
             idx.ExecuteNonQuery();
         }
+        EnsureStoreVersion(conn);
+    }
+
+    /// <summary>
+    /// Alpha.22 algorithm-compat gate. Checks <c>PRAGMA user_version</c>; if it's
+    /// below <see cref="CurrentStoreVersion"/> the existing rows were sketched
+    /// under prior scanner-side scoring rules and would always Bailout — they're
+    /// dead weight, so drop them all and stamp the user_version to current.
+    ///
+    /// Fresh DBs read user_version=0, the truncate is a no-op, then user_version
+    /// gets stamped. Pre-alpha.22 DBs (alpha.21 algorithm baseline included) also
+    /// read user_version=0 — their rows get dropped, forcing clean re-induction
+    /// on the next request through the scanner.
+    ///
+    /// Both steps run in a single transaction so a crash between them doesn't
+    /// leave the DB stamped-but-not-dropped or dropped-but-not-stamped. PRAGMA
+    /// user_version is the SQLite-native integer in the file header — exactly
+    /// the right tool for "what algorithm wrote these rows".
+    /// </summary>
+    private static void EnsureStoreVersion(SqliteConnection conn)
+    {
+        long current;
+        using (var read = conn.CreateCommand())
+        {
+            read.CommandText = "PRAGMA user_version;";
+            current = (long)(read.ExecuteScalar() ?? 0L);
+        }
+
+        if (current >= CurrentStoreVersion) return;
+
+        using var tx = conn.BeginTransaction();
+        using (var drop = conn.CreateCommand())
+        {
+            drop.Transaction = tx;
+            drop.CommandText = "DELETE FROM streaming_templates;";
+            drop.ExecuteNonQuery();
+        }
+        using (var stamp = conn.CreateCommand())
+        {
+            stamp.Transaction = tx;
+            // PRAGMA user_version doesn't accept parameter binding; CurrentStoreVersion
+            // is a private compile-time constant we control, so interpolation is safe.
+            stamp.CommandText = $"PRAGMA user_version = {CurrentStoreVersion};";
+            stamp.ExecuteNonQuery();
+        }
+        tx.Commit();
     }
 
     internal static string PromoteInMemoryConnectionString(string cs)
