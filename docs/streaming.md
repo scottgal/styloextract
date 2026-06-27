@@ -18,7 +18,9 @@ Cross-references to the release-notes entries that introduced each piece:
 [alpha.18](../RELEASE_NOTES.txt) (incremental tokenizer + refit/versioning),
 [alpha.19](../RELEASE_NOTES.txt) (true sliding-window memory contract),
 [alpha.21](../RELEASE_NOTES.txt) (partial-tag-only buffer, Markov shingles,
-structural-tag filter, depth-aware capture, shared Tick, version chain).
+structural-tag filter, depth-aware capture, shared Tick, version chain),
+[alpha.23](../RELEASE_NOTES.txt) (structural-only depth tracking,
+bytes-since-state-change bailout, Flush latches Continue→Bailout at EOF).
 
 **Matcher algorithm.** This is MinHash with LSH bands + a structural-tag
 filter, NOT an anchor-walk over the DOM. The scanner holds a sliding
@@ -78,7 +80,11 @@ Six pieces, each with one job:
   `IncrementalHtmlTokenizer` with the scanner logic over heap-backed
   arrays (since `FenceScanner` is a ref struct and can't live as a class
   field or survive an `await`). Same `Tick` logic, hard-pinned to the
-  ref-struct path by cross-validation tests.
+  ref-struct path by cross-validation tests. `Feed(chunk)` returns the
+  current verdict; `Flush()` is the canonical end-of-stream call — when
+  the stream exhausts without matching all fences, `Flush()` latches the
+  terminal verdict to `Bailout` (alpha.23: previously dangled at
+  `Continue`, which was meaningless at EOF).
 - **`StreamingPathSelector`** — DI-injected entry point.
   - `Scan(templateId, bytes)` — synchronous whole-buffer scan against a
     specific template id (hot-cache only).
@@ -96,7 +102,11 @@ The persisted record:
 - **`StreamingTemplate`** — `{ TemplateId, Host, PrefixFence,
   ContentStartFence, ContentEndFence, BailoutBytes, MaxCaptureBytes,
   WindowSize, MaxEventsWithoutTransition, Version }`. alpha.21 removed
-  the unused `MinContentDepth` field.
+  the unused `MinContentDepth` field. alpha.23 deprecated
+  `MaxEventsWithoutTransition` (the field is retained for back-compat
+  but ignored by the scanner — drift bailout now reads
+  `BailoutBytes` and compares against bytes-since-state-change, which
+  is robust against the alpha.21 structural-tag filter's event throttling).
 
 The first-pass auto-inducer:
 

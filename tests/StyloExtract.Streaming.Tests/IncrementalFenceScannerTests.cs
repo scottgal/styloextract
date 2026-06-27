@@ -52,7 +52,11 @@ public sealed class IncrementalFenceScannerTests
         var html = BuildLongerPage();
 
         var whole = IncrementalFenceScanner.Create(template);
-        var wholeVerdict = whole.Feed(html);
+        whole.Feed(html);
+        // alpha.23: Flush is the canonical end-of-stream call — it latches a
+        // dangling Continue to Bailout so both paths produce the same
+        // terminal verdict.
+        var wholeVerdict = whole.Flush();
 
         var chunked = IncrementalFenceScanner.Create(template);
         for (int i = 0; i < html.Length; i += 64)

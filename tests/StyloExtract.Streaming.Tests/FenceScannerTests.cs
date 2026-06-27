@@ -89,6 +89,11 @@ public sealed class FenceScannerTests
     [Fact]
     public void Bails_when_per_template_drift_threshold_exceeded()
     {
+        // alpha.23: the drift bailout is now BYTES-since-state-change against
+        // BailoutBytes (was: events-since-state-change against
+        // MaxEventsWithoutTransition, throttled to uselessness by the alpha.21
+        // structural-tag filter). Tight BailoutBytes + larger per-tick
+        // ByteLength puts us over the threshold quickly.
         var prefixEvents = MakeEvents(seed: 1, count: 4);
         var baseTemplate = MakeTemplate(
             prefixEvents,
@@ -96,8 +101,7 @@ public sealed class FenceScannerTests
             MakeEvents(seed: 3, count: 4));
         var template = baseTemplate with
         {
-            MaxEventsWithoutTransition = 3,
-            BailoutBytes = 1_000_000_000,
+            BailoutBytes = 30,
         };
 
         Span<uint> signatureBuffer = stackalloc uint[128];
@@ -105,7 +109,8 @@ public sealed class FenceScannerTests
         var scanner = new FenceScanner(in template, signatureBuffer, windowBuffer);
 
         // Push the same in-bloom hash repeatedly. Window holds a singleton set;
-        // sketch never matches the 4-event fence; drift bailout should fire.
+        // sketch never matches the 4-event fence; drift bailout should fire
+        // once BytesSinceStateChange exceeds BailoutBytes.
         var inBloomHash = prefixEvents[0].tagHash;
         var verdict = ScanVerdict.Continue;
         for (int i = 0; i < 4; i++)

@@ -15,7 +15,16 @@ internal struct StreamingTickState
     public long BytesConsumed;
     public long CaptureStartByte;
     public long CaptureEndByte;
-    public int EventsSinceStateChange;
+    /// <summary>
+    /// alpha.23: bytes (not events) consumed since the last FSM transition.
+    /// Pre-alpha.21 the equivalent <c>EventsSinceStateChange</c> counter
+    /// incremented on every accepted tag; alpha.21's structural-tag filter
+    /// throttled increments to structural tags only, which on real pages
+    /// is a small fraction of all tags — the bailout never fired. Bytes
+    /// are robust against that filter-ratio drift and let us reuse the
+    /// per-template <see cref="StreamingTemplate.BailoutBytes"/> budget.
+    /// </summary>
+    public long BytesSinceStateChange;
     public ulong PrevTagHash;
     public int Depth;
     public int DepthAtCaptureStart;
@@ -56,24 +65,31 @@ internal static class StreamingTick
         if (s.State == FenceState.Bailed) return ScanVerdict.Bailout;
 
         s.BytesConsumed += evt.ByteLength;
-
-        // Depth tracking — needed for depth-aware capture-end check.
-        if (evt.IsClose)
-        {
-            if (s.Depth > 0) s.Depth--;
-        }
-        else
-        {
-            s.Depth++;
-        }
+        s.BytesSinceStateChange += evt.ByteLength;
 
         // alpha.21 structural-tag filter — non-structural tags bypass the sketch entirely.
         if (StructuralTagAllowlist.Contains(evt.TagNameHash))
         {
+            // alpha.23 depth tracking is STRUCTURAL-ONLY: void elements
+            // (img/br/input/meta/link/hr) and inline content (a/span/i/b/em…)
+            // have no corresponding close in the wild — tokenising every
+            // emitted tag as +1 depth inflates depth unboundedly on real
+            // pages (mostlylucid.net hit Depth=206 at </body> versus an
+            // honest ~0). Restrict depth to structural tags only, matching
+            // the sketch filter, so DepthAtCaptureStart and the depth-aware
+            // ContentEnd check are comparable.
+            if (evt.IsClose)
+            {
+                if (s.Depth > 0) s.Depth--;
+            }
+            else
+            {
+                s.Depth++;
+            }
+
             PushSketch(window, ref s, evt.TagNameHash, evt.ClassHash);
             s.PrevTagHash = evt.TagNameHash;
             RecomputeSketch(signature, window, in s);
-            s.EventsSinceStateChange++;
 
             var prevState = s.State;
             switch (s.State)
@@ -111,22 +127,21 @@ internal static class StreamingTick
                         break;
                     }
             }
-            if (s.State != prevState) s.EventsSinceStateChange = 0;
+            if (s.State != prevState) s.BytesSinceStateChange = 0;
         }
 
-        if (s.State == FenceState.AwaitPrefix && s.EventsSinceStateChange >= template.MaxEventsWithoutTransition)
+        // alpha.23: pre-state-transition bailouts use BYTES-since-state-change
+        // (robust against the structural-tag filter's event throttling) and
+        // cover BOTH AwaitPrefix and AwaitContentStart. The Capturing state
+        // has its own MaxCaptureBytes ceiling below.
+        if ((s.State == FenceState.AwaitPrefix || s.State == FenceState.AwaitContentStart)
+            && s.BytesSinceStateChange > template.BailoutBytes)
         {
             s.State = FenceState.Bailed;
             return ScanVerdict.Bailout;
         }
 
         if (s.State == FenceState.Capturing && (s.BytesConsumed - s.CaptureStartByte) > template.MaxCaptureBytes)
-        {
-            s.State = FenceState.Bailed;
-            return ScanVerdict.Bailout;
-        }
-
-        if (s.State == FenceState.AwaitPrefix && s.BytesConsumed > template.BailoutBytes)
         {
             s.State = FenceState.Bailed;
             return ScanVerdict.Bailout;

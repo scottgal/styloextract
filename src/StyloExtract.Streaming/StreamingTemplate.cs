@@ -18,6 +18,14 @@ public sealed record StreamingTemplate
     public required int BailoutBytes { get; init; }
     public required int MaxCaptureBytes { get; init; }
     public required int WindowSize { get; init; }
+    /// <summary>
+    /// alpha.23: deprecated. The scanner now uses bytes-since-state-change
+    /// against <see cref="BailoutBytes"/> instead of an event counter (the
+    /// alpha.21 structural-tag filter throttled events too aggressively for
+    /// this field to be reliable on real pages). Kept on the record so
+    /// alpha.16–alpha.22 persisted templates still deserialise; new
+    /// templates can set any value.
+    /// </summary>
     public required int MaxEventsWithoutTransition { get; init; }
 
     /// <summary>

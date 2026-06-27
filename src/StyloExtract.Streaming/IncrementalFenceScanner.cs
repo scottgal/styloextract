@@ -62,7 +62,15 @@ public sealed class IncrementalFenceScanner
     {
         if (_latched is ScanVerdict.Captured or ScanVerdict.Bailout)
             return _latched;
-        return DrainTokens();
+        var v = DrainTokens();
+        if (v is ScanVerdict.Captured or ScanVerdict.Bailout) return v;
+
+        // alpha.23 end-of-stream Bailout: Continue at EOF is meaningless —
+        // the consumer signalled stream exhaustion via Flush(). Latch to
+        // Bailout so callers can fall through to the slow path / re-induce.
+        _state.State = FenceState.Bailed;
+        _latched = ScanVerdict.Bailout;
+        return ScanVerdict.Bailout;
     }
 
     private ScanVerdict DrainTokens()
