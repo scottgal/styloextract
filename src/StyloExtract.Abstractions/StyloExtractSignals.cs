@@ -15,4 +15,5 @@ public static class StyloExtractSignals
     public const string DriftObserved           = "stylo.extract.drift.observed";
     public const string VersionDetected         = "stylo.extract.version.detected";
     public const string CandidateOutcome        = "stylo.extract.candidate.outcome";
+    public const string CorpusMiningPass        = "stylo.extract.corpus.mining.pass";
 }

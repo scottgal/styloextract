@@ -28,6 +28,9 @@
     <ProjectReference Include="..\StyloExtract.Fingerprint\StyloExtract.Fingerprint.csproj" />
     <PackageReference Include="Mostlylucid.Ephemeral.Sqlite.SingleWriter" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
+    <!-- BackgroundService base type for the corpus-mining coordinator
+         (Phase 2 Task 10). Abstractions only — keeps Templates AOT-clean. -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <!-- Lift bundle_e_sqlite3 to 3.0.3 — Microsoft.Data.Sqlite's transitive
          dep is still 2.1.11 (carrying the GHSA-2m69-gcr7-jv3q
          SQLitePCLRaw.lib.e_sqlite3 advisory). The direct reference here

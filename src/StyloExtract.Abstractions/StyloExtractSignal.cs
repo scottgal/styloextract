@@ -17,4 +17,9 @@ public readonly record struct StyloExtractSignal(
     string? HostDisplayName = null,
     Guid? CandidateId = null,
     bool? Won = null,
-    int? MatchedElementCount = null);
+    int? MatchedElementCount = null,
+    // Phase 2 Task 10: CorpusMiningPass payload — populated by the
+    // background CorpusMiningCoordinator after each mining pass.
+    int? ClustersTouched = null,
+    int? CandidatesEmitted = null,
+    long? ElapsedMs = null);

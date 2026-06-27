@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Mostlylucid.Ephemeral;
 using StyloExtract.Abstractions;
@@ -73,6 +74,38 @@ public static class StyloExtractServiceCollectionExtensions
         // Register a default TypedSignalSink<StyloExtractSignal> if none is already registered.
         // Consumers can subscribe to TypedSignalRaised to observe extraction signals.
         services.TryAddSingleton<TypedSignalSink<StyloExtractSignal>>(_ => new TypedSignalSink<StyloExtractSignal>());
+
+        // Phase 2 Task 10: opt-in background corpus miner. When
+        // EnableCorpusMining is true, register the emitter + miner and
+        // a hosted service that drives EmitForAllClustersAsync on the
+        // configured cadence. Cadence is clamped up to 1-minute minimum
+        // — sub-minute schedules waste CPU without giving the corpus
+        // time to grow between passes.
+        if (options.EnableCorpusMining)
+        {
+            services.TryAddSingleton<CorpusMiner>(sp => new CorpusMiner(sp.GetRequiredService<ITemplateIndex>()));
+            services.TryAddSingleton<EvolvedSelectorEmitter>(sp => new EvolvedSelectorEmitter(
+                sp.GetRequiredService<ITemplateIndex>(),
+                sp.GetRequiredService<CorpusMiner>(),
+                sp.GetService<ILogger<EvolvedSelectorEmitter>>()));
+            services.AddSingleton<IHostedService>(sp =>
+            {
+                var logger = sp.GetService<ILogger<CorpusMiningCoordinator>>();
+                var interval = options.CorpusMiningInterval;
+                if (interval < TimeSpan.FromMinutes(1))
+                {
+                    logger?.LogDebug(
+                        "CorpusMiningInterval {Requested} below 1-minute floor; clamping to 00:01:00",
+                        interval);
+                    interval = TimeSpan.FromMinutes(1);
+                }
+                return new CorpusMiningCoordinator(
+                    sp.GetRequiredService<EvolvedSelectorEmitter>(),
+                    interval,
+                    logger,
+                    sp.GetService<TypedSignalSink<StyloExtractSignal>>());
+            });
+        }
 
         services.AddSingleton<ILayoutExtractor>(sp => new LayoutExtractor(
             sp.GetRequiredService<IHtmlDomParser>(),
