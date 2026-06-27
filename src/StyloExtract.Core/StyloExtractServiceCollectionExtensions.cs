@@ -108,7 +108,15 @@ public static class StyloExtractServiceCollectionExtensions
             // here so LayoutExtractor writes <host>-deterministic.yaml on each
             // induced extractor. alpha.11 introduced the sink but forgot to
             // pass it through here; fixed in alpha.12.
-            sp.GetService<StyloExtract.Core.OperatorTemplates.DeterministicTemplateYamlSink>()));
+            sp.GetService<StyloExtract.Core.OperatorTemplates.DeterministicTemplateYamlSink>(),
+            // Phase 2 Task 9: shared stability filter so candidate
+            // IdentityClaim chains evaluate against the same per-element
+            // class set the inducer saw at emission time.
+            sp.GetRequiredService<IClassStabilityFilter>(),
+            // Phase 2 Task 9: global default for evolved-candidate
+            // evaluation. Off unless the caller toggles it via
+            // StyloExtractOptions; per-call ExtractionOptions still wins.
+            options.EvaluateEvolvedCandidates));
 
         return services;
     }

@@ -14,4 +14,7 @@ public readonly record struct StyloExtractSignal(
     int? OldVersion = null,
     int? NewVersion = null,
     int? ObservationCount = null,
-    string? HostDisplayName = null);
+    string? HostDisplayName = null,
+    Guid? CandidateId = null,
+    bool? Won = null,
+    int? MatchedElementCount = null);

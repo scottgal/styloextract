@@ -14,4 +14,5 @@ public static class StyloExtractSignals
     public const string ObservationRecorded     = "stylo.extract.observation.recorded";
     public const string DriftObserved           = "stylo.extract.drift.observed";
     public const string VersionDetected         = "stylo.extract.version.detected";
+    public const string CandidateOutcome        = "stylo.extract.candidate.outcome";
 }

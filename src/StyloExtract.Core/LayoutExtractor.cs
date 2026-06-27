@@ -33,6 +33,8 @@ public sealed class LayoutExtractor : ILayoutExtractor
     private readonly ITemplateEnrichmentQueue? _enrichmentQueue;
     private readonly DomSkeletonRenderer? _skeletonRenderer;
     private readonly DeterministicTemplateYamlSink? _deterministicYamlSink;
+    private readonly IClassStabilityFilter _stabilityFilter;
+    private readonly bool _evaluateEvolvedCandidatesDefault;
 
     public LayoutExtractor(
         IHtmlDomParser parser,
@@ -54,7 +56,9 @@ public sealed class LayoutExtractor : ILayoutExtractor
         IOperatorTemplateStore? operatorTemplates = null,
         ITemplateEnrichmentQueue? enrichmentQueue = null,
         DomSkeletonRenderer? skeletonRenderer = null,
-        DeterministicTemplateYamlSink? deterministicYamlSink = null)
+        DeterministicTemplateYamlSink? deterministicYamlSink = null,
+        IClassStabilityFilter? stabilityFilter = null,
+        bool evaluateEvolvedCandidatesDefault = false)
     {
         _parser = parser; _cleaner = cleaner; _fingerprinter = fingerprinter;
         _segmenter = segmenter; _classifier = classifier; _renderer = renderer;
@@ -70,6 +74,13 @@ public sealed class LayoutExtractor : ILayoutExtractor
         // is the queue payload; without a queue, no renderer is needed.
         _skeletonRenderer = enrichmentQueue is not null ? (skeletonRenderer ?? new DomSkeletonRenderer()) : null;
         _deterministicYamlSink = deterministicYamlSink;
+        // Symmetric with inducer + applicator: the same filter the inducer used
+        // when emitting an IdentityClaim chain has to evaluate the apply-time
+        // match, or a stricter filter here will drop anchor classes from the
+        // element set and silently break the match. When no filter is wired in
+        // DI the default keeps Task 9 evaluations cheap and consistent.
+        _stabilityFilter = stabilityFilter ?? new DefaultClassStabilityFilter();
+        _evaluateEvolvedCandidatesDefault = evaluateEvolvedCandidatesDefault;
     }
 
     public async Task<ExtractionResult> ExtractAsync(
@@ -547,6 +558,16 @@ public sealed class LayoutExtractor : ILayoutExtractor
             await MaybeEnqueueRepairAsync(doc, resolvedHost, fp.Hex, markdown, cancellationToken).ConfigureAwait(false);
         }
 
+        // Phase 2 Task 9: passive evaluation of evolved-selector candidates.
+        // Observation-only — the markdown/blocks above are the user-visible
+        // result and are NOT replaced by candidate output. Per-call options
+        // take precedence over the builder default so a single extraction can
+        // opt in / out independently of the registered StyloExtractOptions.
+        if (options.EvaluateEvolvedCandidates || _evaluateEvolvedCandidatesDefault)
+        {
+            await EvaluateEvolvedCandidatesAsync(resolvedHost, doc, cancellationToken).ConfigureAwait(false);
+        }
+
         return new ExtractionResult
         {
             SourceUri = sourceUri,
@@ -723,6 +744,64 @@ public sealed class LayoutExtractor : ILayoutExtractor
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "repair enqueue failed for {Host}", host);
+        }
+    }
+
+    /// <summary>
+    /// Phase 2 Task 9: passive evaluation of mined evolved-selector candidates
+    /// for <paramref name="host"/>. For every candidate row, apply its claim
+    /// chain against the document and record win (>= 1 match) or loss (0 match)
+    /// via <see cref="ITemplateIndex.RecordCandidateOutcomeAsync"/>. Cached
+    /// extraction output is unaffected; this is observation-only telemetry
+    /// that lets Task 11 promote high-reputation candidates safely.
+    ///
+    /// Per-host candidate count is bounded (the corpus miner caps emissions)
+    /// so the synchronous await keeps the implementation simple. Failures are
+    /// best-effort — a single bad candidate must not abort extraction.
+    /// </summary>
+    private async Task EvaluateEvolvedCandidatesAsync(
+        string host,
+        AngleSharp.Dom.IDocument doc,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(host)) return;
+
+        IReadOnlyList<EvolvedSelectorCandidate> candidates;
+        try
+        {
+            candidates = await _index.GetCandidatesByHostAsync(host, role: null, limit: 100, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogDebug(ex, "GetCandidatesByHost failed for host {Host}", host);
+            return;
+        }
+        if (candidates.Count == 0) return;
+
+        var now = DateTimeOffset.UtcNow;
+        foreach (var candidate in candidates)
+        {
+            try
+            {
+                var matched = IdentityClaimApplicator.Apply(candidate.Claims, doc, _stabilityFilter);
+                var won = matched.Count > 0;
+                await _index.RecordCandidateOutcomeAsync(candidate.CandidateId, won, now, cancellationToken)
+                    .ConfigureAwait(false);
+
+                _signals?.Raise(StyloExtractSignals.CandidateOutcome,
+                    new StyloExtractSignal(
+                        CandidateId: candidate.CandidateId,
+                        HostDisplayName: host,
+                        Won: won,
+                        MatchedElementCount: matched.Count),
+                    key: candidate.CandidateId.ToString("N"));
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(ex, "Candidate {Id} evaluation failed for host {Host}",
+                    candidate.CandidateId, host);
+            }
         }
     }
 

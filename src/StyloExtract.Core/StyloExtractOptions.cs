@@ -7,6 +7,20 @@ public sealed class StyloExtractOptions
     public ExtractionProfile DefaultProfile { get; set; } = ExtractionProfile.RagFull;
     public string StorePath { get; set; } = "styloextract-templates.db";
     public string? HostHashKey { get; set; }
+
+    /// <summary>
+    /// Global default for <see cref="ExtractionOptions.EvaluateEvolvedCandidates"/>.
+    /// When true every extraction (where the caller didn't specify their own
+    /// options) evaluates mined evolved-selector candidates against the doc and
+    /// records win/loss into the candidate reputation columns. Cached
+    /// extraction output is unchanged — this is observation-only telemetry
+    /// until Task 11 wires active promotion.
+    ///
+    /// Default false. Per-call <see cref="ExtractionOptions.EvaluateEvolvedCandidates"/>
+    /// overrides this when callers pass their own options instance.
+    /// </summary>
+    public bool EvaluateEvolvedCandidates { get; set; } = false;
+
     public FingerprintOptions Fingerprint { get; } = new();
     public MatchOptions Match { get; } = new();
     public CentroidOptions Centroid { get; } = new();
