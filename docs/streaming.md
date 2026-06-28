@@ -61,10 +61,13 @@ measures ONLY the longest single tag that straddles a chunk boundary —
 typically **low-hundreds-of-bytes, often zero**, regardless of chunk
 size or response size. Measured against a synthetic 200 KB page fed in
 16 KB chunks: peak = **0 B** (no boundary landed mid-tag). Fed in 1 KB
-chunks: peak = **19 B**. The hard cap is 4 KB
-(`IncrementalHtmlTokenizer.MaxBufferSize`), repositioned as a safety
-stop — under correct input the buffer's residency is bounded by
-`O(longest tag)`, not `O(chunk size)`. Pinned by
+chunks: peak = **19 B**. The configurable ceiling is
+`StreamingTokenizerOptions.MaxPartialTagBytes` (1 MiB default), and the
+buffer itself is rented from `ArrayPool<byte>.Shared` — growth doesn't
+churn the GC, and the ceiling is the operator's sanity stop on truly
+hostile input rather than an arbitrary developer-picked number. Under
+correct input the buffer's residency is bounded by `O(longest tag)`,
+not `O(chunk size)`. Pinned by
 [`StreamingMemoryBoundTests`](../tests/StyloExtract.Streaming.Tests/StreamingMemoryBoundTests.cs).
 
 So: low-hundreds-of-bytes memory footprint against arbitrarily large
@@ -273,22 +276,25 @@ collapses the per-tick scratch state. The contract now:
 - **Byte buffer.** Only the partial-tag bytes that straddle a chunk
   boundary are retained between `Feed` calls. Each chunk is parsed
   inline; complete-tag bytes are dropped immediately and the chunk
-  span is never copied wholesale into the buffer. The hard cap is
-  **4 KiB** (`IncrementalHtmlTokenizer.MaxBufferSize`) — under correct
-  input the buffer's residency is `O(longest tag)` (typically &lt;500 B,
-  often zero when chunk boundaries land in text). The cap is a safety
-  stop; if a single tag is genuinely &gt; 4 KiB, `Feed` throws
+  span is never copied wholesale into the buffer. The buffer is rented
+  from `ArrayPool<byte>.Shared`; growth doubles on demand up to the
+  configurable ceiling `StreamingTokenizerOptions.MaxPartialTagBytes`
+  (default 1 MiB). Under correct input the buffer's residency is
+  `O(longest tag)` (typically &lt;500 B, often zero when chunk boundaries
+  land in text). The ceiling exists only to fail fast on truly hostile
+  input; if a single tag exceeds the configured ceiling, `Feed` throws
   `InvalidOperationException` rather than silently dropping bytes.
 - **Scanner state.** A small `StreamingTickState` value type
   (FSM state, depth counters, byte counters). No sliding window,
   no MinHash signature — the tripwire matcher consumes the per-event
   hash data the tokenizer already carries on each `TagEvent`.
-- **Per-event hash data.** Bounded at parse time:
-  `TagEvent.MaxClassesPerEvent = 8` class hashes,
-  `TagEvent.MaxAttrPairsPerEvent = 3` data-* and aria-* pairs each.
-  Pages with more attributes simply lose the tail; identity claims
-  that depend on a tail-class won't fire and the scanner falls through
-  to Bailout cleanly.
+- **Per-event hash data.** Bounded at parse time via
+  `TagAttrLimits` (defaults: 32 class hashes,
+  16 data-* and 16 aria-* pairs each, configurable up to 256/128 via
+  `StreamingTokenizerOptions`). The buffers are stackalloc-sized at the
+  configured limit. Real pages well within the defaults; bump if a host
+  ships >32 utility classes on a single element and you need every one
+  to flow into identity-claim matching.
 
 `PeakBufferedBytes` exposes the in-flight buffer high-watermark for
 telemetry: a large gap between `BytesConsumed` (monotonic, tracks every
@@ -298,10 +304,10 @@ scan held bounded memory.
 The regression test that pins this:
 [`StreamingMemoryBoundTests`](../tests/StyloExtract.Streaming.Tests/StreamingMemoryBoundTests.cs)
 feeds **5 MiB** of synthetic HTML in 4 KiB chunks and asserts
-`PeakBufferedBytes < MaxBufferSize` (4 KiB). In practice the measured
-value is in the low hundreds of bytes.
+`PeakBufferedBytes < tok.MaxPartialTagBytes` (the configured ceiling).
+In practice the measured value is in the low hundreds of bytes.
 
-### Honest framing — bounded by longest partial tag
+### What "bounded" actually means here
 
 1. **Bounded by longest partial tag at a chunk boundary, not chunk size.**
    alpha.21 changed the parse loop so chunks are scanned in-place
@@ -411,39 +417,43 @@ instead of three `TemplateFence`s). The schema migration runs first
 (unchanged) and the `user_version` gate runs immediately after, both
 inside the same connection.
 
-## 8. Limitations and follow-ups
+## 8. Design choices and known limitations
 
-Calling these out honestly so operators aren't surprised:
+Two genuine limitations remain, both algorithmic. The previous version of
+this section listed four bullets about fixed buffer caps and per-event
+data caps; those were arbitrary numbers that have since been replaced by
+`StreamingTokenizerOptions` (1 MiB default carry-buffer ceiling,
+`ArrayPool<byte>` rented growth, 32-class / 16-attr default per-event
+limits, all configurable).
 
-- **Bounded by longest partial tag at chunk boundary, ~hundreds of bytes.**
-  Measured: 0 B peak against 200 KB response in 16 KB chunks; 19 B in 1 KB
-  chunks. The MaxBufferSize cap is 4 KB; pathological input (a single tag
-  &gt; 4 KB) throws rather than silently drop bytes.
-- **Tripwire matching is exact.** alpha.24 traded the alpha.21..23
-  MinHash bands' soft-tolerance for exact hash equality on
-  stable-by-construction identifiers (the identity-aware inducer
+- **Tripwire matching is exact.** The scanner runs on exact hash equality
+  against stable-by-construction identifiers (the identity-aware inducer
   rejects hash-shaped class tokens via `DefaultClassStabilityFilter`).
-  Pages whose extracted-template identifiers change between sessions
-  (utility-class shuffles, hashed CSS module names that drift, JIT
-  class-name churn) generate a clean miss → refit signal rather than
-  a probabilistic fuzzy-match that hides the drift.
-- **`FenceScanner` + `IncrementalFenceScanner` share a single static
-  `Tick`.** alpha.21 extracted the per-tick algorithm into
-  `StreamingTick.Step` (over a `StreamingTickState`). alpha.24 kept the
-  shared-Tick shape — both scanners call literally the same code.
-- **Per-event hash data is capped.** Tags with more than
-  `TagEvent.MaxClassesPerEvent = 8` classes or more than
-  `TagEvent.MaxAttrPairsPerEvent = 3` data-* / aria-* attributes lose
-  the tail. The inducer keeps tripwires narrow (id-only when present;
-  otherwise tag + first-two-classes; ContentEnd is tag-only since
-  closes have no attributes) so the per-event cap rarely matters in
-  practice — but operators on very attribute-heavy markup should
-  know.
+  Pages whose extracted-template identifiers change between sessions —
+  utility-class shuffles, hashed CSS-module names that drift, JIT
+  class-name churn — generate a clean miss → refit signal rather than a
+  probabilistic fuzzy-match that hides the drift. This is a design
+  choice, not a deficiency; the trade-off is no soft tolerance for
+  legitimate small DOM diffs.
 - **Auto-induction is heuristic.** `StreamingTemplateInducer` picks
   semantic-marker targets (`<header>`, `<article>`, `<main>`,
   paragraph-cluster parent). Pages without semantic markup — a
-  `<div>`-soup hand-rolled landing page — get `null` from the
-  inducer and stay `NoTemplate` forever for that host.
+  `<div>`-soup hand-rolled landing page — get `null` from the inducer
+  and stay `NoTemplate` until the layout-side LLM inducer runs and
+  writes an operator-template the next visit can pick up.
+
+### What was previously listed and has since been fixed
+
+- The 16 KiB / 4 KiB hard `MaxBufferSize` consts on
+  `IncrementalHtmlTokenizer` and `IncrementalBytePatternScanner` were
+  arbitrary numbers that threw on legitimate JSON-LD or OpenGraph blobs.
+  Replaced by `StreamingTokenizerOptions.MaxPartialTagBytes` /
+  `MaxCarryBufferBytes` (1 MiB default, configurable, rented from
+  `ArrayPool<byte>.Shared`).
+- The 8-class / 3-attr-pair internal caps on `TagEvent` silently dropped
+  the tail. Replaced by `TagAttrLimits` threaded from
+  `StreamingTokenizerOptions` (32 / 16 defaults, validated at
+  construction up to 256 / 128 stackalloc ceilings).
 
 ---
 

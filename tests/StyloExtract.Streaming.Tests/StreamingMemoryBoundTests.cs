@@ -40,9 +40,14 @@ public sealed class StreamingMemoryBoundTests
         events.Should().BeGreaterThan(0, "the synthetic page is tag-heavy");
         tok.BytesConsumed.Should().BeGreaterThan(4 * 1024 * 1024,
             "we fed multi-MiB; consumed should reflect that");
-        tok.PeakBufferedBytes.Should().BeLessThan(IncrementalHtmlTokenizer.MaxBufferSize,
+        tok.PeakBufferedBytes.Should().BeLessThan(tok.MaxPartialTagBytes,
             $"sliding-window contract violated: peak buffered = {tok.PeakBufferedBytes:N0} B " +
             $"after consuming {tok.BytesConsumed:N0} B");
+        // Tighter assertion: the synthetic page's longest single tag is
+        // well under 1 KiB. Peak should sit there regardless of how high
+        // MaxPartialTagBytes is configured.
+        tok.PeakBufferedBytes.Should().BeLessThan(2 * 1024,
+            "synthetic page has no >1 KiB tags; peak should reflect that, not the configured ceiling");
     }
 
     [Fact]
@@ -65,8 +70,10 @@ public sealed class StreamingMemoryBoundTests
             offset += take;
         }
 
-        maxResidual.Should().BeLessThan(IncrementalHtmlTokenizer.MaxBufferSize,
+        maxResidual.Should().BeLessThan(tok.MaxPartialTagBytes,
             $"residual between fed and consumed should bound to O(longest tag); got {maxResidual:N0} B");
+        maxResidual.Should().BeLessThan(2 * 1024,
+            "synthetic page tags are well under 1 KiB; residual should reflect that");
     }
 
     [Fact]
@@ -89,8 +96,10 @@ public sealed class StreamingMemoryBoundTests
         scanner.Flush();
 
         scanner.BytesConsumed.Should().BeGreaterThan(0);
-        scanner.PeakBufferedBytes.Should().BeLessThan(IncrementalBytePatternScanner.MaxBufferSize,
-            $"scanner held {scanner.PeakBufferedBytes:N0} B vs response {html.Length:N0} B — bounded-memory broken");
+        scanner.PeakBufferedBytes.Should().BeLessThan(scanner.MaxCarryBufferBytes,
+            $"scanner held {scanner.PeakBufferedBytes:N0} B vs response {html.Length:N0} B; bounded-memory broken");
+        scanner.PeakBufferedBytes.Should().BeLessThan(8 * 1024,
+            "trivial-template carry should be small regardless of configured ceiling");
     }
 
     [Fact]
@@ -120,7 +129,9 @@ public sealed class StreamingMemoryBoundTests
                        $"bytesConsumed={scanner.BytesConsumed}B " +
                        $"captureRange=[{scanner.CaptureStartByte},{scanner.CaptureEndByte})");
 
-        scanner.PeakBufferedBytes.Should().BeLessThan(IncrementalBytePatternScanner.MaxBufferSize);
+        scanner.PeakBufferedBytes.Should().BeLessThan(scanner.MaxCarryBufferBytes);
+        scanner.PeakBufferedBytes.Should().BeLessThan(8 * 1024,
+            "trivial-template carry should be small regardless of configured ceiling");
     }
 
     private static byte[] GenerateLargeHtml(int megabytes)

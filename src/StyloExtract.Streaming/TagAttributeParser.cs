@@ -6,16 +6,18 @@ namespace StyloExtract.Streaming;
 /// <summary>
 /// Span-based extractor for the attribute slice of a parsed tag. Pulls out
 /// the precomputed hashes the tripwire matcher needs:
-///   - <c>class</c> token-by-token (capped at <see cref="TagEvent.MaxClassesPerEvent"/>)
+///   - <c>class</c> token-by-token (capped at <c>TagAttrLimits.MaxClassesPerEvent</c>)
 ///   - <c>id</c> (single hash)
 ///   - <c>role</c> (single hash)
-///   - <c>data-*</c> (capped at <see cref="TagEvent.MaxAttrPairsPerEvent"/>)
-///   - <c>aria-*</c> (capped at <see cref="TagEvent.MaxAttrPairsPerEvent"/>)
+///   - <c>data-*</c> (capped at <c>TagAttrLimits.MaxAttrPairsPerEvent</c>)
+///   - <c>aria-*</c> (capped at <c>TagAttrLimits.MaxAttrPairsPerEvent</c>)
 ///
-/// Caps are per-event constants — keep the per-tag work O(1). Pages that
-/// carry more classes/data-attrs than the cap simply lose the tail; identity
-/// claims that depend on a tail-class won't fire, which falls through to
-/// Bailout cleanly.
+/// Caps are per-tokenizer-instance, threaded down via
+/// <see cref="TagAttrLimits"/>. They bound the parser's stackalloc scratch
+/// buffers, NOT the system's tolerance for attribute-heavy markup: the
+/// defaults (32 classes / 16 attr-pairs) cover everything observed in
+/// dogfood corpora. Raise via <see cref="StreamingTokenizerOptions"/> if a
+/// host genuinely needs more.
 ///
 /// Allocation: the output arrays are pooled-empty for the zero-attr case
 /// (the majority of HTML tags) via <c>Array.Empty</c>. Tags with attributes
@@ -45,6 +47,7 @@ internal static class TagAttributeParser
     /// </summary>
     public static void ExtractIdentityHashes(
         ReadOnlySpan<byte> attrs,
+        TagAttrLimits limits,
         out ulong idHash,
         out ulong roleHash,
         out ulong[] classHashes,
@@ -59,9 +62,9 @@ internal static class TagAttributeParser
 
         if (attrs.IsEmpty) return;
 
-        Span<ulong> classBuf = stackalloc ulong[TagEvent.MaxClassesPerEvent];
-        Span<AttrHashPair> dataBuf = stackalloc AttrHashPair[TagEvent.MaxAttrPairsPerEvent];
-        Span<AttrHashPair> ariaBuf = stackalloc AttrHashPair[TagEvent.MaxAttrPairsPerEvent];
+        Span<ulong> classBuf = stackalloc ulong[limits.MaxClassesPerEvent];
+        Span<AttrHashPair> dataBuf = stackalloc AttrHashPair[limits.MaxAttrPairsPerEvent];
+        Span<AttrHashPair> ariaBuf = stackalloc AttrHashPair[limits.MaxAttrPairsPerEvent];
         int classCount = 0, dataCount = 0, ariaCount = 0;
 
         // Single left-to-right scan, lifting one (name, value) attribute per

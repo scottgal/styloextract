@@ -50,8 +50,15 @@ public static class NextDataRehydrationExtractor
     };
 
     private const int MinStringLengthForContent = 80;
-    private const int MaxStringsCollected = 500;
-    private const int MaxDepth = 12;
+
+    // Cold-path walker caps. Bumped from 500 / 12 — modern Next.js __NEXT_DATA__
+    // blobs (e.g. Vercel marketing pages, CMS-driven blogs) carry several
+    // thousand prose-shaped strings nested up to ~20 levels deep. The earlier
+    // values silently truncated those, dropping the article body. New values
+    // are 4-10× the largest blob observed in dogfood — sanity stops against
+    // runaway walks, not coverage limits.
+    private const int MaxStringsCollected = 5_000;
+    private const int MaxDepth = 32;
 
     public static string ExtractMainContent(IDocument document)
     {

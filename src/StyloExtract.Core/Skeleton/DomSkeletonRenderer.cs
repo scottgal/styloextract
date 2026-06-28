@@ -171,7 +171,12 @@ public sealed class DomSkeletonRenderer
     /// </summary>
     private static void AppendSemanticAttributes(StringBuilder sb, IElement el)
     {
-        const int MaxAttrChars = 40;
+        // Truncation guard on attr values in the LLM skeleton. Bumped from
+        // 40 → 160: 40 was too tight for aria-label / role-description
+        // values that carry real semantic signal (often 80-120 chars on
+        // accessibility-conscious sites). 160 covers observed maxes; longer
+        // values are still rare and ellipsis-truncated.
+        const int MaxAttrChars = 160;
         var role = el.GetAttribute("role");
         if (!string.IsNullOrEmpty(role))
         {

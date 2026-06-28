@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace StyloExtract.Streaming;
 
 /// <summary>
@@ -6,12 +8,19 @@ namespace StyloExtract.Streaming;
 /// couldn't be consumed in isolation — a partial open tag, a script body
 /// whose close marker straddles the boundary, etc.
 ///
-/// Buffer contract: the carry-over buffer is hard-capped at
-/// <see cref="MaxBufferSize"/> (4 KiB). Under standards-conforming HTML the
-/// residual is bounded by (longest pattern's MaxScanBytes + longest skip
-/// region's close marker), which is comfortably under that cap.
-/// <see cref="PeakBufferedBytes"/> reports the high watermark for memory
-/// telemetry.
+/// <para>Buffer contract: the carry-over buffer is rented from
+/// <see cref="ArrayPool{Byte}.Shared"/> and grows on demand up to the
+/// configured ceiling
+/// <see cref="StreamingTokenizerOptions.MaxCarryBufferBytes"/> (default
+/// 1 MiB). Under standards-conforming HTML the residual is bounded by
+/// (longest pattern's MaxScanBytes + longest skip region's close marker),
+/// comfortably below the default ceiling. <see cref="Feed"/> throws
+/// <see cref="InvalidOperationException"/> only when input pushes past the
+/// configured ceiling. <see cref="PeakBufferedBytes"/> reports the high
+/// watermark for memory telemetry.</para>
+///
+/// <para>Dispose returns the rented buffer to the pool. Long-lived scanners
+/// should be wrapped in <c>using</c>.</para>
 ///
 /// Public surface mirrors the old <c>IncrementalFenceScanner</c>:
 /// <see cref="Create"/>, <see cref="Feed"/>, <see cref="Flush"/>,
@@ -19,34 +28,47 @@ namespace StyloExtract.Streaming;
 /// <see cref="CaptureEndByte"/>, <see cref="PeakBufferedBytes"/>,
 /// <see cref="BytesConsumed"/>.
 /// </summary>
-public sealed class IncrementalBytePatternScanner
+public sealed class IncrementalBytePatternScanner : IDisposable
 {
-    /// <summary>
-    /// Hard safety cap on the carry-over buffer. Real-world residual is
-    /// bounded by (longest pattern's MaxScanBytes + longest close-marker
-    /// fragment); this cap exists to fail fast on pathological input
-    /// rather than grow unboundedly.
-    /// </summary>
-    public const int MaxBufferSize = 4 * 1024;
-
     private const int InitialBufferSize = 512;
 
     private readonly StreamingTemplate _template;
+    private readonly int _maxCarryBufferBytes;
     private ScannerCore.State _state;
     private ScanVerdict _latched;
     private byte[] _buffer;
     private int _bufferLen;
     private int _peakBufferedBytes;
 
-    private IncrementalBytePatternScanner(StreamingTemplate template)
+    private IncrementalBytePatternScanner(StreamingTemplate template, StreamingTokenizerOptions? options)
     {
+        var opts = options ?? StreamingTokenizerOptions.Default;
+        opts.Validate();
         _template = template;
+        _maxCarryBufferBytes = opts.MaxCarryBufferBytes;
         _state = ScannerCore.State.Initial;
         _latched = ScanVerdict.Continue;
-        _buffer = new byte[InitialBufferSize];
+        _buffer = ArrayPool<byte>.Shared.Rent(InitialBufferSize);
     }
 
-    public static IncrementalBytePatternScanner Create(StreamingTemplate template) => new(template);
+    public static IncrementalBytePatternScanner Create(StreamingTemplate template) => new(template, options: null);
+
+    public static IncrementalBytePatternScanner Create(StreamingTemplate template, StreamingTokenizerOptions options) =>
+        new(template, options);
+
+    /// <summary>
+    /// Configurable sanity ceiling on the carry-over buffer. Replaces the
+    /// legacy public <c>const int MaxBufferSize</c>; tests assert against
+    /// this property to bound the in-flight memory.
+    /// </summary>
+    public int MaxCarryBufferBytes => _maxCarryBufferBytes;
+
+    public void Dispose()
+    {
+        var buf = _buffer;
+        _buffer = null!;
+        if (buf is not null) ArrayPool<byte>.Shared.Return(buf);
+    }
 
     public FenceState State => _state.Fence;
     public long CaptureStartByte => _state.CaptureStartByte;
@@ -66,13 +88,13 @@ public sealed class IncrementalBytePatternScanner
         // (so we can fast-path the remainder of chunk) or chunk is exhausted.
         while (_bufferLen > 0 && chunkPos < chunk.Length)
         {
-            var headroom = MaxBufferSize - _bufferLen;
+            var headroom = _maxCarryBufferBytes - _bufferLen;
             if (headroom <= 0)
             {
                 throw new InvalidOperationException(
                     $"IncrementalBytePatternScanner carry-over buffer is full at {_bufferLen} bytes " +
-                    "and no progress is being made. The active template's patterns can't match in the " +
-                    "available window — input is pathological.");
+                    $"and no progress is being made. The active template's patterns can't match in the " +
+                    $"available window; raise StreamingTokenizerOptions.MaxCarryBufferBytes if input is legitimate.");
             }
             var take = Math.Min(headroom, chunk.Length - chunkPos);
             EnsureBufferCapacity(_bufferLen + take);
@@ -156,19 +178,21 @@ public sealed class IncrementalBytePatternScanner
 
     private void EnsureBufferCapacity(int required)
     {
-        if (required > MaxBufferSize)
+        if (required > _maxCarryBufferBytes)
         {
             throw new InvalidOperationException(
-                $"IncrementalBytePatternScanner carry-over buffer would exceed {MaxBufferSize} bytes " +
+                $"IncrementalBytePatternScanner carry-over buffer would exceed {_maxCarryBufferBytes} bytes " +
                 $"(required={required}). A pattern's MaxScanBytes or a skip region's close marker " +
-                "needs more carry than the bounded-memory contract allows.");
+                $"needs more carry than the configured ceiling allows; raise " +
+                $"StreamingTokenizerOptions.MaxCarryBufferBytes if input is legitimate.");
         }
         if (required > _buffer.Length)
         {
             var newSize = Math.Max(_buffer.Length * 2, required);
-            if (newSize > MaxBufferSize) newSize = MaxBufferSize;
-            var grown = new byte[newSize];
+            if (newSize > _maxCarryBufferBytes) newSize = _maxCarryBufferBytes;
+            var grown = ArrayPool<byte>.Shared.Rent(newSize);
             Buffer.BlockCopy(_buffer, 0, grown, 0, _bufferLen);
+            ArrayPool<byte>.Shared.Return(_buffer);
             _buffer = grown;
         }
     }

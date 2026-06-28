@@ -33,12 +33,6 @@ namespace StyloExtract.Streaming;
 /// </summary>
 public readonly struct TagEvent
 {
-    /// <summary>Maximum number of class tokens we extract per event.</summary>
-    internal const int MaxClassesPerEvent = 8;
-
-    /// <summary>Maximum number of data-* / aria-* attrs we extract per event.</summary>
-    internal const int MaxAttrPairsPerEvent = 3;
-
     public ulong TagNameHash { get; init; }
     public ulong ClassHash { get; init; }
     public ulong IdHash { get; init; }

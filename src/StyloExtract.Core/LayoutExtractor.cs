@@ -703,8 +703,13 @@ public sealed class LayoutExtractor : ILayoutExtractor
         }
         if (string.IsNullOrEmpty(skeleton)) return;
 
-        // Truncate the bad markdown sample so the queue stays cheap.
-        const int MaxBadSampleChars = 400;
+        // Truncate the bad markdown sample fed to the LLM repair prompt.
+        // Bumped from 400 → 2000: 400 chars often didn't contain enough of
+        // the broken output to show the LLM where the template went wrong
+        // (e.g. a Wikipedia language-picker leak runs well past 400 chars
+        // before the actual article body shows up). 2000 still keeps the
+        // queue job small while giving the LLM enough context.
+        const int MaxBadSampleChars = 2000;
         var sample = badMarkdown.Length <= MaxBadSampleChars
             ? badMarkdown
             : badMarkdown[..MaxBadSampleChars];

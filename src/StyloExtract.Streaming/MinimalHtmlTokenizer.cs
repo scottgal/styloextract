@@ -10,17 +10,24 @@ public ref struct MinimalHtmlTokenizer
 
     private readonly ReadOnlySpan<byte> _input;
     private readonly TripwireTagFilter _filter;
+    private readonly TagAttrLimits _attrLimits;
     private int _position;
 
     public MinimalHtmlTokenizer(ReadOnlySpan<byte> input)
-        : this(input, TripwireTagFilter.MatchAll)
+        : this(input, TripwireTagFilter.MatchAll, TagAttrLimits.Default)
     {
     }
 
     public MinimalHtmlTokenizer(ReadOnlySpan<byte> input, TripwireTagFilter filter)
+        : this(input, filter, TagAttrLimits.Default)
+    {
+    }
+
+    public MinimalHtmlTokenizer(ReadOnlySpan<byte> input, TripwireTagFilter filter, TagAttrLimits attrLimits)
     {
         _input = input;
         _filter = filter;
+        _attrLimits = attrLimits;
         _position = 0;
     }
 
@@ -93,6 +100,7 @@ public ref struct MinimalHtmlTokenizer
             {
                 TagAttributeParser.ExtractIdentityHashes(
                     attrs,
+                    _attrLimits,
                     out idHash,
                     out roleHash,
                     out classHashes,

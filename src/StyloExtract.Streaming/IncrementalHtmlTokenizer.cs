@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.IO.Hashing;
 using StyloExtract.Abstractions;
 
@@ -11,44 +12,30 @@ namespace StyloExtract.Streaming;
 /// dropped immediately and only the partial-tag tail (typically &lt;500 B)
 /// is copied into <c>_buffer</c> for stitching with the next chunk.
 ///
-/// This is the alpha.21 redesign of the alpha.19 tokenizer, which copied
-/// the WHOLE chunk into <c>_buffer</c> on every Feed (so
-/// <see cref="PeakBufferedBytes"/> measured chunk-size, not partial-tag
-/// size). The new contract: the worst-case retained buffer is the longest
-/// single tag that happened to straddle a chunk boundary, regardless of
-/// chunk size — so <see cref="PeakBufferedBytes"/> on a 4 KiB- or 16 KiB-
-/// chunked feed is the same low-hundreds-of-bytes number.
-///
-/// Behavioural contract (unchanged): feeding the same bytes that
+/// Behavioural contract: feeding the same bytes that
 /// <see cref="MinimalHtmlTokenizer"/> would consume — in any chunking —
 /// yields the same <see cref="TagEvent"/> sequence in the same order,
 /// with the same hashes and byte lengths.
 ///
-/// Buffer growth: the partial-tag buffer is hard-capped at
-/// <see cref="MaxBufferSize"/> (4 KiB). The cap is a safety stop; if a
-/// single tag is genuinely longer than 4 KiB (or a script/style body has
-/// no close-marker in 4 KiB of body), <see cref="Feed"/> throws
-/// <see cref="InvalidOperationException"/>. <see cref="PeakBufferedBytes"/>
-/// exposes the high-watermark for memory telemetry.
+/// <para>Buffer growth: the partial-tag buffer is rented from
+/// <see cref="ArrayPool{Byte}.Shared"/> and doubles on demand. The
+/// configurable ceiling on its size is
+/// <see cref="StreamingTokenizerOptions.MaxPartialTagBytes"/> (default 1 MiB);
+/// <see cref="Feed"/> throws <see cref="InvalidOperationException"/> only
+/// when a single tag (or a script/style body without its close marker) would
+/// push the buffer past that. The default ceiling sits far above any
+/// observed real-world tag — the previous 16 KiB hard <c>const</c> was
+/// an arbitrary number that fired on legitimate JSON-LD blobs.</para>
+///
+/// <para><see cref="PeakBufferedBytes"/> exposes the high-watermark for
+/// memory telemetry. Dispose returns the rented buffer to the pool — call
+/// it (or wrap in <c>using</c>) on long-lived tokenizers to avoid pinning
+/// pool entries.</para>
 /// </summary>
-public sealed class IncrementalHtmlTokenizer
+public sealed class IncrementalHtmlTokenizer : IDisposable
 {
-    /// <summary>
-    /// Hard safety cap on the internal partial-tag buffer. Under correct input
-    /// the buffer's valid-byte count post-Feed is O(longest partial tag).
-    /// The cap fires only on input where a single tag exceeds the cap, or a
-    /// script/style body has no closing marker inside the cap's worth of body.
-    ///
-    /// Bumped from 4 KiB to 16 KiB after BBC News + Guardian dogfood crashes:
-    /// modern news sites legitimately ship single tags (JSON-LD blobs in
-    /// <c>&lt;script type="application/ld+json"&gt;</c>, OpenGraph
-    /// <c>&lt;meta&gt;</c> tags with long content attributes, inline SVG with
-    /// embedded path strings) in the 4-12 KiB range. 16 KiB covers real-world
-    /// maxes while still acting as a safety stop for genuinely broken input.
-    /// </summary>
-    public const int MaxBufferSize = 16 * 1024;
-
     private const int InitialBufferSize = 512;
+    private readonly int _maxPartialTagBytes;
 
     private static readonly ulong s_scriptHash = XxHash3.HashToUInt64("script"u8);
     private static readonly ulong s_styleHash = XxHash3.HashToUInt64("style"u8);
@@ -71,18 +58,50 @@ public sealed class IncrementalHtmlTokenizer
     private readonly TripwireTagFilter _filter;
 
     public IncrementalHtmlTokenizer()
-        : this(TripwireTagFilter.MatchAll)
+        : this(TripwireTagFilter.MatchAll, options: null)
     {
     }
 
     public IncrementalHtmlTokenizer(TripwireTagFilter filter)
+        : this(filter, options: null)
     {
-        _buffer = new byte[InitialBufferSize];
-        _filter = filter;
     }
+
+    public IncrementalHtmlTokenizer(StreamingTokenizerOptions options)
+        : this(TripwireTagFilter.MatchAll, options)
+    {
+    }
+
+    public IncrementalHtmlTokenizer(TripwireTagFilter filter, StreamingTokenizerOptions? options)
+    {
+        var opts = options ?? StreamingTokenizerOptions.Default;
+        opts.Validate();
+        _maxPartialTagBytes = opts.MaxPartialTagBytes;
+        _buffer = ArrayPool<byte>.Shared.Rent(InitialBufferSize);
+        _filter = filter;
+        _attrLimits = new TagAttrLimits(opts.MaxClassesPerEvent, opts.MaxAttrPairsPerEvent);
+    }
+
+    private readonly TagAttrLimits _attrLimits;
 
     public long BytesConsumed => _bytesEmitted;
     public int PeakBufferedBytes => _peakBufferedBytes;
+
+    /// <summary>
+    /// Configurable sanity ceiling on the partial-tag buffer. Exposed as an
+    /// instance property because the legacy public <c>const int MaxBufferSize</c>
+    /// was replaced by <see cref="StreamingTokenizerOptions.MaxPartialTagBytes"/>
+    /// — tests still need an upper-bound assertion target, so this property
+    /// surfaces the configured value of THIS instance.
+    /// </summary>
+    public int MaxPartialTagBytes => _maxPartialTagBytes;
+
+    public void Dispose()
+    {
+        var buf = _buffer;
+        _buffer = null!;
+        if (buf is not null) ArrayPool<byte>.Shared.Return(buf);
+    }
 
     /// <summary>
     /// Feed the next chunk of bytes. Parses everything into <see cref="TagEvent"/>s
@@ -284,7 +303,7 @@ public sealed class IncrementalHtmlTokenizer
         if (isInteresting && !attrs.IsEmpty)
         {
             TagAttributeParser.ExtractIdentityHashes(
-                attrs, out idHash, out roleHash, out classHashes, out dataAttrs, out ariaAttrs);
+                attrs, _attrLimits, out idHash, out roleHash, out classHashes, out dataAttrs, out ariaAttrs);
         }
 
         _pendingEvents.Enqueue(new TagEvent
@@ -435,7 +454,7 @@ public sealed class IncrementalHtmlTokenizer
             if (isInteresting && !attrs.IsEmpty)
             {
                 TagAttributeParser.ExtractIdentityHashes(
-                    attrs, out idHash, out roleHash, out classHashes, out dataAttrs, out ariaAttrs);
+                    attrs, _attrLimits, out idHash, out roleHash, out classHashes, out dataAttrs, out ariaAttrs);
             }
 
             _pendingEvents.Enqueue(new TagEvent
@@ -620,20 +639,21 @@ public sealed class IncrementalHtmlTokenizer
 
     private void EnsureBufferCapacity(int required)
     {
-        if (required > MaxBufferSize)
+        if (required > _maxPartialTagBytes)
         {
             throw new InvalidOperationException(
-                $"IncrementalHtmlTokenizer partial-tag buffer would exceed {MaxBufferSize} bytes " +
-                $"(required={required}). Under the sliding-window contract this means either a " +
-                $"single tag exceeds {MaxBufferSize} bytes or a script/style body has no closing " +
-                $"marker in that window. Bail the scan — the input is pathological.");
+                $"IncrementalHtmlTokenizer partial-tag buffer would exceed {_maxPartialTagBytes} bytes " +
+                $"(required={required}). Either a single tag exceeds the configured ceiling or a " +
+                $"script/style body has no closing marker in that window. Raise " +
+                $"StreamingTokenizerOptions.MaxPartialTagBytes if the input is legitimate.");
         }
         if (required > _buffer.Length)
         {
             var newSize = Math.Max(_buffer.Length * 2, required);
-            if (newSize > MaxBufferSize) newSize = MaxBufferSize;
-            var grown = new byte[newSize];
+            if (newSize > _maxPartialTagBytes) newSize = _maxPartialTagBytes;
+            var grown = ArrayPool<byte>.Shared.Rent(newSize);
             Buffer.BlockCopy(_buffer, 0, grown, 0, _bufferLen);
+            ArrayPool<byte>.Shared.Return(_buffer);
             _buffer = grown;
         }
     }

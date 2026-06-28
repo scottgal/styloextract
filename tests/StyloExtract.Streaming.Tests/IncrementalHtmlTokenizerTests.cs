@@ -142,12 +142,15 @@ public sealed class IncrementalHtmlTokenizerTests
     [Fact]
     public void Buffer_overflow_with_no_progress_throws()
     {
-        // Pathological input: 2 MiB of bytes with no '<' or '>' at all. The
-        // tokenizer can't advance _consumed past a single tag (none exists)
-        // so the buffer eventually hits MaxBufferSize without progress and
+        // Pathological input: bytes with no '>' to close the partial tags. The
+        // tokenizer can't advance past any single tag (none completes) so the
+        // buffer eventually hits the configured ceiling without progress and
         // must surface the failure rather than silently dropping bytes.
-        var t = new IncrementalHtmlTokenizer();
-        var junk = new byte[IncrementalHtmlTokenizer.MaxBufferSize + 1024];
+        // Configure a small ceiling so the test runs fast; the production
+        // default is 1 MiB but the same code path fires at any size.
+        var opts = new StreamingTokenizerOptions { MaxPartialTagBytes = 16 * 1024 };
+        var t = new IncrementalHtmlTokenizer(opts);
+        var junk = new byte[opts.MaxPartialTagBytes + 1024];
         for (int i = 0; i < junk.Length; i++) junk[i] = (byte)'a';
 
         // The tokenizer drains buffer-cleanly when no '<' appears (advancing
@@ -172,11 +175,12 @@ public sealed class IncrementalHtmlTokenizerTests
     [Fact]
     public void Two_hundred_kb_body_in_sixteen_kb_chunks_keeps_peak_under_partial_tag_size()
     {
-        // alpha.21 contract: PeakBufferedBytes reflects ONLY the longest
-        // partial-tag straddling a chunk boundary, not the chunk size.
-        // 16 KB chunks over a 200 KB realistic page should peak well under
-        // 4 KB (the new MaxBufferSize cap). Often the peak is 0 — a chunk
-        // boundary that lands inside a text segment leaves nothing buffered.
+        // PeakBufferedBytes reflects ONLY the longest partial-tag straddling
+        // a chunk boundary, not the chunk size. 16 KB chunks over a 200 KB
+        // realistic page should peak in the low hundreds of bytes regardless
+        // of the configured MaxPartialTagBytes ceiling. Often the peak is 0 —
+        // a chunk boundary that lands inside a text segment leaves nothing
+        // buffered.
         var html = BuildLargeRealisticPage(targetBytes: 200_000);
         html.Length.Should().BeGreaterThan(150_000);
 
@@ -193,16 +197,16 @@ public sealed class IncrementalHtmlTokenizerTests
         }
 
         events.Should().BeGreaterThan(100, "the synthetic page is tag-heavy");
-        Console.WriteLine($"[alpha.21] html={html.Length}B chunks=16KB events={events} " +
+        Console.WriteLine($"html={html.Length}B chunks=16KB events={events} " +
                           $"peak={tok.PeakBufferedBytes}B consumed={tok.BytesConsumed}B");
-        tok.PeakBufferedBytes.Should().BeLessThan(IncrementalHtmlTokenizer.MaxBufferSize,
-            $"alpha.21 partial-tag-only buffer should stay under {IncrementalHtmlTokenizer.MaxBufferSize:N0} B; " +
+        tok.PeakBufferedBytes.Should().BeLessThan(tok.MaxPartialTagBytes,
+            $"partial-tag-only buffer should stay under {tok.MaxPartialTagBytes:N0} B; " +
             $"got {tok.PeakBufferedBytes:N0} B after consuming {tok.BytesConsumed:N0} B");
         // Tighter assertion: at worst a single partial tag (a few hundred
         // bytes) straddles a boundary. 512 B is a generous ceiling that
         // demonstrates we're nowhere near chunk-size.
         tok.PeakBufferedBytes.Should().BeLessThan(512,
-            $"alpha.21 should peak in low-hundreds-of-bytes (or zero); got {tok.PeakBufferedBytes:N0} B");
+            $"should peak in low-hundreds-of-bytes (or zero); got {tok.PeakBufferedBytes:N0} B");
     }
 
     [Fact]
