@@ -40,6 +40,7 @@ public sealed class TemplateEnrichmentCoordinator : BackgroundService
     private readonly LlmTemplateInducer _inducer;
     private readonly string _operatorTemplateRoot;
     private readonly IOperatorTemplateStore? _operatorTemplateStore;
+    private readonly ILlmActivityObserver? _activityObserver;
     private readonly EnrichmentCoordinatorOptions _options;
     private readonly ILogger<TemplateEnrichmentCoordinator>? _logger;
 
@@ -49,12 +50,14 @@ public sealed class TemplateEnrichmentCoordinator : BackgroundService
         string operatorTemplateRoot,
         IOperatorTemplateStore? operatorTemplateStore = null,
         EnrichmentCoordinatorOptions? options = null,
-        ILogger<TemplateEnrichmentCoordinator>? logger = null)
+        ILogger<TemplateEnrichmentCoordinator>? logger = null,
+        ILlmActivityObserver? activityObserver = null)
     {
         _queue = queue ?? throw new ArgumentNullException(nameof(queue));
         _inducer = inducer ?? throw new ArgumentNullException(nameof(inducer));
         _operatorTemplateRoot = operatorTemplateRoot ?? throw new ArgumentNullException(nameof(operatorTemplateRoot));
         _operatorTemplateStore = operatorTemplateStore;
+        _activityObserver = activityObserver;
         _options = options ?? EnrichmentCoordinatorOptions.Default;
         _logger = logger;
     }
@@ -91,13 +94,16 @@ public sealed class TemplateEnrichmentCoordinator : BackgroundService
 
     private async Task ProcessJobAsync(TemplateEnrichmentJob job, CancellationToken cancellationToken)
     {
-        // For Induce: skip if an operator-written template already exists for
-        // this host — hand-authored takes precedence over induced. For Repair:
-        // the existing operator-template IS what we're being asked to fix, so
-        // the presence check is the trigger, not a block.
+        // For Induce: skip if a NON-deterministic operator template already
+        // exists for this host. Hand-authored and LLM-induced templates block
+        // re-induction; the deterministic YAML sink's audit snapshots do NOT
+        // because those snapshots ARE the template the LLM is supposed to
+        // refine on. For Repair: the existing template IS what we're being
+        // asked to fix, so the presence check is the trigger, not a block.
         if (job.Kind == EnrichmentJobKind.Induce &&
             _operatorTemplateStore is not null &&
-            _operatorTemplateStore.TryGet(job.Host, out _))
+            _operatorTemplateStore.TryGet(job.Host, out var existing) &&
+            !existing.IsDeterministic)
         {
             _logger?.LogDebug(
                 "skipping enrichment for {Host}: hand-authored operator template exists",
@@ -106,6 +112,12 @@ public sealed class TemplateEnrichmentCoordinator : BackgroundService
         }
 
         OperatorTemplate? template;
+        var llmSuccess = false;
+        // Bracket the LLM call with observer callbacks so consumers (e.g. the
+        // lucidVIEW FULL status bar) can show "the LLM is currently working
+        // on host X". CPU-only dogfood inference runs in the tens of seconds
+        // and the host appears stuck otherwise.
+        _activityObserver?.LlmCallStarted(job.Host, job.Kind);
         try
         {
             template = job.Kind switch
@@ -117,12 +129,14 @@ public sealed class TemplateEnrichmentCoordinator : BackgroundService
         }
         catch (OperationCanceledException)
         {
+            _activityObserver?.LlmCallEnded(job.Host, job.Kind, success: false);
             throw;
         }
         catch (Exception ex)
         {
             _logger?.LogError(ex,
                 "{Kind} crashed for {Host}; skipping job", job.Kind, job.Host);
+            _activityObserver?.LlmCallEnded(job.Host, job.Kind, success: false);
             return;
         }
 
@@ -131,6 +145,7 @@ public sealed class TemplateEnrichmentCoordinator : BackgroundService
             _logger?.LogInformation(
                 "{Kind} returned null for {Host}; existing template (if any) stays in place",
                 job.Kind, job.Host);
+            _activityObserver?.LlmCallEnded(job.Host, job.Kind, success: false);
             return;
         }
 
@@ -141,10 +156,13 @@ public sealed class TemplateEnrichmentCoordinator : BackgroundService
             _logger?.LogInformation(
                 "{Kind} for {Host} produced no MainContent rule; skipping",
                 job.Kind, job.Host);
+            _activityObserver?.LlmCallEnded(job.Host, job.Kind, success: false);
             return;
         }
 
         await WriteTemplateAsync(template, job, cancellationToken).ConfigureAwait(false);
+        llmSuccess = true;
+        _activityObserver?.LlmCallEnded(job.Host, job.Kind, success: llmSuccess);
     }
 
     private async Task<OperatorTemplate?> RepairExistingAsync(

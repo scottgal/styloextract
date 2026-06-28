@@ -87,7 +87,8 @@ public static class StyloExtractLlmInducerExtensions
                 operatorTemplateRoot,
                 sp.GetService<IOperatorTemplateStore>(),
                 coordOptions,
-                sp.GetService<ILogger<TemplateEnrichmentCoordinator>>()));
+                sp.GetService<ILogger<TemplateEnrichmentCoordinator>>(),
+                sp.GetService<ILlmActivityObserver>()));
 
         return services;
     }

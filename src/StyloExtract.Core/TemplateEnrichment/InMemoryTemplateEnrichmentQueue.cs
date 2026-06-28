@@ -21,10 +21,25 @@ namespace StyloExtract.Core.TemplateEnrichment;
 public sealed class InMemoryTemplateEnrichmentQueue : ITemplateEnrichmentQueue, IDisposable
 {
     private readonly Channel<TemplateEnrichmentJob> _channel;
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _lastEnqueuedByHost = new(StringComparer.OrdinalIgnoreCase);
+    // Keyed by (host, kind). Induce and Repair for the same host get
+    // independent cooldown slots so a first-visit Induce can't silently
+    // block a later Repair (the apply-time bug-out signal that says "the
+    // template you induced was wrong, please redo").
+    private readonly ConcurrentDictionary<(string Host, EnrichmentJobKind Kind), DateTimeOffset> _lastEnqueued =
+        new(new HostKindComparer());
     private readonly TimeSpan _perHostCooldown;
     private readonly TimeSpan _maxJobAge;
     private readonly ILogger<InMemoryTemplateEnrichmentQueue>? _logger;
+
+    private sealed class HostKindComparer : IEqualityComparer<(string Host, EnrichmentJobKind Kind)>
+    {
+        public bool Equals((string Host, EnrichmentJobKind Kind) x, (string Host, EnrichmentJobKind Kind) y) =>
+            x.Kind == y.Kind && string.Equals(x.Host, y.Host, StringComparison.OrdinalIgnoreCase);
+        public int GetHashCode((string Host, EnrichmentJobKind Kind) obj) =>
+            HashCode.Combine(
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Host),
+                (int)obj.Kind);
+    }
 
     public InMemoryTemplateEnrichmentQueue(
         EnrichmentQueueOptions? options = null,
@@ -47,23 +62,26 @@ public sealed class InMemoryTemplateEnrichmentQueue : ITemplateEnrichmentQueue, 
     {
         if (job is null) throw new ArgumentNullException(nameof(job));
 
-        // Per-host cooldown: if this host was enqueued recently, drop the
-        // duplicate silently. The producer doesn't need to know; the
-        // outstanding job will satisfy this host's enrichment too.
+        // Per-(host, kind) cooldown: if this host already has an active job
+        // of the SAME kind, drop the duplicate. Induce and Repair for the
+        // same host don't compete for the same slot — Repair after a recent
+        // Induce represents new information (apply-time bug-out), not a
+        // duplicate.
         var now = DateTimeOffset.UtcNow;
-        if (_lastEnqueuedByHost.TryGetValue(job.Host, out var lastAt) &&
+        var key = (job.Host, job.Kind);
+        if (_lastEnqueued.TryGetValue(key, out var lastAt) &&
             now - lastAt < _perHostCooldown)
         {
-            _logger?.LogTrace("dropping enrichment for {Host}: cooldown active", job.Host);
+            _logger?.LogTrace("dropping enrichment for {Host} ({Kind}): cooldown active", job.Host, job.Kind);
             return new ValueTask<bool>(false);
         }
 
         if (!_channel.Writer.TryWrite(job))
         {
-            _logger?.LogTrace("dropping enrichment for {Host}: queue full", job.Host);
+            _logger?.LogTrace("dropping enrichment for {Host} ({Kind}): queue full", job.Host, job.Kind);
             return new ValueTask<bool>(false);
         }
-        _lastEnqueuedByHost[job.Host] = now;
+        _lastEnqueued[key] = now;
         return new ValueTask<bool>(true);
     }
 
