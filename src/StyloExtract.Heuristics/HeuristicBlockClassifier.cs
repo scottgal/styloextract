@@ -31,6 +31,11 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
     private readonly HashSet<string> _adHints;
     private readonly HashSet<string> _frameworkContentHints;
 
+    // Used by the Step 1a-prime tighten-on-anchor pass to decide whether an
+    // element's class tokens carry a real identity signal or are purely
+    // Tailwind/Bootstrap utility chrome. No instance state of its own.
+    private static readonly IClassStabilityFilter s_stabilityFilter = new DefaultClassStabilityFilter();
+
     private HeuristicBlockClassifier(
         string[] footerPhrases,
         Regex[] copyrightPatterns,
@@ -232,6 +237,122 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
                     }
                 }
             }
+        }
+
+        // Step 1a-prime: Tighten-on-anchor.
+        //
+        // When a <main>/<article> qualified in Step 1a, look DOWN one level for a
+        // div/section descendant that is a strictly-tighter content container.
+        // To qualify it must:
+        //   * carry >= 80% of the semantic element's prose text (text minus link text)
+        //   * have link density < 0.5 (rejects pickers disguised as content)
+        //   * have a stable identity anchor: stable id OR at least one stable class
+        //     token (utility/hash-shaped classes filtered via DefaultClassStabilityFilter)
+        //
+        // When exactly ONE descendant qualifies, prefer it as MainContent and demote
+        // the semantic element to Boilerplate. Zero or multiple qualifying descendants
+        // means we abstain and leave the semantic element as the winner.
+        //
+        // Catches the Wikipedia + mostlylucid leak: <main id="content"> on Wikipedia
+        // contains both <div id="p-lang-btn"> (the language picker) and
+        // <div id="mw-content-text"> (the article body). Same shape for mostlylucid's
+        // <article id="blogpost"> wrapping the language-flag picker plus <div class="prose">.
+        // Without this step the outer semantic element wins MainContent and emits the
+        // picker's text. With it the inner anchored container wins, picker stays out.
+        const double TightenProseSpanThreshold = 0.8;
+        const double TightenedDescendantScore = 50000.0;
+
+        // Absolute prose floor (Move 1b refinement). Without it, when the
+        // semantic / fallback container's prose budget is tiny (e.g. a
+        // listing wrapper that's almost all link text), ANY descendant with
+        // a few non-link characters trivially clears the 80% relative
+        // threshold and gets promoted. The mostlylucid homepage fixture
+        // surfaced this: `#contentcontainer`'s prose collapsed to ~50 chars
+        // of pagination text, and the tighten step would otherwise pick the
+        // pagination subtree as MainContent. The floor caps that at ~200
+        // chars of real prose before any tighten can fire.
+        const int MinAbsoluteProseForTighten = 200;
+
+        // The tighten step iterates only the semantic anchors from Step 1a.
+        //
+        // A non-semantic extension (Move 1b in the spec) was prototyped to fire
+        // on generic blocky-div MainContent winners but caused regressions on
+        // link-dense landing pages (BBC News): nested sub-containers under
+        // <main> got over-tightened and the result lost headings. Dropped in
+        // favour of the apply-time path — when a non-semantic-anchored
+        // template produces noisy output (language picker leak shape), the
+        // Move 2b image-anchor picker gate trips applicatorBugOut and Move 3
+        // enqueues an LLM repair. First visit is degraded, subsequent visits
+        // run on the LLM-induced template.
+        var contentContainers = semanticElements;
+
+        // Collect qualifying descendants per container into this reusable list.
+        var qualifiers = new List<(IElement Element, int CandidateIndex)>(4);
+        for (int s = 0; s < contentContainers.Count; s++)
+        {
+            var sem = contentContainers[s];
+            var semProseLen = ComputeProseTextLength(sem);
+            if (semProseLen < MinAbsoluteProseForTighten) continue;
+
+            qualifiers.Clear();
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                var c = candidates[i];
+                var ctag = c.Element.LocalName;
+                if (ctag != "div" && ctag != "section") continue;
+                if (ReferenceEquals(c.Element, sem)) continue;
+                if (!IsAncestor(sem, c.Element)) continue;
+                if (!HasStableAnchor(c.Element)) continue;
+                if (ComputeLinkDensity(c.Element) >= SemanticElementMaxLinkDensity) continue;
+                var dProseLen = ComputeProseTextLength(c.Element);
+                if (dProseLen < MinAbsoluteProseForTighten) continue;
+                if (dProseLen < TightenProseSpanThreshold * semProseLen) continue;
+
+                qualifiers.Add((c.Element, i));
+            }
+
+            if (qualifiers.Count == 0) continue;
+
+            // Pick the deepest qualifier that's a strict descendant of every
+            // other qualifier. When the qualifiers form an ancestor chain
+            // (e.g. #blogpost > div.prose, where both have stable anchors and
+            // both span enough prose), the deepest one is the right choice —
+            // it's still ≥80% of the parent and excludes any sibling chrome.
+            // When the qualifiers are independent subtrees (siblings under
+            // sem), no element is descendant-of-all-others; abstain instead
+            // of guessing.
+            int chosenIdx = -1;
+            for (int i = 0; i < qualifiers.Count; i++)
+            {
+                bool descendantOfAllOthers = true;
+                for (int j = 0; j < qualifiers.Count; j++)
+                {
+                    if (i == j) continue;
+                    if (!IsAncestor(qualifiers[j].Element, qualifiers[i].Element))
+                    {
+                        descendantOfAllOthers = false;
+                        break;
+                    }
+                }
+                if (descendantOfAllOthers)
+                {
+                    chosenIdx = i;
+                    break;
+                }
+            }
+            if (chosenIdx < 0) continue;
+
+            var tighter = qualifiers[chosenIdx].Element;
+            var tighterIndex = qualifiers[chosenIdx].CandidateIndex;
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                if (ReferenceEquals(candidates[i].Element, sem))
+                {
+                    candidates[i] = (sem, BlockRole.Boilerplate, 0.3, -8000.0);
+                    break;
+                }
+            }
+            candidates[tighterIndex] = (tighter, BlockRole.MainContent, 0.95, TightenedDescendantScore);
         }
 
         // Step 1b: Repeated-item detection.
@@ -954,6 +1075,65 @@ public sealed class HeuristicBlockClassifier : IBlockClassifier
                 IsExternal = (a.GetAttribute("href") ?? "").StartsWith("http", StringComparison.OrdinalIgnoreCase)
             })
             .ToList();
+    }
+
+    /// <summary>
+    /// Sum the textual content of <paramref name="element"/> with the text
+    /// inside &lt;a&gt; descendants subtracted. The result is the "prose" budget
+    /// the element contributes, distinct from link text that the tighten-on-
+    /// anchor step explicitly does NOT want to count toward the 80% span.
+    /// </summary>
+    private static int ComputeProseTextLength(IElement element)
+    {
+        var totalLen = element.TextContent.Length;
+        if (totalLen == 0) return 0;
+
+        int linkLen = 0;
+        var stack = new Stack<IElement>();
+        stack.Push(element);
+        while (stack.Count > 0)
+        {
+            var cur = stack.Pop();
+            if (cur.LocalName == "a")
+            {
+                linkLen += cur.TextContent.Length;
+                continue; // do not recurse into the anchor's children; we already counted them
+            }
+            foreach (var child in cur.Children)
+                stack.Push(child);
+        }
+        return Math.Max(0, totalLen - linkLen);
+    }
+
+    /// <summary>
+    /// True when <paramref name="element"/> carries a stable identity anchor:
+    /// either a stable id (any non-empty id whose value passes the stability
+    /// filter, treating it as a single token), or a class attribute that
+    /// contains at least one stable class token. "Stable" rejects Tailwind/
+    /// Bootstrap utility prefixes, atomic layout singletons, and hash-shaped
+    /// tokens via DefaultClassStabilityFilter so e.g. an element with
+    /// <c>class="p-4 m-2 sm:gap-2"</c> does NOT look anchored.
+    /// </summary>
+    private static bool HasStableAnchor(IElement element)
+    {
+        var id = element.GetAttribute("id");
+        if (!string.IsNullOrEmpty(id) && s_stabilityFilter.IsStable(id))
+            return true;
+
+        var cls = element.GetAttribute("class");
+        if (string.IsNullOrEmpty(cls)) return false;
+
+        ReadOnlySpan<char> remaining = cls.AsSpan();
+        while (remaining.Length > 0)
+        {
+            int spaceIdx = remaining.IndexOf(' ');
+            ReadOnlySpan<char> token = spaceIdx < 0 ? remaining : remaining[..spaceIdx];
+            if (token.Length > 0 && s_stabilityFilter.IsStable(token.ToString()))
+                return true;
+            if (spaceIdx < 0) break;
+            remaining = remaining[(spaceIdx + 1)..];
+        }
+        return false;
     }
 
     private static bool HasAncestorTag(IElement element, string tag)
