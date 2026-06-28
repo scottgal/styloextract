@@ -107,7 +107,7 @@ public sealed class IncrementalHtmlTokenizer : IDisposable
     /// Feed the next chunk of bytes. Parses everything into <see cref="TagEvent"/>s
     /// inline; only the partial-tag tail (if a tag straddles the end of the
     /// chunk) is retained for the next call. Throws if the retained tail
-    /// would exceed <see cref="MaxBufferSize"/>.
+    /// would exceed <see cref="MaxPartialTagBytes"/>.
     /// </summary>
     public void Feed(ReadOnlySpan<byte> chunk)
     {

@@ -1,6 +1,6 @@
 # Apply-Time Quality Gate + Auto-Repair Loop
 
-**Status:** spec; pending approval before implementation dispatch.
+**Status:** implemented on main. Move 1 in `819ef5f`, Move 2 (image-anchor + metadata-shape + noisy-MainContent gates) and Move 3 (relaxed repair preconditions) in `71967db`. Tighten-on-anchor scoped to semantic anchors only — a non-semantic Move 1b prototype caused regressions on link-dense landings (BBC News) and was dropped in favour of the apply-time gate.
 
 ## Problem
 

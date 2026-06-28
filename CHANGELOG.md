@@ -4,6 +4,67 @@ All notable changes to StyloExtract are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-06-28
+
+First stable release. Closes Phase 1 + Phase 2 of the identity-claim
+rework. See `RELEASE_NOTES.txt` for the full per-feature breakdown;
+the highlights:
+
+### Added
+
+- `IdentityClaim` ancestor-chain primitive end-to-end across induction,
+  storage, and apply paths.
+- `StreamingTokenizerOptions` + `TagAttrLimits` for configurable
+  buffer ceilings and per-event class / attr limits.
+- `ApplicatorBrokenCheck` — apply-time quality gate with three new
+  failure modes (noisy MainContent, image-anchor picker, metadata
+  shape).
+- LayoutExtractor auto-repair loop: bad templates re-enqueue the LLM
+  inducer instead of staying broken.
+- Tighten-on-anchor heuristic — picks the inner anchored content
+  container when the outer semantic element mixes content + picker.
+- `OperatorTemplate.IsDeterministic` flag distinguishing audit
+  snapshots from real templates.
+- `OperatorTemplateRule.Claims` chain so operator templates run on
+  the identity-claim applicator.
+- `(Host, EnrichmentJobKind)` cooldown key on the enrichment queue.
+- `ILlmActivityObserver` callback hook for surfacing LLM progress to
+  callers (status bars, etc.).
+- Corpus mining: `SelectorDistance`, `CorpusMiner`, evolved-selector
+  emission and passive evaluation, background mining coordinator.
+- Incremental byte-pattern scanner with tag-hash prefilter.
+
+### Changed
+
+- Streaming buffers rented from `ArrayPool<byte>.Shared`. Both
+  `IncrementalHtmlTokenizer` and `IncrementalBytePatternScanner` are
+  now `IDisposable`.
+- Per-event class / attr caps bumped 8/3 → 32/16, configurable up to
+  256/128.
+- LayoutExtractor's CSS-string applicator replaced by the
+  identity-claim applicator.
+- `<article>` semantic-tag exception in `RepeatedItemDetector` —
+  news-listing pattern (single clickable card) no longer rejected
+  by the link-density gate.
+- `NextDataRehydrationExtractor` walker caps bumped 500/12 → 5000/32.
+- LayoutExtractor LLM-repair sample 400 → 2000 chars.
+- Skeleton renderer attr-value truncation 40 → 160 chars.
+
+### Removed
+
+- `IncrementalHtmlTokenizer.MaxBufferSize` and
+  `IncrementalBytePatternScanner.MaxBufferSize` public consts. Use
+  the instance properties / `StreamingTokenizerOptions`.
+- `TagEvent.MaxClassesPerEvent` and `TagEvent.MaxAttrPairsPerEvent`
+  internal consts. Use `TagAttrLimits`.
+- Streaming MinHash sketch and `TagAllowlistBloom` (alpha.21
+  deprecated the latter; alpha.24 dropped both with the
+  byte-pattern matcher).
+
+### Tests
+
+850 across 12 projects. All green.
+
 ## [1.8.0-alpha.5] - 2026-06-25
 
 In-process CPU LLM backend (LLamaSharp) + 13-model bench harness.
