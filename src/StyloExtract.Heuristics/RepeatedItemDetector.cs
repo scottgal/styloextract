@@ -123,8 +123,18 @@ internal static class RepeatedItemDetector
                 // listings (related questions, sponsored links, navigation columns).
                 // Content items (forum posts, product cards, listing entries) have low-to-medium
                 // link density; navigation lists are predominantly hyperlinks.
+                //
+                // EXCEPT for <article> items: HTML5 reserves <article> for self-contained
+                // composition, and the dominant news-listing pattern wraps the ENTIRE card
+                // (image + headline + excerpt) in a single <a> for clickability, giving
+                // link density ~1.0. The Register, Verge, Ars, BBC News listing all follow
+                // this shape. Rejecting these groups on link density alone produces a
+                // footer-only render. The semantic-tag check IS the signal here: if the
+                // page chose <article> for each card, treat it as content.
+                var isSemanticContentTag = string.Equals(
+                    tagGroup.Key, "article", StringComparison.OrdinalIgnoreCase);
                 var avgLinkDensity = items.Average(ComputeLinkDensity);
-                if (avgLinkDensity > 0.65) continue;
+                if (!isSemanticContentTag && avgLinkDensity > 0.65) continue;
 
                 groups.Add(new RepeatedItemGroup(container, items));
             }
