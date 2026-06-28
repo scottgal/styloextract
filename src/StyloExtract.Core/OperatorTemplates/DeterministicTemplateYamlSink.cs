@@ -62,6 +62,7 @@ public sealed class DeterministicTemplateYamlSink
                     Role = r.Role,
                     Selectors = r.CssSelectors,
                     Confidence = r.MeanConfidence,
+                    Claims = r.Claims,
                 }).ToList(),
             };
             var yaml = OperatorTemplateYamlEmitter.Emit(template);

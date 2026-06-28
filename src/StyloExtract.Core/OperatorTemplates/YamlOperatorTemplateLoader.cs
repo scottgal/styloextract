@@ -1,3 +1,5 @@
+using System.IO.Hashing;
+using System.Text;
 using StyloExtract.Abstractions;
 
 namespace StyloExtract.Core.OperatorTemplates;
@@ -118,6 +120,7 @@ public static class YamlOperatorTemplateLoader
         BlockRole? currentRole = null;
         List<string>? currentSelectors = null;
         double currentConfidence = 1.0;
+        List<IdentityClaim>? currentClaims = null;
 
         void Flush(int lineNumber)
         {
@@ -129,10 +132,12 @@ public static class YamlOperatorTemplateLoader
                 Role = currentRole.Value,
                 Selectors = currentSelectors,
                 Confidence = currentConfidence,
+                Claims = currentClaims,
             });
             currentRole = null;
             currentSelectors = null;
             currentConfidence = 1.0;
+            currentClaims = null;
         }
 
         while (i < lines.Length)
@@ -204,6 +209,13 @@ public static class YamlOperatorTemplateLoader
                             break;
                         }
                         continue;
+                    case "chain":
+                        if (value.Length != 0)
+                            throw Fail(i + 1, "chain: must be followed by an indented list");
+                        currentClaims = new List<IdentityClaim>();
+                        i++;
+                        i = ParseChainBlock(lines, i, currentClaims);
+                        continue;
                     default:
                         throw Fail(i + 1, $"unknown rule field '{key}'");
                 }
@@ -213,6 +225,181 @@ public static class YamlOperatorTemplateLoader
 
         Flush(i);
         return i;
+    }
+
+    /// <summary>
+    /// Parse one rule's <c>chain:</c> block. Each chain hop is a YAML mapping
+    /// that opens with a <c>- tag:</c> dash and may carry optional <c>id</c>,
+    /// <c>role</c>, <c>classes</c>, <c>data</c>, <c>aria</c> keys. Stops at
+    /// the first line whose indent drops below the chain-hop body indent.
+    /// Precomputed hashes on <see cref="IdentityClaim"/> are derived here so
+    /// the apply path can match without re-hashing per element.
+    /// </summary>
+    private static int ParseChainBlock(string[] lines, int start, List<IdentityClaim> sink)
+    {
+        const int HopEntryIndent = 6;   // `- tag: X` sits 6 spaces in (under the rule's 4-space body).
+        const int HopFieldIndent = 8;   // optional keys (id, role, classes:, data:, aria:) sit 8 spaces in.
+        const int HopListIndent = 10;   // list items under classes / data / aria sit 10 spaces in.
+
+        int i = start;
+
+        string? tag = null;
+        string? id = null;
+        string? role = null;
+        List<string>? classes = null;
+        Dictionary<string, string>? data = null;
+        Dictionary<string, string>? aria = null;
+
+        void FlushHop(int lineNumber)
+        {
+            if (tag is null) return;
+            sink.Add(BuildClaim(tag, id, role, classes, data, aria));
+            tag = null;
+            id = null;
+            role = null;
+            classes = null;
+            data = null;
+            aria = null;
+        }
+
+        while (i < lines.Length)
+        {
+            var raw = lines[i];
+            var trimmed = StripComment(raw).TrimEnd();
+            if (trimmed.Length == 0) { i++; continue; }
+            int indent = LeadingSpaces(trimmed);
+            if (indent < HopEntryIndent)
+            {
+                // De-indent below the chain entries means we're done with this chain block.
+                FlushHop(i + 1);
+                return i;
+            }
+            var stripped = trimmed.TrimStart();
+
+            if (indent == HopEntryIndent && stripped.StartsWith("- ", StringComparison.Ordinal))
+            {
+                FlushHop(i + 1);
+                var afterDash = stripped[2..].TrimStart();
+                if (!TryGetKey(afterDash, out var k, out var v) || k != "tag")
+                    throw Fail(i + 1, "every chain hop must start with 'tag:'");
+                if (v.Length == 0)
+                    throw Fail(i + 1, "chain hop 'tag' is empty");
+                tag = StripQuotes(v).Trim();
+                i++;
+                continue;
+            }
+
+            if (indent == HopFieldIndent && TryGetKey(stripped, out var key, out var value))
+            {
+                switch (key)
+                {
+                    case "tag":
+                        throw Fail(i + 1, "duplicate 'tag' inside a chain hop");
+                    case "id":
+                        id = RequireScalar(value, i + 1, "id");
+                        i++;
+                        continue;
+                    case "role":
+                        role = RequireScalar(value, i + 1, "role");
+                        i++;
+                        continue;
+                    case "classes":
+                        if (value.Length != 0)
+                            throw Fail(i + 1, "classes: must be followed by an indented list");
+                        classes = new List<string>();
+                        i++;
+                        while (i < lines.Length)
+                        {
+                            var lRaw = lines[i];
+                            var lTrimmed = StripComment(lRaw).TrimEnd();
+                            if (lTrimmed.Length == 0) { i++; continue; }
+                            int lIndent = LeadingSpaces(lTrimmed);
+                            var lStripped = lTrimmed.TrimStart();
+                            if (lIndent == HopListIndent && lStripped.StartsWith("- ", StringComparison.Ordinal))
+                            {
+                                var c = lStripped[2..].Trim();
+                                if (c.Length == 0) throw Fail(i + 1, "empty class name in chain hop");
+                                classes.Add(StripQuotes(c));
+                                i++;
+                                continue;
+                            }
+                            break;
+                        }
+                        continue;
+                    case "data":
+                        if (value.Length != 0)
+                            throw Fail(i + 1, "data: must be followed by indented key/value pairs");
+                        data = new Dictionary<string, string>();
+                        i = ParseHopAttrMap(lines, i + 1, HopListIndent, data, "data");
+                        continue;
+                    case "aria":
+                        if (value.Length != 0)
+                            throw Fail(i + 1, "aria: must be followed by indented key/value pairs");
+                        aria = new Dictionary<string, string>();
+                        i = ParseHopAttrMap(lines, i + 1, HopListIndent, aria, "aria");
+                        continue;
+                    default:
+                        throw Fail(i + 1, $"unknown chain-hop field '{key}'");
+                }
+            }
+            throw Fail(i + 1, "unexpected indentation or shape inside chain block");
+        }
+
+        FlushHop(i);
+        return i;
+    }
+
+    private static int ParseHopAttrMap(string[] lines, int start, int expectedIndent, Dictionary<string, string> sink, string fieldName)
+    {
+        int i = start;
+        while (i < lines.Length)
+        {
+            var raw = lines[i];
+            var trimmed = StripComment(raw).TrimEnd();
+            if (trimmed.Length == 0) { i++; continue; }
+            int indent = LeadingSpaces(trimmed);
+            if (indent != expectedIndent) break;
+            var stripped = trimmed.TrimStart();
+            if (!TryGetKey(stripped, out var k, out var v))
+                throw Fail(i + 1, $"{fieldName} entry must be 'name: value'");
+            var name = StripQuotes(k).Trim();
+            var val = StripQuotes(v).Trim();
+            if (name.Length == 0) throw Fail(i + 1, $"empty {fieldName} attribute name");
+            sink[name] = val;
+            i++;
+        }
+        return i;
+    }
+
+    /// <summary>
+    /// Build an <see cref="IdentityClaim"/> from the raw YAML fields,
+    /// recomputing the xxHash3 fields the hot-path applicator depends on.
+    /// </summary>
+    private static IdentityClaim BuildClaim(
+        string tag,
+        string? id,
+        string? role,
+        IReadOnlyList<string>? classes,
+        IReadOnlyDictionary<string, string>? data,
+        IReadOnlyDictionary<string, string>? aria)
+    {
+        var classList = classes ?? Array.Empty<string>();
+        var classHashes = new ulong[classList.Count];
+        for (int i = 0; i < classList.Count; i++)
+            classHashes[i] = XxHash3.HashToUInt64(Encoding.UTF8.GetBytes(classList[i]));
+
+        return new IdentityClaim
+        {
+            Tag = tag,
+            TagHash = XxHash3.HashToUInt64(Encoding.UTF8.GetBytes(tag)),
+            Id = string.IsNullOrEmpty(id) ? null : id,
+            IdHash = string.IsNullOrEmpty(id) ? null : XxHash3.HashToUInt64(Encoding.UTF8.GetBytes(id)),
+            Classes = classList,
+            ClassHashes = classHashes,
+            Role = string.IsNullOrEmpty(role) ? null : role,
+            DataAttrs = data ?? new Dictionary<string, string>(),
+            AriaAttrs = aria ?? new Dictionary<string, string>(),
+        };
     }
 
     private static BlockRole ParseRole(string value, int lineNumber)

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using StyloExtract.Abstractions;
 
@@ -44,11 +45,70 @@ public static class OperatorTemplateYamlEmitter
             if (rule.Confidence != 1.0)
             {
                 sb.Append("    confidence: ")
-                    .Append(rule.Confidence.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                    .Append(rule.Confidence.ToString(CultureInfo.InvariantCulture))
                     .Append('\n');
+            }
+            if (rule.Claims is { Count: > 0 } claims)
+            {
+                EmitChain(sb, claims);
             }
         }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Emit the identity-claim ancestor chain for one rule, outermost first.
+    /// Each chain hop is one YAML mapping with at minimum a <c>tag:</c> key.
+    /// Optional fields (id, role, classes, data, aria) only emit when present
+    /// so chains stay diff-friendly. The hot-path applicator never reads back
+    /// from YAML; the loader is responsible for re-deriving the precomputed
+    /// hash fields on <see cref="IdentityClaim"/>.
+    /// </summary>
+    private static void EmitChain(StringBuilder sb, IReadOnlyList<IdentityClaim> chain)
+    {
+        sb.Append("    chain:\n");
+        foreach (var claim in chain)
+        {
+            sb.Append("      - tag: ").Append(QuoteIfYamlSpecial(claim.Tag)).Append('\n');
+            if (!string.IsNullOrEmpty(claim.Id))
+            {
+                sb.Append("        id: ").Append(QuoteIfYamlSpecial(claim.Id)).Append('\n');
+            }
+            if (!string.IsNullOrEmpty(claim.Role))
+            {
+                sb.Append("        role: ").Append(QuoteIfYamlSpecial(claim.Role)).Append('\n');
+            }
+            if (claim.Classes.Count > 0)
+            {
+                sb.Append("        classes:\n");
+                foreach (var c in claim.Classes)
+                    sb.Append("          - ").Append(QuoteIfYamlSpecial(c)).Append('\n');
+            }
+            if (claim.DataAttrs.Count > 0)
+            {
+                sb.Append("        data:\n");
+                foreach (var kv in claim.DataAttrs)
+                {
+                    sb.Append("          ")
+                        .Append(QuoteIfYamlSpecial(kv.Key))
+                        .Append(": ")
+                        .Append(QuoteIfYamlSpecial(kv.Value))
+                        .Append('\n');
+                }
+            }
+            if (claim.AriaAttrs.Count > 0)
+            {
+                sb.Append("        aria:\n");
+                foreach (var kv in claim.AriaAttrs)
+                {
+                    sb.Append("          ")
+                        .Append(QuoteIfYamlSpecial(kv.Key))
+                        .Append(": ")
+                        .Append(QuoteIfYamlSpecial(kv.Value))
+                        .Append('\n');
+                }
+            }
+        }
     }
 
     /// <summary>

@@ -29,6 +29,7 @@ public static class OperatorTemplateAdapter
                 MeanConfidence = r.Confidence,
                 ObservationCount = 1,
                 DriftScore = 0,
+                Claims = r.Claims,
             });
         }
         return new LearnedExtractor

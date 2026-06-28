@@ -37,6 +37,18 @@ public sealed record OperatorTemplate
     /// might match the same element.
     /// </summary>
     public required IReadOnlyList<OperatorTemplateRule> Rules { get; init; }
+
+    /// <summary>
+    /// True when this template came from the deterministic heuristic
+    /// inducer's YAML sink (a <c>&lt;host&gt;-deterministic.yaml</c> file),
+    /// false for hand-authored or LLM-induced operator templates. Consumers
+    /// that need to distinguish "real" operator overrides from automatic
+    /// audit snapshots (e.g. the TemplateEnrichmentCoordinator's
+    /// induce-already-handled gate) read this flag. The YAML payload itself
+    /// does not carry this — the loader sets it based on the file name when
+    /// reading from disk.
+    /// </summary>
+    public bool IsDeterministic { get; init; }
 }
 
 public sealed record OperatorTemplateRule
@@ -54,4 +66,15 @@ public sealed record OperatorTemplateRule
     /// <see cref="ExtractedBlock.Confidence"/> for downstream consumers.
     /// </summary>
     public double Confidence { get; init; } = 1.0;
+
+    /// <summary>
+    /// Optional identity-claim ancestor chain anchoring this rule. Outermost
+    /// first; the last entry is the leaf target. When non-null the loaded
+    /// template carries the same shape <see cref="BlockRule.Claims"/> carries
+    /// at induction time, so the operator-template path can run on the
+    /// <see cref="IdentityClaimApplicator"/> instead of the CSS-string
+    /// fallback. Null on legacy operator templates that pre-date the
+    /// identity-claim apply path.
+    /// </summary>
+    public IReadOnlyList<IdentityClaim>? Claims { get; init; }
 }

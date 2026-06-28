@@ -81,18 +81,33 @@ public sealed class YamlFileOperatorTemplateStore : IOperatorTemplateStore, IDis
     private void LoadAllFromDisk()
     {
         var next = new Dictionary<string, OperatorTemplate>(StringComparer.OrdinalIgnoreCase);
-        foreach (var path in Directory.EnumerateFiles(_root, "*.yaml"))
+        // Enumerate in alphabetical-descending order so the bare `<host>.yaml`
+        // (which sorts AFTER `<host>-deterministic.yaml` because `.` > `-` in
+        // ASCII) gets processed FIRST. When both exist for the same host, the
+        // hand-authored / LLM-induced entry wins the host slot in the map.
+        // Per-file metadata (filename → IsDeterministic flag) is stamped onto
+        // the loaded OperatorTemplate so downstream consumers (e.g. the
+        // enrichment coordinator) can distinguish deterministic auto-writes
+        // from real overrides.
+        foreach (var path in Directory.EnumerateFiles(_root, "*.yaml")
+            .OrderByDescending(p => p, StringComparer.Ordinal))
         {
             var name = Path.GetFileName(path);
             if (TryLoadFile(path, name, out var t))
             {
-                next[t!.Host] = t;
-                _byFile[name] = t;
+                var isDeterministic = name.EndsWith("-deterministic.yaml", StringComparison.OrdinalIgnoreCase);
+                var stamped = t! with { IsDeterministic = isDeterministic };
+                _byFile[name] = stamped;
+                // First write wins (alphabetical-descending order means the
+                // hand-authored entry lands first; deterministic entries don't
+                // overwrite).
+                if (!next.ContainsKey(stamped.Host))
+                    next[stamped.Host] = stamped;
             }
             else if (_byFile.TryGetValue(name, out var prior))
             {
-                // Keep the prior entry alive so the runtime stays template-aware.
-                next[prior.Host] = prior;
+                if (!next.ContainsKey(prior.Host))
+                    next[prior.Host] = prior;
             }
         }
         _map = next;
