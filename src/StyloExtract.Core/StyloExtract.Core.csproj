@@ -15,6 +15,12 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
   </ItemGroup>
   <ItemGroup>
+    <!-- ApplicatorBrokenCheck is internal so the noisy-content gate's
+         thresholds can evolve without bumping the public API surface. The
+         Core.Tests project consumes them directly. -->
+    <InternalsVisibleTo Include="StyloExtract.Core.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\StyloExtract.Abstractions\StyloExtract.Abstractions.csproj" />
     <ProjectReference Include="..\StyloExtract.Fingerprint\StyloExtract.Fingerprint.csproj" />
     <ProjectReference Include="..\StyloExtract.Html\StyloExtract.Html.csproj" />

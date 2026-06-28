@@ -185,51 +185,14 @@ public sealed class LayoutExtractor : ILayoutExtractor
         int observationCount = 0;
         IReadOnlyList<ExtractedBlock> blocks;
 
-        // Bug-out signal: when the cached extractor's selectors produce essentially no
-        // content (combined text < MinViableExtractText), or the rule miss ratio is high
-        // enough to indicate signal loss, the cached template is broken on THIS page.
-        // Re-classify with the heuristic and force a refit so the next request gets a
-        // fresh extractor. Without this, broken applicators keep returning 1-byte garbage
-        // until EWMA drift accumulates over many observations.
-        //
-        // Two failure modes covered:
-        //   1) All blocks combined produced essentially nothing: the template's
-        //      selectors mostly missed the page. (Original check.)
-        //   2) The template produced PLENTY of text overall but almost none of
-        //      it is in content roles: a stale template applied to a wrong-shape
-        //      page can pick up substantial Header/Footer/Boilerplate text via
-        //      its chrome selectors while emitting ~zero MainContent — the
-        //      renderer filters to content roles only so the actual output is
-        //      1 char while the all-blocks sum looks healthy. WCXB diagnostic
-        //      2026-06-24: 22+ collection / listing pages on hosts whose
-        //      first-seen page was a product detail were stuck in this state
-        //      (esprit-barbecue.fr, nike.com, rei.com).
-        const int MinViableExtractText = 200;
-        const int ChromeHeavyTotalThreshold = 1000;
-        const int MinViableContentText = 100;
-        const double SignalLossMissRatio = 0.7;
-        const int SignalLossMinRules = 3;
-        static bool IsApplicatorBroken(ApplicatorResult applied)
-        {
-            var combinedText = applied.Blocks.Sum(b => b.Text.Length);
-            if (combinedText < MinViableExtractText) return true;
-
-            var contentText = applied.Blocks
-                .Where(b => b.Role is BlockRole.MainContent or BlockRole.Article
-                    or BlockRole.Title or BlockRole.Heading or BlockRole.Summary or BlockRole.Table
-                    or BlockRole.CodeBlock or BlockRole.RepeatedItem)
-                .Sum(b => b.Text.Length);
-            // Lots of total text, almost none of it in content roles: the
-            // template is harvesting chrome instead of content.
-            if (combinedText >= ChromeHeavyTotalThreshold && contentText < MinViableContentText)
-                return true;
-
-            var ruleCount = applied.RulesApplied + applied.RulesMissed;
-            if (ruleCount >= SignalLossMinRules
-                && (double)applied.RulesMissed / ruleCount >= SignalLossMissRatio)
-                return true;
-            return false;
-        }
+        // Bug-out signal: when the cached extractor's selectors produce broken
+        // output (empty, chrome-only, or content that's actually noise), force
+        // a refit so the next request gets a fresh extractor. The full ruleset
+        // and its rationale live in ApplicatorBrokenCheck — including the
+        // Move 2 noisy-content gate that catches the Wikipedia / mostlylucid
+        // language-picker leak shape.
+        static bool IsApplicatorBroken(ApplicatorResult applied) =>
+            ApplicatorBrokenCheck.IsBroken(applied);
 
         bool applicatorBugOut = false;
         bool llmInductionFired = false;
@@ -543,17 +506,34 @@ public sealed class LayoutExtractor : ILayoutExtractor
         renderTimer.Stop();
         total.Stop();
 
-        // Post-render repair-enqueue: when an EXISTING template was used
-        // (fast-path hit / slow-path match, NOT novel) but the rendered
-        // Markdown is below the same FallbackMinTextLength threshold the
-        // classifier-output fallback uses, ask the LLM to repair the
-        // template's selectors. The hot path doesn't block — the job is
-        // dropped if the queue is full or the host is on cooldown.
+        // Post-render repair-enqueue (Move 3 of the apply-time-quality-gate
+        // spec): when an EXISTING template was used (fast-path hit / slow-path
+        // match, NOT novel) and the apply-time quality check flagged it broken
+        // (empty / chrome-heavy / signal-loss / noisy MainContent), OR the
+        // rendered Markdown came out below the FallbackMinTextLength
+        // threshold, ask the LLM to repair the template's selectors.
+        //
+        // Move 3 dropped two preconditions the original gate had:
+        //  - the "hand-authored operator template exists" requirement, so that
+        //    auto-induced templates also get a second look from the LLM when
+        //    they go bad
+        //  - the implicit "only fires on empty output" semantics, so that the
+        //    Move 2 noisy-content gate (Wikipedia / mostlylucid leak shape) can
+        //    actually reach repair
+        //
+        // Hot-path overhead is one queue lookup + cooldown check. The
+        // InMemoryTemplateEnrichmentQueue per-host cooldown (1 hour by
+        // default) prevents runaway repair attempts on a host whose template
+        // the LLM can't improve.
+        // Status set covers every existing-template case: fast/slow path hits
+        // are the obvious targets; Refit lands here when the IsApplicatorBroken
+        // gate fired earlier and forced a heuristic refit, in which case we
+        // STILL want the LLM to look at the host since the heuristic just
+        // re-emitted the same shape that went bad. Novel is excluded because
+        // MaybeEnqueueEnrichmentAsync already enqueued an Induce job for it.
         const int RepairMarkdownMinLength = FallbackMinTextLength;
-        if (status is MatchStatus.FastPathHit or MatchStatus.SlowPathMatch &&
-            markdown.Trim().Length < RepairMarkdownMinLength &&
-            _operatorTemplates is not null &&
-            _operatorTemplates.TryGet(resolvedHost, out _))
+        if (status is MatchStatus.FastPathHit or MatchStatus.SlowPathMatch or MatchStatus.Refit &&
+            (applicatorBugOut || markdown.Trim().Length < RepairMarkdownMinLength))
         {
             await MaybeEnqueueRepairAsync(doc, resolvedHost, fp.Hex, markdown, cancellationToken).ConfigureAwait(false);
         }
