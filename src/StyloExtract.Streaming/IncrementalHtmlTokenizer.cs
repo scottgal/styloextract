@@ -35,11 +35,18 @@ public sealed class IncrementalHtmlTokenizer
 {
     /// <summary>
     /// Hard safety cap on the internal partial-tag buffer. Under correct input
-    /// the buffer's valid-byte count post-Feed is O(longest partial tag), so
-    /// this cap is only hit on pathological input (a single tag &gt; 4 KiB,
-    /// or a script/style body with no closing marker in 4 KiB of body).
+    /// the buffer's valid-byte count post-Feed is O(longest partial tag).
+    /// The cap fires only on input where a single tag exceeds the cap, or a
+    /// script/style body has no closing marker inside the cap's worth of body.
+    ///
+    /// Bumped from 4 KiB to 16 KiB after BBC News + Guardian dogfood crashes:
+    /// modern news sites legitimately ship single tags (JSON-LD blobs in
+    /// <c>&lt;script type="application/ld+json"&gt;</c>, OpenGraph
+    /// <c>&lt;meta&gt;</c> tags with long content attributes, inline SVG with
+    /// embedded path strings) in the 4-12 KiB range. 16 KiB covers real-world
+    /// maxes while still acting as a safety stop for genuinely broken input.
     /// </summary>
-    public const int MaxBufferSize = 4 * 1024;
+    public const int MaxBufferSize = 16 * 1024;
 
     private const int InitialBufferSize = 512;
 
