@@ -688,13 +688,13 @@ static class Program
 
         var modeLabel = usePlaywright ? "Playwright" : "static-HTML";
         var sb = new StringBuilder();
-        sb.AppendLine($"## StyloExtract heuristic v1.3 vs WCXB baselines ({split} split, profile={profile}, mode={modeLabel}, page-types={pageTypes})");
+        sb.AppendLine($"## StyloExtract heuristic v2.0.0 vs WCXB baselines ({split} split, profile={profile}, mode={modeLabel}, page-types={pageTypes})");
         sb.AppendLine();
         sb.AppendLine($"Run: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC | pages={results.Count} | errors={errors} | wall-clock={wallClock:mm\\:ss}");
         sb.AppendLine();
         sb.AppendLine("| System            |     F1 | Precision | Recall | p50 latency | p99 latency |");
         sb.AppendLine("|-------------------|-------:|----------:|-------:|------------:|------------:|");
-        sb.AppendLine($"| StyloExtract v1.3 | {overallF1:F3}  | {overallPrec:F3}     | {overallRec:F3}  | {p50Ms} ms       | {p99Ms} ms       |");
+        sb.AppendLine($"| StyloExtract v2.0.0 | {overallF1:F3}  | {overallPrec:F3}     | {overallRec:F3}  | {p50Ms} ms       | {p99Ms} ms       |");
 
         foreach (var (sys, (bf1, bp, br)) in Baselines.Overall)
             sb.AppendLine($"| {sys,-17} | {bf1:F3}  | {bp:F3}     | {br:F3}  | -           | -           |");
