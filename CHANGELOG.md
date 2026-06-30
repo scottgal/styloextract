@@ -4,6 +4,18 @@ All notable changes to StyloExtract are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-06-30
+
+### Fixed
+
+- `StyloExtract.Heuristics.NavPreDetector.DescendantsOf` snapshots
+  `IElement.Children` to an array before indexing. AngleSharp 1.4.x
+  removed the `int` indexer on `IHtmlCollection<T>` (only the `string`
+  overload remains), which caused `MissingMethodException` at runtime
+  for consumers that pull AngleSharp >= 1.4 transitively (e.g.
+  `Mostlylucid.LucidRAG.DocSummarizer 2.7.5`). The fix is forward- and
+  backward-compatible across the AngleSharp 1.3.x / 1.4.x boundary.
+
 ## [2.0.0] - 2026-06-28
 
 First stable release. Closes Phase 1 + Phase 2 of the identity-claim

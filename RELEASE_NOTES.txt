@@ -1,3 +1,24 @@
+StyloExtract 2.0.1 - 2026-06-30
+================================
+
+Patch release. One fix across the family: NavPreDetector's pre-order
+descendant traversal used `IHtmlCollection<IElement>.this[int]` on
+`IElement.Children`, which AngleSharp removed in 1.4.x (only the string
+indexer remains on `IHtmlCollection<T>`).
+
+When a consumer brings AngleSharp >= 1.4.0 into the load context (for
+example `Mostlylucid.LucidRAG.DocSummarizer 2.7.5` requires AngleSharp
+1.4.1-beta.506 as a transitive floor), every call to
+`ILayoutExtractor.ExtractAsync` blew up at runtime with
+`MissingMethodException: 'T IHtmlCollection`1.get_Item(Int32)'`.
+
+The fix snapshots `Children` to a plain `IElement[]` via `ToArray()`
+before indexing, so the call site no longer relies on the removed
+indexer and works against both AngleSharp 1.3.x and 1.4.x. No public
+API changes; library consumers do not need to change any code beyond
+bumping the package version.
+
+
 StyloExtract 2.0.0 - 2026-06-28
 ================================
 
