@@ -249,21 +249,26 @@ internal static class NavPreDetector
     }
 
     // Pre-order traversal, iterative to avoid recursion on Wikipedia-shaped trees.
+    // Snapshots `IHtmlCollection<IElement>` to a plain array because AngleSharp 1.4.x
+    // removed the int indexer on IHtmlCollection<T> (only the string indexer remains).
+    // Snapshotting via ToArray keeps this compatible with both 1.3.0 and 1.4.x.
     private static IEnumerable<IElement> DescendantsOf(IElement root)
     {
         var stack = new Stack<IElement>();
         // Push children in reverse so iteration emits them in document order.
-        for (int i = root.Children.Length - 1; i >= 0; i--)
+        var rootChildren = root.Children.ToArray();
+        for (int i = rootChildren.Length - 1; i >= 0; i--)
         {
-            stack.Push(root.Children[i]);
+            stack.Push(rootChildren[i]);
         }
         while (stack.Count > 0)
         {
             var cur = stack.Pop();
             yield return cur;
-            for (int i = cur.Children.Length - 1; i >= 0; i--)
+            var curChildren = cur.Children.ToArray();
+            for (int i = curChildren.Length - 1; i >= 0; i--)
             {
-                stack.Push(cur.Children[i]);
+                stack.Push(curChildren[i]);
             }
         }
     }
